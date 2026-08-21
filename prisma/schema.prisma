@@ -6,3 +6,155 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum ApplicationStage {
+  DISCOVERED
+  OUTREACH_SENT
+  RECRUITER_ENGAGED
+  RTR_SIGNED
+  SUBMITTED_TO_CLIENT
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  OFFER
+  HIRED
+  NO_RESPONSE
+  REJECTED
+  ROLE_CLOSED
+  WITHDRAWN
+  DUPLICATE
+}
+
+enum ActivityType {
+  JOB_CREATED
+  JOB_UPDATED
+  JD_RECEIVED
+  OUTREACH_SENT
+  RECRUITER_REPLY
+  CALL
+  RTR_RECEIVED
+  RTR_SIGNED
+  CLIENT_SUBMISSION
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  OFFER
+  STAGE_CHANGED
+  NOTE
+  CORRECTION
+}
+
+enum EmploymentType {
+  UNKNOWN
+  CONTRACT
+  W2
+  C2C
+  CONTRACT_1099
+  FULL_TIME
+}
+
+enum WorkArrangement {
+  UNKNOWN
+  REMOTE
+  HYBRID
+  ONSITE
+}
+
+enum RoleFamily {
+  JAVA_BACKEND
+  JAVA_FULLSTACK
+  JAVA_REACT
+  JAVA_AI
+  REACT
+  REACT_FULLSTACK
+}
+
+model Opportunity {
+  id               String            @id @default(cuid())
+  title            String
+  client           String?
+  location         String?
+  employmentType   EmploymentType    @default(UNKNOWN) @map("employment_type")
+  workArrangement  WorkArrangement   @default(UNKNOWN) @map("work_arrangement")
+  rawJd            String?           @map("raw_jd")
+  recruiterId      String?           @map("recruiter_id")
+  vendorId         String?           @map("vendor_id")
+  recruiter        Recruiter?        @relation(fields: [recruiterId], references: [id], onDelete: SetNull)
+  vendor           Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  applicationTrack ApplicationTrack?
+  activities       Activity[]
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  @@index([recruiterId])
+  @@index([vendorId])
+  @@map("opportunities")
+}
+
+model ApplicationTrack {
+  id             String           @id @default(cuid())
+  opportunityId  String           @unique @map("opportunity_id")
+  currentStage   ApplicationStage @default(DISCOVERED) @map("current_stage")
+  waitingOn      String?          @map("waiting_on")
+  nextAction     String?          @map("next_action")
+  nextFollowUpAt DateTime?        @map("next_follow_up_at")
+  opportunity    Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  @@index([currentStage])
+  @@index([nextFollowUpAt])
+  @@map("application_tracks")
+}
+
+model Activity {
+  id            String       @id @default(cuid())
+  opportunityId String       @map("opportunity_id")
+  type          ActivityType
+  description   String
+  occurredAt    DateTime     @default(now()) @map("occurred_at")
+  opportunity   Opportunity  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([opportunityId, occurredAt])
+  @@map("activities")
+}
+
+model Recruiter {
+  id            String        @id @default(cuid())
+  name          String
+  email         String?
+  phone         String?
+  vendorId      String?       @map("vendor_id")
+  vendor        Vendor?       @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  opportunities Opportunity[]
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@index([vendorId])
+  @@map("recruiters")
+}
+
+model Vendor {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  recruiters    Recruiter[]
+  opportunities Opportunity[]
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@map("vendors")
+}
+
+model Resume {
+  id         String     @id @default(cuid())
+  name       String
+  roleFamily RoleFamily @map("role_family")
+  filePath   String     @map("file_path")
+  version    String
+  active     Boolean    @default(true)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  @@unique([name, version])
+  @@map("resumes")
+}

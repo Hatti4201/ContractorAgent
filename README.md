@@ -5,15 +5,15 @@ Single-user web application for managing a human-reviewed contractor job workflo
 ## Local setup
 
 1. Install dependencies: `npm install`
-2. Copy `.env.example` to `.env` and set the PostgreSQL/Supabase URLs.
+2. Copy `.env.example` to `.env`; set the database URLs, a private app password, and a random session secret.
 3. Generate the Prisma client: `npm run db:generate`
-4. Verify database reads and writes: `npm run db:check`
-5. Start the app: `npm run dev`
+4. Apply migrations: `npx prisma migrate deploy`
+5. Verify Phase 1 relations: `npm run db:check:phase1`, then start with `npm run dev`.
 
-The database check creates a temporary table inside one transaction, writes and reads a random marker, then drops the table automatically. It does not retain business data.
+The Phase 1 check creates a clearly fictional opportunity, recruiter, vendor, track, and activity inside one transaction, verifies their relations, then rolls the transaction back. It retains no sample business data.
 
 Resume files and outreach rules stay local because they contain personal information and are excluded from Git.
 
-## Phase boundary
+## Phase 1 boundary
 
-Phase 0 contains only the web and database foundation. AI, job tracking, Outlook integration, and automated business-state changes are intentionally excluded until their roadmap phases.
+Phase 1 provides a password-protected, single-user Job → Recruiter → Stage → Timeline workflow. AI, Outlook integration, automated business-state changes, funnel analytics, and reminder rules remain excluded until their roadmap phases.
