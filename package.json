@@ -12,7 +12,9 @@
     "db:check": "tsx scripts/check-database.ts",
     "db:check:phase1": "tsx scripts/check-phase1.ts",
     "db:check:phase2": "tsx scripts/check-phase2.ts",
-    "db:check:phase3": "tsx scripts/check-phase3.ts"
+    "db:check:phase3": "tsx scripts/check-phase3.ts",
+    "db:check:phase4": "tsx scripts/check-phase4.ts",
+    "ai:check:phase4": "tsx scripts/check-phase4-ai.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

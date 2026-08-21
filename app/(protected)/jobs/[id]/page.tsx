@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/auth";
 import { activityTypes, dateInputValue, formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
+import { parseJobCase, type JobCase } from "@/services/job-case";
 
 const inputClass =
   "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
@@ -31,6 +32,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const reschedule = rescheduleAttention.bind(null, job.id);
   const remove = deleteJob.bind(null, job.id);
   const attention = buildAttentionItems([job], new Date(), configuredTimeZone())[0];
+  let confirmedCase: JobCase | null = null;
+  if (job.jobCase) confirmedCase = parseJobCase(job.jobCase);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -57,6 +60,27 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </article>
         ))}
       </section>
+
+      {confirmedCase && (
+        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold text-slate-950">Confirmed JobCase</h2>
+          <p className="mt-1 text-sm text-slate-600">AI-extracted facts reviewed and confirmed by the user.</p>
+          <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Rate", confirmedCase.rate],
+              ["Years required", confirmedCase.yearsRequired],
+              ["Visa", confirmedCase.visaRequirement],
+              ["Local", confirmedCase.localRequirement],
+              ["Relocation", confirmedCase.relocationRequirement],
+              ["Clearance", confirmedCase.clearanceRequirement],
+              ["Required skills", confirmedCase.requiredSkills.join(", ") || null],
+              ["Analysis confidence", `${Math.round(confirmedCase.confidence * 100)}%`],
+            ].map(([label, value]) => (
+              <div key={label}><dt className="font-medium text-slate-500">{label}</dt><dd className="mt-1 text-slate-900">{value ?? "Unknown"}</dd></div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <section className="mt-8 scroll-mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6" id="attention-actions">
         <h2 className="text-xl font-semibold text-slate-950">Follow-up actions</h2>

@@ -6,12 +6,14 @@ import {
   ActivityType,
   ApplicationStage,
   EmploymentType,
+  IntakeStatus,
   RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
+import { jobFingerprint, parseJobCase, readReviewedJobCase } from "@/services/job-case";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const stageActivityType: Partial<Record<ApplicationStage, ActivityType>> = {
@@ -140,6 +142,7 @@ export async function createJob(formData: FormData) {
         employmentType: data.employmentType,
         workArrangement: data.workArrangement,
         rawJd: data.rawJd,
+        jdFingerprint: data.rawJd ? jobFingerprint(data.rawJd) : null,
         ...contacts,
         applicationTrack: {
           create: {
@@ -174,6 +177,19 @@ export async function updateJob(id: string, formData: FormData) {
     if (!existing?.applicationTrack) throw new Error("Job not found.");
 
     const contacts = await resolveContacts(database, data, existing.recruiterId);
+    const syncedJobCase = existing.jobCase ? {
+      ...parseJobCase(existing.jobCase),
+      title: data.title,
+      client: data.client,
+      vendor: data.vendorName,
+      recruiterName: data.recruiterName,
+      recruiterEmail: data.recruiterEmail,
+      recruiterPhone: data.recruiterPhone,
+      location: data.location,
+      roleFamily: data.roleFamily,
+      employmentType: data.employmentType,
+      workArrangement: data.workArrangement,
+    } : null;
     await database.opportunity.update({
       where: { id },
       data: {
@@ -184,6 +200,8 @@ export async function updateJob(id: string, formData: FormData) {
         employmentType: data.employmentType,
         workArrangement: data.workArrangement,
         rawJd: data.rawJd,
+        ...(syncedJobCase ? { jobCase: syncedJobCase as unknown as Prisma.InputJsonValue } : {}),
+        jdFingerprint: data.rawJd ? jobFingerprint(data.rawJd) : null,
         ...contacts,
       },
     });
@@ -275,6 +293,68 @@ export async function rescheduleAttention(id: string, formData: FormData) {
   revalidatePath("/jobs");
   revalidatePath(`/jobs/${id}`);
   redirect(`/jobs/${id}#attention-actions`);
+}
+
+export async function confirmIntake(id: string, markDuplicate: boolean, formData: FormData) {
+  await requireAuth();
+  const opportunity = await getPrisma().$transaction(async (database) => {
+    const intake = await database.jobIntake.findUnique({ where: { id } });
+    if (!intake || intake.status !== IntakeStatus.PENDING) throw new Error("Intake is not available for confirmation.");
+    const reviewed = readReviewedJobCase(formData, parseJobCase(intake.analysis));
+    if ((reviewed.recruiterEmail || reviewed.recruiterPhone) && !reviewed.recruiterName) {
+      throw new Error("Recruiter name is required with contact details.");
+    }
+    const claimed = await database.jobIntake.updateMany({
+      where: { id, status: IntakeStatus.PENDING },
+      data: { status: IntakeStatus.CONFIRMED, confirmedAt: new Date() },
+    });
+    if (claimed.count !== 1) throw new Error("Intake was already confirmed.");
+    const contacts = await resolveContacts(database, {
+      title: reviewed.title,
+      client: reviewed.client,
+      location: reviewed.location,
+      roleFamily: reviewed.roleFamily,
+      employmentType: reviewed.employmentType,
+      workArrangement: reviewed.workArrangement,
+      rawJd: intake.rawText,
+      vendorName: reviewed.vendor,
+      recruiterName: reviewed.recruiterName,
+      recruiterEmail: reviewed.recruiterEmail,
+      recruiterPhone: reviewed.recruiterPhone,
+      currentStage: markDuplicate ? ApplicationStage.DUPLICATE : ApplicationStage.DISCOVERED,
+      waitingOn: null,
+      nextAction: null,
+      nextFollowUpAt: null,
+    });
+    const created = await database.opportunity.create({
+      data: {
+        title: reviewed.title,
+        client: reviewed.client,
+        location: reviewed.location,
+        roleFamily: reviewed.roleFamily,
+        employmentType: reviewed.employmentType,
+        workArrangement: reviewed.workArrangement,
+        rawJd: intake.rawText,
+        jobCase: reviewed as unknown as Prisma.InputJsonValue,
+        jdFingerprint: intake.fingerprint,
+        ...contacts,
+        applicationTrack: { create: { currentStage: markDuplicate ? ApplicationStage.DUPLICATE : ApplicationStage.DISCOVERED } },
+        activities: {
+          create: [
+            { type: ActivityType.JOB_CREATED, description: "Opportunity created from confirmed AI intake." },
+            { type: ActivityType.JD_RECEIVED, description: `JD confirmed from ${intake.sourceType}.` },
+          ],
+        },
+      },
+    });
+    await database.jobIntake.update({ where: { id }, data: { opportunityId: created.id } });
+    return created;
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
+  revalidatePath("/jobs");
+  redirect(`/jobs/${opportunity.id}`);
 }
 
 export async function deleteJob(id: string) {

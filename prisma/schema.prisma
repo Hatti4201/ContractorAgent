@@ -67,6 +67,19 @@ enum RoleFamily {
   REACT_FULLSTACK
 }
 
+enum JobSourceType {
+  LINKEDIN_POST
+  LINKEDIN_DM
+  DIRECT_EMAIL
+  FORWARDED_JD
+  PLAIN_TEXT
+}
+
+enum IntakeStatus {
+  PENDING
+  CONFIRMED
+}
+
 model Opportunity {
   id               String            @id @default(cuid())
   title            String
@@ -76,11 +89,14 @@ model Opportunity {
   employmentType   EmploymentType    @default(UNKNOWN) @map("employment_type")
   workArrangement  WorkArrangement   @default(UNKNOWN) @map("work_arrangement")
   rawJd            String?           @map("raw_jd")
+  jobCase          Json?             @map("job_case")
+  jdFingerprint    String?           @map("jd_fingerprint")
   recruiterId      String?           @map("recruiter_id")
   vendorId         String?           @map("vendor_id")
   recruiter        Recruiter?        @relation(fields: [recruiterId], references: [id], onDelete: SetNull)
   vendor           Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   applicationTrack ApplicationTrack?
+  intake           JobIntake?
   activities       Activity[]
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
@@ -88,7 +104,29 @@ model Opportunity {
   @@index([recruiterId])
   @@index([vendorId])
   @@index([roleFamily])
+  @@index([jdFingerprint])
   @@map("opportunities")
+}
+
+model JobIntake {
+  id                 String        @id @default(cuid())
+  sourceType         JobSourceType @map("source_type")
+  rawText            String        @map("raw_text")
+  originalSender     String?       @map("original_sender")
+  receivedAt         DateTime      @map("received_at")
+  attachmentMetadata Json?         @map("attachment_metadata")
+  analysis           Json
+  fingerprint        String
+  status             IntakeStatus  @default(PENDING)
+  opportunityId      String?       @unique @map("opportunity_id")
+  opportunity        Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  confirmedAt        DateTime?     @map("confirmed_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([fingerprint])
+  @@map("job_intakes")
 }
 
 model ApplicationTrack {

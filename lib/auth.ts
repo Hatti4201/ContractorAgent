@@ -39,7 +39,11 @@ export async function deleteSession() {
   (await cookies()).delete(COOKIE_NAME);
 }
 
-export async function requireAuth() {
+export async function isAuthenticated() {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
-  if (!isSessionTokenValid(token, requiredEnvironmentVariable("SESSION_SECRET"))) redirect("/login");
+  return isSessionTokenValid(token, requiredEnvironmentVariable("SESSION_SECRET"));
+}
+
+export async function requireAuth() {
+  if (!await isAuthenticated()) redirect("/login");
 }
