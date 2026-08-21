@@ -72,6 +72,7 @@ model Opportunity {
   title            String
   client           String?
   location         String?
+  roleFamily       RoleFamily?       @map("role_family")
   employmentType   EmploymentType    @default(UNKNOWN) @map("employment_type")
   workArrangement  WorkArrangement   @default(UNKNOWN) @map("work_arrangement")
   rawJd            String?           @map("raw_jd")
@@ -86,6 +87,7 @@ model Opportunity {
 
   @@index([recruiterId])
   @@index([vendorId])
+  @@index([roleFamily])
   @@map("opportunities")
 }
 

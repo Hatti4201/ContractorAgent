@@ -6,6 +6,7 @@ import {
   ActivityType,
   ApplicationStage,
   EmploymentType,
+  RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
@@ -13,6 +14,14 @@ import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const stageActivityType: Partial<Record<ApplicationStage, ActivityType>> = {
+  OUTREACH_SENT: ActivityType.OUTREACH_SENT,
+  RTR_SIGNED: ActivityType.RTR_SIGNED,
+  SUBMITTED_TO_CLIENT: ActivityType.CLIENT_SUBMISSION,
+  INTERVIEW_SCHEDULED: ActivityType.INTERVIEW_SCHEDULED,
+  INTERVIEW_COMPLETED: ActivityType.INTERVIEW_COMPLETED,
+  OFFER: ActivityType.OFFER,
+};
 
 function text(formData: FormData, name: string, maximum: number, required = false) {
   const value = formData.get(name);
@@ -24,6 +33,10 @@ function text(formData: FormData, name: string, maximum: number, required = fals
 
 function enumValue<T extends string>(value: FormDataEntryValue | null, allowed: readonly T[], fallback: T) {
   return typeof value === "string" && allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function optionalEnumValue<T extends string>(value: FormDataEntryValue | null, allowed: readonly T[]) {
+  return typeof value === "string" && allowed.includes(value as T) ? (value as T) : null;
 }
 
 function dateValue(value: FormDataEntryValue | null) {
@@ -53,6 +66,7 @@ function readJob(formData: FormData) {
     title: text(formData, "title", 200, true)!,
     client: text(formData, "client", 200),
     location: text(formData, "location", 200),
+    roleFamily: optionalEnumValue(formData.get("roleFamily"), Object.values(RoleFamily)),
     employmentType: enumValue(formData.get("employmentType"), Object.values(EmploymentType), EmploymentType.UNKNOWN),
     workArrangement: enumValue(formData.get("workArrangement"), Object.values(WorkArrangement), WorkArrangement.UNKNOWN),
     rawJd: text(formData, "rawJd", 50000),
@@ -109,11 +123,20 @@ export async function createJob(formData: FormData) {
 
   const opportunity = await getPrisma().$transaction(async (database) => {
     const contacts = await resolveContacts(database, data);
+    const initialActivities: Prisma.ActivityCreateWithoutOpportunityInput[] = [
+      { type: ActivityType.JOB_CREATED, description: "Opportunity created manually." },
+    ];
+    const initialBusinessEvent = stageActivityType[data.currentStage];
+    if (initialBusinessEvent) initialActivities.push({
+      type: initialBusinessEvent,
+      description: `Recorded automatically from initial stage ${data.currentStage}.`,
+    });
     return database.opportunity.create({
       data: {
         title: data.title,
         client: data.client,
         location: data.location,
+        roleFamily: data.roleFamily,
         employmentType: data.employmentType,
         workArrangement: data.workArrangement,
         rawJd: data.rawJd,
@@ -127,7 +150,7 @@ export async function createJob(formData: FormData) {
           },
         },
         activities: {
-          create: { type: ActivityType.JOB_CREATED, description: "Opportunity created manually." },
+          create: initialActivities,
         },
       },
     });
@@ -156,6 +179,7 @@ export async function updateJob(id: string, formData: FormData) {
         title: data.title,
         client: data.client,
         location: data.location,
+        roleFamily: data.roleFamily,
         employmentType: data.employmentType,
         workArrangement: data.workArrangement,
         rawJd: data.rawJd,
@@ -171,18 +195,25 @@ export async function updateJob(id: string, formData: FormData) {
         nextFollowUpAt: data.nextFollowUpAt,
       },
     });
-    await database.activity.create({
-      data: { opportunityId: id, type: ActivityType.JOB_UPDATED, description: "Opportunity details updated." },
-    });
+    const activityData: Prisma.ActivityCreateManyInput[] = [{
+      opportunityId: id,
+      type: ActivityType.JOB_UPDATED,
+      description: "Opportunity details updated.",
+    }];
     if (existing.applicationTrack.currentStage !== data.currentStage) {
-      await database.activity.create({
-        data: {
-          opportunityId: id,
-          type: ActivityType.STAGE_CHANGED,
-          description: `Stage changed from ${existing.applicationTrack.currentStage} to ${data.currentStage}.`,
-        },
+      activityData.push({
+        opportunityId: id,
+        type: ActivityType.STAGE_CHANGED,
+        description: `Stage changed from ${existing.applicationTrack.currentStage} to ${data.currentStage}.`,
+      });
+      const businessEvent = stageActivityType[data.currentStage];
+      if (businessEvent) activityData.push({
+        opportunityId: id,
+        type: businessEvent,
+        description: `Recorded automatically from stage ${data.currentStage}.`,
       });
     }
+    await database.activity.createMany({ data: activityData });
   });
 
   revalidatePath("/dashboard");

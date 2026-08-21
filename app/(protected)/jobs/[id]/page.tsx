@@ -35,7 +35,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">{formatEnum(job.applicationTrack.currentStage)}</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{job.title}</h1>
-          <p className="mt-2 text-slate-600">{job.client ?? "Client not set"} · {job.location ?? "Location not set"}</p>
+          <p className="mt-2 text-slate-600">{job.client ?? "Client not set"} · {job.location ?? "Location not set"} · {job.roleFamily ? formatEnum(job.roleFamily) : "Role not set"}</p>
         </div>
         <DeleteJobForm action={remove} />
       </div>
@@ -64,6 +64,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                 title: job.title,
                 client: job.client,
                 location: job.location,
+                roleFamily: job.roleFamily,
                 employmentType: job.employmentType,
                 workArrangement: job.workArrangement,
                 rawJd: job.rawJd,

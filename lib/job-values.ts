@@ -2,12 +2,14 @@ import {
   ActivityType,
   ApplicationStage,
   EmploymentType,
+  RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 
 export const activityTypes = Object.values(ActivityType);
 export const applicationStages = Object.values(ApplicationStage);
 export const employmentTypes = Object.values(EmploymentType);
+export const roleFamilies = Object.values(RoleFamily);
 export const workArrangements = Object.values(WorkArrangement);
 
 export function formatEnum(value: string) {

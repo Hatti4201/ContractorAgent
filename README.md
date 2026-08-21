@@ -8,12 +8,12 @@ Single-user web application for managing a human-reviewed contractor job workflo
 2. Copy `.env.example` to `.env`; set the database URLs, a private app password, and a random session secret.
 3. Generate the Prisma client: `npm run db:generate`
 4. Apply migrations: `npx prisma migrate deploy`
-5. Verify Phase 1 relations: `npm run db:check:phase1`, then start with `npm run dev`.
+5. Verify the current analytics data path: `npm run db:check:phase2`, then start with `npm run dev`.
 
-The Phase 1 check creates a clearly fictional opportunity, recruiter, vendor, track, and activity inside one transaction, verifies their relations, then rolls the transaction back. It retains no sample business data.
+The Phase 2 check creates clearly fictional CRM records inside one transaction, verifies filters, funnel metrics, conversion, and pipeline placement, then rolls the transaction back. It retains no sample business data.
 
 Resume files and outreach rules stay local because they contain personal information and are excluded from Git.
 
-## Phase 1 boundary
+## Phase 2 boundary
 
-Phase 1 provides a password-protected, single-user Job → Recruiter → Stage → Timeline workflow. AI, Outlook integration, automated business-state changes, funnel analytics, and reminder rules remain excluded until their roadmap phases.
+Phase 2 adds UTC time ranges, Role / Vendor / Recruiter / Stage / Employment filters, activity-backed metrics, conversion rates, a pipeline board, and performance tables. AI, Outlook integration, automated business-state changes, and reminder rules remain excluded until their roadmap phases.

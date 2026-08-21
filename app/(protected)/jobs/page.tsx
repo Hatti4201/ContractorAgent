@@ -39,7 +39,7 @@ export default async function JobsPage() {
                   <tr className="hover:bg-slate-50" key={job.id}>
                     <td className="px-5 py-4">
                       <Link className="font-semibold text-slate-950 underline" href={`/jobs/${job.id}`}>{job.title}</Link>
-                      <span className="mt-1 block text-slate-600">{job.client ?? "Client not set"}</span>
+                      <span className="mt-1 block text-slate-600">{job.client ?? "Client not set"} · {job.roleFamily ? formatEnum(job.roleFamily) : "Role not set"}</span>
                     </td>
                     <td className="px-5 py-4 text-slate-700">
                       {job.recruiter?.name ?? "Not set"}

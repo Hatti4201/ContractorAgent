@@ -2,6 +2,7 @@ import {
   applicationStages,
   employmentTypes,
   formatEnum,
+  roleFamilies,
   workArrangements,
 } from "@/lib/job-values";
 
@@ -9,6 +10,7 @@ type JobFormValues = {
   title?: string;
   client?: string | null;
   location?: string | null;
+  roleFamily?: string | null;
   employmentType?: string;
   workArrangement?: string;
   rawJd?: string | null;
@@ -56,7 +58,14 @@ export function JobForm({
             {workArrangements.map((value) => <option key={value} value={value}>{formatEnum(value)}</option>)}
           </select>
         </label>
-        <label className="text-sm font-medium text-slate-800 md:col-span-2">
+        <label className="text-sm font-medium text-slate-800">
+          Role family
+          <select className={inputClass} defaultValue={initial.roleFamily ?? ""} name="roleFamily">
+            <option value="">Not set</option>
+            {roleFamilies.map((value) => <option key={value} value={value}>{formatEnum(value)}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-slate-800">
           Employment type
           <select className={inputClass} defaultValue={initial.employmentType ?? "UNKNOWN"} name="employmentType">
             {employmentTypes.map((value) => <option key={value} value={value}>{formatEnum(value)}</option>)}
