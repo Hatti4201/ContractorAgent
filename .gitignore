@@ -1,0 +1,27 @@
+# dependencies
+/node_modules
+
+# Next.js
+/.next
+/out
+
+# generated Prisma client
+/app/generated/prisma
+
+# sensitive local reference material
+/AGENTS.md
+/REQUIREMENTS.md
+/RESTRICTIONS.md
+/ROADMAP.md
+/resumes/
+/skills/
+
+# environment files
+.env*
+!.env.example
+
+# logs and local files
+*.log
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
