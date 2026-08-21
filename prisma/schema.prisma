@@ -98,6 +98,7 @@ model ApplicationTrack {
   waitingOn      String?          @map("waiting_on")
   nextAction     String?          @map("next_action")
   nextFollowUpAt DateTime?        @map("next_follow_up_at")
+  attentionClearedAt DateTime?    @map("attention_cleared_at")
   opportunity    Opportunity      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   createdAt      DateTime         @default(now()) @map("created_at")
   updatedAt      DateTime         @updatedAt @map("updated_at")

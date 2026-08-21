@@ -157,6 +157,7 @@ export async function createJob(formData: FormData) {
   });
 
   revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
   revalidatePath("/jobs");
   redirect(`/jobs/${opportunity.id}`);
 }
@@ -217,6 +218,7 @@ export async function updateJob(id: string, formData: FormData) {
   });
 
   revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
   revalidatePath("/jobs");
   revalidatePath(`/jobs/${id}`);
   redirect(`/jobs/${id}`);
@@ -229,13 +231,57 @@ export async function addActivity(id: string, formData: FormData) {
   const occurredAt = dateTimeValue(formData.get("occurredAt"));
 
   await getPrisma().activity.create({ data: { opportunityId: id, type, description, occurredAt } });
+  revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
   revalidatePath(`/jobs/${id}`);
+}
+
+export async function completeAttention(id: string) {
+  await requireAuth();
+  const completedAt = new Date();
+  await getPrisma().$transaction([
+    getPrisma().applicationTrack.update({
+      where: { opportunityId: id },
+      data: { attentionClearedAt: completedAt, nextAction: null, nextFollowUpAt: null },
+    }),
+    getPrisma().activity.create({
+      data: { opportunityId: id, type: ActivityType.NOTE, description: "Attention item completed.", occurredAt: completedAt },
+    }),
+  ]);
+  revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
+  revalidatePath("/jobs");
+  revalidatePath(`/jobs/${id}`);
+  redirect(`/jobs/${id}#attention-actions`);
+}
+
+export async function rescheduleAttention(id: string, formData: FormData) {
+  await requireAuth();
+  const nextFollowUpAt = dateValue(formData.get("nextFollowUpAt"));
+  if (!nextFollowUpAt) throw new Error("Next follow-up date is required.");
+  const nextAction = text(formData, "nextAction", 500);
+  const rescheduledAt = new Date();
+  await getPrisma().$transaction([
+    getPrisma().applicationTrack.update({
+      where: { opportunityId: id },
+      data: { attentionClearedAt: rescheduledAt, nextAction, nextFollowUpAt },
+    }),
+    getPrisma().activity.create({
+      data: { opportunityId: id, type: ActivityType.NOTE, description: "Follow-up rescheduled.", occurredAt: rescheduledAt },
+    }),
+  ]);
+  revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
+  revalidatePath("/jobs");
+  revalidatePath(`/jobs/${id}`);
+  redirect(`/jobs/${id}#attention-actions`);
 }
 
 export async function deleteJob(id: string) {
   await requireAuth();
   await getPrisma().opportunity.delete({ where: { id } });
   revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
   revalidatePath("/jobs");
   redirect("/jobs");
 }

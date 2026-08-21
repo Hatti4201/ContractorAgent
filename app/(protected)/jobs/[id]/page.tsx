@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addActivity, deleteJob, updateJob } from "@/app/(protected)/jobs/actions";
+import { addActivity, completeAttention, deleteJob, rescheduleAttention, updateJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobForm } from "@/components/delete-job-form";
 import { JobForm } from "@/components/job-form";
 import { requireAuth } from "@/lib/auth";
 import { activityTypes, dateInputValue, formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 
 const inputClass =
   "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
@@ -26,7 +27,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
   const update = updateJob.bind(null, job.id);
   const add = addActivity.bind(null, job.id);
+  const complete = completeAttention.bind(null, job.id);
+  const reschedule = rescheduleAttention.bind(null, job.id);
   const remove = deleteJob.bind(null, job.id);
+  const attention = buildAttentionItems([job], new Date(), configuredTimeZone())[0];
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -52,6 +56,32 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             <p className="mt-2 font-semibold text-slate-950">{value}</p>
           </article>
         ))}
+      </section>
+
+      <section className="mt-8 scroll-mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6" id="attention-actions">
+        <h2 className="text-xl font-semibold text-slate-950">Follow-up actions</h2>
+        {attention ? (
+          <>
+            <p className="mt-2 text-sm text-slate-700"><span className="font-medium">Why:</span> {attention.reason}</p>
+            <p className="mt-1 text-sm text-slate-700"><span className="font-medium">Next:</span> {attention.nextAction}</p>
+            <div className="mt-5 grid items-end gap-5 lg:grid-cols-[auto_minmax(0,1fr)]">
+              <form action={complete}>
+                <button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Complete item</button>
+              </form>
+              <form action={reschedule} className="grid items-end gap-3 sm:grid-cols-[minmax(160px,0.45fr)_minmax(220px,1fr)_auto]">
+                <label className="text-sm font-medium text-slate-800">
+                  New follow-up date <span aria-hidden="true" className="text-red-700">*</span>
+                  <input className={inputClass} name="nextFollowUpAt" required type="date" />
+                </label>
+                <label className="text-sm font-medium text-slate-800">
+                  Next action
+                  <input className={inputClass} defaultValue={attention.nextAction} maxLength={500} name="nextAction" />
+                </label>
+                <button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800 hover:border-slate-600" type="submit">Reschedule</button>
+              </form>
+            </div>
+          </>
+        ) : <p className="mt-2 text-sm text-slate-700">Nothing needs attention now. Add a next action or follow-up date below when needed.</p>}
       </section>
 
       <div className="mt-10 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.65fr)]">

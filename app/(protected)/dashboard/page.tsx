@@ -15,6 +15,7 @@ import {
   type DashboardMetricKey,
   type TimeRange,
 } from "@/services/dashboard-analytics";
+import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -118,7 +119,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     applicationTrack: stage ? { is: { currentStage: stage } } : undefined,
   };
   const database = getPrisma();
-  const [opportunities, vendors, recruiters] = await Promise.all([
+  const [opportunities, vendors, recruiters, attentionOpportunities] = await Promise.all([
     database.opportunity.findMany({
       where,
       select: {
@@ -135,8 +136,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     }),
     database.vendor.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     database.recruiter.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    database.opportunity.findMany({
+      select: {
+        id: true,
+        title: true,
+        client: true,
+        vendor: { select: { name: true } },
+        recruiter: { select: { name: true } },
+        applicationTrack: {
+          select: {
+            currentStage: true,
+            waitingOn: true,
+            nextAction: true,
+            nextFollowUpAt: true,
+            attentionClearedAt: true,
+          },
+        },
+        activities: { select: { type: true, occurredAt: true } },
+      },
+    }),
   ]);
   const summary = summarizeDashboard(opportunities, filters.range);
+  const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length;
   const selectedMetric = dashboardMetrics.find((metric) => metric.key === filters.metric)!;
 
   return (
@@ -146,9 +167,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Dashboard</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Marketing funnel</h1>
         </div>
-        <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/jobs/new">
-          Add job
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-medium text-amber-950 hover:border-amber-500" href="/needs-attention">
+            Needs attention ({attentionCount})
+          </Link>
+          <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/jobs/new">
+            Add job
+          </Link>
+        </div>
       </div>
 
       <section aria-label="Time range" className="mt-8 flex flex-wrap gap-2">
