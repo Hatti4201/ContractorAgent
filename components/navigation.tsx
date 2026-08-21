@@ -18,11 +18,12 @@ export function Navigation({ logoutAction }: { logoutAction: () => Promise<void>
             <Link className="hover:text-slate-950" href="/intake">Analyze JD</Link>
             <Link className="hover:text-slate-950" href="/needs-attention">Needs attention</Link>
             <Link className="hover:text-slate-950" href="/jobs">Jobs</Link>
+            <Link className="hover:text-slate-950" href="/resumes">Resumes</Link>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 sm:inline">
-            Phase 4
+            Phase 5
           </span>
           <form action={logoutAction}>
             <button className="text-sm font-medium text-slate-600 hover:text-slate-950" type="submit">

@@ -14,6 +14,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { jobFingerprint, parseJobCase, readReviewedJobCase } from "@/services/job-case";
+import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const stageActivityType: Partial<Record<ApplicationStage, ActivityType>> = {
@@ -119,15 +120,23 @@ async function resolveContacts(
   return { recruiterId, vendorId };
 }
 
+async function automaticResumeId(database: Prisma.TransactionClient, roleFamily: RoleFamily | null, confidence: number) {
+  if (!roleFamily) return null;
+  const route = await buildResumeRoute(roleFamily, confidence, await database.resume.findMany({ where: { roleFamily, active: true } }));
+  return route.recommended?.id ?? null;
+}
+
 export async function createJob(formData: FormData) {
   await requireAuth();
   const data = readJob(formData);
 
   const opportunity = await getPrisma().$transaction(async (database) => {
     const contacts = await resolveContacts(database, data);
+    const selectedResumeId = await automaticResumeId(database, data.roleFamily, 1);
     const initialActivities: Prisma.ActivityCreateWithoutOpportunityInput[] = [
       { type: ActivityType.JOB_CREATED, description: "Opportunity created manually." },
     ];
+    if (selectedResumeId) initialActivities.push({ type: ActivityType.RESUME_SELECTED, description: "Resume selected by deterministic role-family mapping." });
     const initialBusinessEvent = stageActivityType[data.currentStage];
     if (initialBusinessEvent) initialActivities.push({
       type: initialBusinessEvent,
@@ -143,6 +152,7 @@ export async function createJob(formData: FormData) {
         workArrangement: data.workArrangement,
         rawJd: data.rawJd,
         jdFingerprint: data.rawJd ? jobFingerprint(data.rawJd) : null,
+        selectedResumeId,
         ...contacts,
         applicationTrack: {
           create: {
@@ -190,6 +200,9 @@ export async function updateJob(id: string, formData: FormData) {
       employmentType: data.employmentType,
       workArrangement: data.workArrangement,
     } : null;
+    const selectedResumeId = data.roleFamily === existing.roleFamily
+      ? existing.selectedResumeId
+      : await automaticResumeId(database, data.roleFamily, syncedJobCase?.confidence ?? 1);
     await database.opportunity.update({
       where: { id },
       data: {
@@ -202,6 +215,7 @@ export async function updateJob(id: string, formData: FormData) {
         rawJd: data.rawJd,
         ...(syncedJobCase ? { jobCase: syncedJobCase as unknown as Prisma.InputJsonValue } : {}),
         jdFingerprint: data.rawJd ? jobFingerprint(data.rawJd) : null,
+        selectedResumeId,
         ...contacts,
       },
     });
@@ -232,6 +246,11 @@ export async function updateJob(id: string, formData: FormData) {
         description: `Recorded automatically from stage ${data.currentStage}.`,
       });
     }
+    if (existing.selectedResumeId !== selectedResumeId) activityData.push({
+      opportunityId: id,
+      type: ActivityType.RESUME_SELECTED,
+      description: selectedResumeId ? "Resume updated by deterministic role-family mapping." : "Resume selection cleared after the role family changed.",
+    });
     await database.activity.createMany({ data: activityData });
   });
 
@@ -326,6 +345,7 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
       nextAction: null,
       nextFollowUpAt: null,
     });
+    const selectedResumeId = await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
     const created = await database.opportunity.create({
       data: {
         title: reviewed.title,
@@ -337,12 +357,14 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
         rawJd: intake.rawText,
         jobCase: reviewed as unknown as Prisma.InputJsonValue,
         jdFingerprint: intake.fingerprint,
+        selectedResumeId,
         ...contacts,
         applicationTrack: { create: { currentStage: markDuplicate ? ApplicationStage.DUPLICATE : ApplicationStage.DISCOVERED } },
         activities: {
           create: [
             { type: ActivityType.JOB_CREATED, description: "Opportunity created from confirmed AI intake." },
             { type: ActivityType.JD_RECEIVED, description: `JD confirmed from ${intake.sourceType}.` },
+            ...(selectedResumeId ? [{ type: ActivityType.RESUME_SELECTED, description: "Resume selected by deterministic role-family mapping." }] : []),
           ],
         },
       },
@@ -355,6 +377,25 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
   revalidatePath("/needs-attention");
   revalidatePath("/jobs");
   redirect(`/jobs/${opportunity.id}`);
+}
+
+export async function selectResume(id: string, resumeId: string) {
+  await requireAuth();
+  const database = getPrisma();
+  const [job, resume] = await Promise.all([
+    database.opportunity.findUnique({ where: { id }, select: { id: true, roleFamily: true } }),
+    database.resume.findUnique({ where: { id: resumeId } }),
+  ]);
+  if (!job || !resume) throw new Error("Job or resume not found.");
+  if (!job.roleFamily) throw new Error("Confirm the job role family before selecting a resume.");
+  if (!resume.active || !(await checkResumeFile(resume.filePath)).usable) throw new Error("Only an active, readable resume can be selected.");
+
+  await database.$transaction([
+    database.opportunity.update({ where: { id }, data: { selectedResumeId: resume.id } }),
+    database.activity.create({ data: { opportunityId: id, type: ActivityType.RESUME_SELECTED, description: "Resume selected by user review." } }),
+  ]);
+  revalidatePath(`/jobs/${id}`);
+  redirect(`/jobs/${id}#resume-router`);
 }
 
 export async function deleteJob(id: string) {

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { addActivity, completeAttention, deleteJob, rescheduleAttention, updateJob } from "@/app/(protected)/jobs/actions";
+import { addActivity, completeAttention, deleteJob, rescheduleAttention, selectResume, updateJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobForm } from "@/components/delete-job-form";
 import { JobForm } from "@/components/job-form";
 import { requireAuth } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { activityTypes, dateInputValue, formatDate, formatDateTime, formatEnum }
 import { getPrisma } from "@/lib/prisma";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 import { parseJobCase, type JobCase } from "@/services/job-case";
+import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 
 const inputClass =
   "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
@@ -15,15 +16,20 @@ const inputClass =
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAuth();
   const { id } = await params;
-  const job = await getPrisma().opportunity.findUnique({
-    where: { id },
-    include: {
-      applicationTrack: true,
-      recruiter: true,
-      vendor: true,
-      activities: { orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }] },
-    },
-  });
+  const database = getPrisma();
+  const [job, resumes] = await Promise.all([
+    database.opportunity.findUnique({
+      where: { id },
+      include: {
+        applicationTrack: true,
+        recruiter: true,
+        vendor: true,
+        selectedResume: true,
+        activities: { orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }] },
+      },
+    }),
+    database.resume.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }),
+  ]);
   if (!job?.applicationTrack) notFound();
 
   const update = updateJob.bind(null, job.id);
@@ -34,6 +40,10 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const attention = buildAttentionItems([job], new Date(), configuredTimeZone())[0];
   let confirmedCase: JobCase | null = null;
   if (job.jobCase) confirmedCase = parseJobCase(job.jobCase);
+  const roleConfidence = confirmedCase?.confidence ?? (job.roleFamily ? 1 : 0);
+  const resumeRoute = await buildResumeRoute(job.roleFamily, roleConfidence, resumes);
+  const selectedFile = job.selectedResume ? await checkResumeFile(job.selectedResume.filePath) : null;
+  const selectedResumeReady = Boolean(job.selectedResume?.active && selectedFile?.usable);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -81,6 +91,48 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
           </dl>
         </section>
       )}
+
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="resume-router">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><h2 className="text-xl font-semibold text-slate-950">Resume router</h2><p className="mt-1 text-sm text-slate-600">Deterministic registry selection; no AI-generated file paths.</p></div>
+          <Link className="text-sm font-medium text-emerald-700 underline" href="/resumes">Manage registry</Link>
+        </div>
+        <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-3">
+          <div><dt className="font-medium text-slate-500">Confirmed role</dt><dd className="mt-1 font-semibold text-slate-900">{job.roleFamily ? formatEnum(job.roleFamily) : "Not set"}</dd></div>
+          <div><dt className="font-medium text-slate-500">Classification confidence</dt><dd className="mt-1 font-semibold text-slate-900">{Math.round(roleConfidence * 100)}%</dd></div>
+          <div><dt className="font-medium text-slate-500">Routing status</dt><dd className={`mt-1 font-semibold ${selectedResumeReady ? "text-emerald-700" : "text-amber-800"}`}>{selectedResumeReady ? "Ready" : "Needs review"}</dd></div>
+        </dl>
+
+        {job.selectedResume ? (
+          <div className={`mt-5 rounded-xl border p-4 ${selectedResumeReady ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+            <p className="font-semibold text-slate-950">Selected: {job.selectedResume.name} · {job.selectedResume.version}</p>
+            <p className="mt-1 text-sm text-slate-700">{formatEnum(job.selectedResume.roleFamily)}</p>
+            <p className={`mt-2 text-sm font-medium ${selectedResumeReady ? "text-emerald-800" : "text-red-800"}`}>{selectedResumeReady ? "Active file verified and eligible for a future draft." : job.selectedResume.active ? selectedFile?.issue : "Blocked because this resume is inactive."}</p>
+          </div>
+        ) : <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">{resumeRoute.issue ?? "Choose a resume before continuing."}</p>}
+
+        {resumeRoute.recommended && resumeRoute.recommended.id !== job.selectedResumeId && (
+          <form action={selectResume.bind(null, job.id, resumeRoute.recommended.id)} className="mt-5">
+            <button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Use recommended: {resumeRoute.recommended.name} · {resumeRoute.recommended.version}</button>
+          </form>
+        )}
+
+        {(resumeRoute.needsReview || !selectedResumeReady) && (
+          <div className="mt-6">
+            <h3 className="font-semibold text-slate-950">Available candidates</h3>
+            {resumeRoute.candidates.length ? (
+              <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+                {resumeRoute.candidates.map((resume) => (
+                  <li className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 text-sm" key={resume.id}>
+                    <div><p className="font-semibold text-slate-950">{resume.name} · {resume.version}</p><p className="mt-1 text-slate-600">{formatEnum(resume.roleFamily)}{resume.roleFamily === job.roleFamily ? ` · ${Math.round(roleConfidence * 100)}% role confidence` : " · Manual override"}</p></div>
+                    {job.roleFamily && resume.id !== job.selectedResumeId && <form action={selectResume.bind(null, job.id, resume.id)}><button className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 hover:border-slate-500" type="submit">Select</button></form>}
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-3 text-sm text-slate-600">No active, readable resume is available. Add one in the registry.</p>}
+          </div>
+        )}
+      </section>
 
       <section className="mt-8 scroll-mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6" id="attention-actions">
         <h2 className="text-xl font-semibold text-slate-950">Follow-up actions</h2>

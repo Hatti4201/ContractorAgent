@@ -40,6 +40,7 @@ enum ActivityType {
   STAGE_CHANGED
   NOTE
   CORRECTION
+  RESUME_SELECTED
 }
 
 enum EmploymentType {
@@ -93,8 +94,10 @@ model Opportunity {
   jdFingerprint    String?           @map("jd_fingerprint")
   recruiterId      String?           @map("recruiter_id")
   vendorId         String?           @map("vendor_id")
+  selectedResumeId String?           @map("selected_resume_id")
   recruiter        Recruiter?        @relation(fields: [recruiterId], references: [id], onDelete: SetNull)
   vendor           Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  selectedResume   Resume?           @relation(fields: [selectedResumeId], references: [id], onDelete: SetNull)
   applicationTrack ApplicationTrack?
   intake           JobIntake?
   activities       Activity[]
@@ -103,6 +106,7 @@ model Opportunity {
 
   @@index([recruiterId])
   @@index([vendorId])
+  @@index([selectedResumeId])
   @@index([roleFamily])
   @@index([jdFingerprint])
   @@map("opportunities")
@@ -193,6 +197,7 @@ model Resume {
   filePath   String     @map("file_path")
   version    String
   active     Boolean    @default(true)
+  opportunities Opportunity[]
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
