@@ -1,6 +1,7 @@
-import { open, realpath, stat } from "node:fs/promises";
-import { extname, isAbsolute, relative, sep } from "node:path";
+import { open } from "node:fs/promises";
+import { extname } from "node:path";
 import { RoleFamily } from "@/app/generated/prisma/enums";
+import { resolvePrivateFile } from "@/services/private-file";
 
 export const RESUME_CONFIDENCE_THRESHOLD = 0.7;
 
@@ -25,23 +26,13 @@ const signatures: Record<string, (header: Buffer) => boolean> = {
 };
 
 export async function checkResumeFile(filePath: string) {
-  if (!filePath || filePath.length > 4096 || !isAbsolute(filePath)) {
-    return { usable: false, canonicalPath: null, issue: "Use an absolute PDF, DOCX, or DOC path." };
-  }
-
+  const resolved = await resolvePrivateFile(filePath);
+  if (!resolved.usable || !resolved.canonicalPath) return { usable: false, canonicalPath: null, issue: resolved.issue };
   try {
-    const canonicalPath = await realpath(filePath);
-    const workspacePath = await realpath(process.cwd());
-    const workspaceRelativePath = relative(workspacePath, canonicalPath);
-    const outsideWorkspace = workspaceRelativePath === ".." || workspaceRelativePath.startsWith(`..${sep}`) || isAbsolute(workspaceRelativePath);
-    if (!outsideWorkspace) {
-      return { usable: false, canonicalPath: null, issue: "Resume files must stay outside the application repository." };
-    }
-
+    const canonicalPath = resolved.canonicalPath;
     const extension = extname(canonicalPath).toLowerCase();
     const signatureMatches = signatures[extension];
     if (!signatureMatches) return { usable: false, canonicalPath: null, issue: "Only PDF, DOCX, and DOC resumes are supported." };
-    if (!(await stat(canonicalPath)).isFile()) return { usable: false, canonicalPath: null, issue: "The resume path is not a file." };
 
     const handle = await open(canonicalPath, "r");
     try {

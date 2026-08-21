@@ -23,7 +23,7 @@ export function Navigation({ logoutAction }: { logoutAction: () => Promise<void>
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800 sm:inline">
-            Phase 5
+            Phase 6
           </span>
           <form action={logoutAction}>
             <button className="text-sm font-medium text-slate-600 hover:text-slate-950" type="submit">

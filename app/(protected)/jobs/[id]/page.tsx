@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { generateOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
 import { addActivity, completeAttention, deleteJob, rescheduleAttention, selectResume, updateJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobForm } from "@/components/delete-job-form";
 import { JobForm } from "@/components/job-form";
@@ -25,6 +26,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
         recruiter: true,
         vendor: true,
         selectedResume: true,
+        outreachDraft: true,
         activities: { orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }] },
       },
     }),
@@ -44,6 +46,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const resumeRoute = await buildResumeRoute(job.roleFamily, roleConfidence, resumes);
   const selectedFile = job.selectedResume ? await checkResumeFile(job.selectedResume.filePath) : null;
   const selectedResumeReady = Boolean(job.selectedResume?.active && selectedFile?.usable);
+  const outreachConfigured = Boolean(process.env.OUTREACH_CONTEXT_PATH);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -132,6 +135,18 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             ) : <p className="mt-3 text-sm text-slate-600">No active, readable resume is available. Add one in the registry.</p>}
           </div>
         )}
+      </section>
+
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="outreach-draft">
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-slate-950">Outreach email</h2><p className="mt-1 text-sm text-slate-600">Generate a validated preview only; Outlook and sending remain disabled.</p></div>{job.outreachDraft && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{formatEnum(job.outreachDraft.status)}</span>}</div>
+        {job.outreachDraft ? (
+          <Link className="mt-5 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href={`/jobs/${job.id}/outreach`}>Review outreach draft</Link>
+        ) : confirmedCase && selectedResumeReady && job.recruiter?.email && outreachConfigured ? (
+          <form action={generateOutreachDraft.bind(null, job.id)} className="mt-5"><button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Generate validated preview</button></form>
+        ) : (
+          <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">Complete the confirmed JobCase, recruiter email, active Resume, and private `OUTREACH_CONTEXT_PATH` configuration first.</p>
+        )}
+        <p className="mt-3 text-xs text-slate-500">Generation sends confirmed facts and the private approved context to the configured OpenAI API with response storage disabled.</p>
       </section>
 
       <section className="mt-8 scroll-mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6" id="attention-actions">

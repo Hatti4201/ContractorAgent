@@ -41,6 +41,9 @@ enum ActivityType {
   NOTE
   CORRECTION
   RESUME_SELECTED
+  OUTREACH_DRAFT_GENERATED
+  OUTREACH_DRAFT_EDITED
+  OUTREACH_DRAFT_APPROVED
 }
 
 enum EmploymentType {
@@ -81,6 +84,19 @@ enum IntakeStatus {
   CONFIRMED
 }
 
+enum OutreachMode {
+  FIRST_OUTREACH
+  THREAD_FOLLOW_UP
+  DIRECT_EMAIL_REPLY
+  FORWARDED_JD_OUTREACH
+}
+
+enum OutreachDraftStatus {
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+}
+
 model Opportunity {
   id               String            @id @default(cuid())
   title            String
@@ -101,6 +117,7 @@ model Opportunity {
   applicationTrack ApplicationTrack?
   intake           JobIntake?
   activities       Activity[]
+  outreachDraft    OutreachDraft?
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
 
@@ -198,9 +215,33 @@ model Resume {
   version    String
   active     Boolean    @default(true)
   opportunities Opportunity[]
+  outreachDrafts OutreachDraft[]
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
   @@unique([name, version])
   @@map("resumes")
+}
+
+model OutreachDraft {
+  id                 String              @id @default(cuid())
+  opportunityId      String              @unique @map("opportunity_id")
+  mode               OutreachMode
+  toAddress           String              @map("to_address")
+  subject             String
+  body                String
+  attachmentResumeId String              @map("attachment_resume_id")
+  contextFingerprint String              @map("context_fingerprint")
+  validation         Json
+  status             OutreachDraftStatus @default(NEEDS_REVIEW)
+  revision           Int                 @default(1)
+  approvedAt         DateTime?           @map("approved_at")
+  opportunity        Opportunity         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  attachmentResume   Resume              @relation(fields: [attachmentResumeId], references: [id], onDelete: Restrict)
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([attachmentResumeId])
+  @@map("outreach_drafts")
 }

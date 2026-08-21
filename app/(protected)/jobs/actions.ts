@@ -7,6 +7,7 @@ import {
   ApplicationStage,
   EmploymentType,
   IntakeStatus,
+  OutreachDraftStatus,
   RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
@@ -17,6 +18,10 @@ import { jobFingerprint, parseJobCase, readReviewedJobCase } from "@/services/jo
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const outdatedOutreachValidation = {
+  status: "NEEDS_REVIEW",
+  issues: [{ field: "source", severity: "BLOCK", message: "Job or Resume data changed; validate the outreach draft again." }],
+} satisfies Prisma.InputJsonValue;
 const stageActivityType: Partial<Record<ApplicationStage, ActivityType>> = {
   OUTREACH_SENT: ActivityType.OUTREACH_SENT,
   RTR_SIGNED: ActivityType.RTR_SIGNED,
@@ -228,6 +233,10 @@ export async function updateJob(id: string, formData: FormData) {
         nextFollowUpAt: data.nextFollowUpAt,
       },
     });
+    await database.outreachDraft.updateMany({
+      where: { opportunityId: id },
+      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation },
+    });
     const activityData: Prisma.ActivityCreateManyInput[] = [{
       opportunityId: id,
       type: ActivityType.JOB_UPDATED,
@@ -392,6 +401,10 @@ export async function selectResume(id: string, resumeId: string) {
 
   await database.$transaction([
     database.opportunity.update({ where: { id }, data: { selectedResumeId: resume.id } }),
+    database.outreachDraft.updateMany({
+      where: { opportunityId: id },
+      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation },
+    }),
     database.activity.create({ data: { opportunityId: id, type: ActivityType.RESUME_SELECTED, description: "Resume selected by user review." } }),
   ]);
   revalidatePath(`/jobs/${id}`);
