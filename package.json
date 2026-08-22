@@ -16,10 +16,12 @@
     "db:check:phase4": "tsx scripts/check-phase4.ts",
     "db:check:phase5": "tsx scripts/check-phase5.ts",
     "db:check:phase6": "tsx scripts/check-phase6.ts",
+    "db:check:phase7": "tsx scripts/check-phase7.ts",
     "ai:check:phase4": "tsx scripts/check-phase4-ai.ts",
     "ai:check:phase6": "tsx scripts/check-phase6-ai.ts"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.4.3",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "dotenv": "^17.4.2",

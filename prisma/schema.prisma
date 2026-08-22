@@ -44,6 +44,7 @@ enum ActivityType {
   OUTREACH_DRAFT_GENERATED
   OUTREACH_DRAFT_EDITED
   OUTREACH_DRAFT_APPROVED
+  OUTLOOK_DRAFT_CREATED
 }
 
 enum EmploymentType {
@@ -95,6 +96,15 @@ enum OutreachDraftStatus {
   DRAFT
   NEEDS_REVIEW
   APPROVED
+}
+
+enum OutlookDraftState {
+  NOT_CREATED
+  CREATING
+  CREATED
+  FAILED
+  NEEDS_REVIEW
+  SENT
 }
 
 model Opportunity {
@@ -236,12 +246,30 @@ model OutreachDraft {
   status             OutreachDraftStatus @default(NEEDS_REVIEW)
   revision           Int                 @default(1)
   approvedAt         DateTime?           @map("approved_at")
+  outlookState          OutlookDraftState   @default(NOT_CREATED) @map("outlook_state")
+  outlookMessageId      String?             @unique @map("outlook_message_id")
+  outlookWebLink        String?             @map("outlook_web_link")
+  outlookError          String?             @map("outlook_error")
+  outlookDraftRevision  Int?                @map("outlook_draft_revision")
+  outlookDraftCreatedAt DateTime?           @map("outlook_draft_created_at")
+  replySourceMessageId  String?             @map("reply_source_message_id")
+  sentConfirmedAt       DateTime?           @map("sent_confirmed_at")
   opportunity        Opportunity         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   attachmentResume   Resume              @relation(fields: [attachmentResumeId], references: [id], onDelete: Restrict)
   createdAt          DateTime             @default(now()) @map("created_at")
   updatedAt          DateTime             @updatedAt @map("updated_at")
 
   @@index([status])
+  @@index([outlookState])
   @@index([attachmentResumeId])
   @@map("outreach_drafts")
+}
+
+model OutlookConnection {
+  id                  String   @id @default("primary")
+  encryptedTokenCache String   @map("encrypted_token_cache")
+  connectedAt         DateTime @default(now()) @map("connected_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("outlook_connections")
 }

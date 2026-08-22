@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ActivityType, OutreachDraftStatus } from "@/app/generated/prisma/enums";
+import { ActivityType, OutlookDraftState, OutreachDraftStatus } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
@@ -16,6 +16,8 @@ import {
   type OutreachContent,
   type OutreachInput,
 } from "@/services/outreach-agent";
+
+const lockedOutlookStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
 
 function text(formData: FormData, name: string, maximum: number) {
   const value = formData.get(name);
@@ -62,6 +64,13 @@ function draftStatus(validation: Awaited<ReturnType<typeof validateOutreachConte
   return validation.status === "PASS" ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW;
 }
 
+async function requireMutableDraft(id: string) {
+  const draft = await getPrisma().outreachDraft.findUnique({ where: { opportunityId: id }, select: { outlookState: true, outlookMessageId: true } });
+  if (draft && (lockedOutlookStates.has(draft.outlookState) || draft.outlookMessageId)) {
+    throw new Error("The outreach content is locked after Outlook draft creation.");
+  }
+}
+
 async function saveGeneratedDraft(id: string, input: OutreachInput, content: OutreachContent) {
   const validation = await validateOutreachContent(input, content);
   await getPrisma().$transaction([
@@ -89,6 +98,13 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         status: draftStatus(validation),
         approvedAt: null,
         revision: { increment: 1 },
+        outlookState: OutlookDraftState.NOT_CREATED,
+        outlookMessageId: null,
+        outlookWebLink: null,
+        outlookError: null,
+        outlookDraftRevision: null,
+        outlookDraftCreatedAt: null,
+        sentConfirmedAt: null,
       },
     }),
     getPrisma().activity.create({
@@ -99,6 +115,7 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
 
 export async function generateOutreachDraft(id: string) {
   await requireAuth();
+  await requireMutableDraft(id);
   const input = await outreachInput(id);
   const blockers = await outreachBlockingIssues(input);
   if (blockers.length) throw new Error(blockers[0]!.message);
@@ -109,6 +126,7 @@ export async function generateOutreachDraft(id: string) {
 
 export async function saveOutreachDraft(id: string, formData: FormData) {
   await requireAuth();
+  await requireMutableDraft(id);
   const input = await outreachInput(id);
   input.toAddress = text(formData, "toAddress", 320);
   const content = { subject: text(formData, "subject", 300), body: text(formData, "body", 10_000) };
@@ -127,6 +145,13 @@ export async function saveOutreachDraft(id: string, formData: FormData) {
         status: draftStatus(validation),
         approvedAt: null,
         revision: { increment: 1 },
+        outlookState: OutlookDraftState.NOT_CREATED,
+        outlookMessageId: null,
+        outlookWebLink: null,
+        outlookError: null,
+        outlookDraftRevision: null,
+        outlookDraftCreatedAt: null,
+        sentConfirmedAt: null,
       },
     }),
     getPrisma().activity.create({
@@ -140,6 +165,7 @@ export async function saveOutreachDraft(id: string, formData: FormData) {
 
 export async function approveOutreachDraft(id: string) {
   await requireAuth();
+  await requireMutableDraft(id);
   const [input, draft] = await Promise.all([
     outreachInput(id),
     getPrisma().outreachDraft.findUnique({ where: { opportunityId: id } }),
@@ -158,6 +184,8 @@ export async function approveOutreachDraft(id: string) {
         contextFingerprint: outreachContextFingerprint(input.approvedContext),
         status: approved ? OutreachDraftStatus.APPROVED : OutreachDraftStatus.NEEDS_REVIEW,
         approvedAt: approved ? new Date() : null,
+        outlookState: approved ? OutlookDraftState.NOT_CREATED : OutlookDraftState.NEEDS_REVIEW,
+        outlookError: approved ? null : "Outreach validation failed; review the draft before Outlook creation.",
       },
     });
     if (approved) await database.activity.create({

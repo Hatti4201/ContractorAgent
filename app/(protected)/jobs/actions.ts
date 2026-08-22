@@ -7,6 +7,7 @@ import {
   ApplicationStage,
   EmploymentType,
   IntakeStatus,
+  OutlookDraftState,
   OutreachDraftStatus,
   RoleFamily,
   WorkArrangement,
@@ -234,8 +235,8 @@ export async function updateJob(id: string, formData: FormData) {
       },
     });
     await database.outreachDraft.updateMany({
-      where: { opportunityId: id },
-      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation },
+      where: { opportunityId: id, outlookState: { in: [OutlookDraftState.NOT_CREATED, OutlookDraftState.FAILED, OutlookDraftState.NEEDS_REVIEW] }, outlookMessageId: null },
+      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation, outlookState: OutlookDraftState.NEEDS_REVIEW },
     });
     const activityData: Prisma.ActivityCreateManyInput[] = [{
       opportunityId: id,
@@ -402,8 +403,8 @@ export async function selectResume(id: string, resumeId: string) {
   await database.$transaction([
     database.opportunity.update({ where: { id }, data: { selectedResumeId: resume.id } }),
     database.outreachDraft.updateMany({
-      where: { opportunityId: id },
-      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation },
+      where: { opportunityId: id, outlookState: { in: [OutlookDraftState.NOT_CREATED, OutlookDraftState.FAILED, OutlookDraftState.NEEDS_REVIEW] }, outlookMessageId: null },
+      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation, outlookState: OutlookDraftState.NEEDS_REVIEW },
     }),
     database.activity.create({ data: { opportunityId: id, type: ActivityType.RESUME_SELECTED, description: "Resume selected by user review." } }),
   ]);

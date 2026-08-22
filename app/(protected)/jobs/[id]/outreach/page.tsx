@@ -1,19 +1,33 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { approveOutreachDraft, generateOutreachDraft, saveOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
+import { confirmOutlookSent, createOutlookDraft, selectOutlookReplySource } from "@/app/(protected)/jobs/[id]/outlook/actions";
+import { OutlookDraftState, OutreachMode } from "@/app/generated/prisma/enums";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { parseOutreachValidation } from "@/services/outreach-agent";
+import { listOutlookSourceMessages } from "@/services/outlook-graph";
 import { checkResumeFile } from "@/services/resume-router";
 
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
+const replyModes = new Set<OutreachMode>([OutreachMode.DIRECT_EMAIL_REPLY, OutreachMode.THREAD_FOLLOW_UP]);
+const lockedOutlookStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
+
+function safeOutlookLink(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && ["outlook.office.com", "outlook.office365.com", "outlook.live.com"].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`)) ? value : null;
+  } catch { return null; }
+}
 
 export default async function OutreachDraftPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const draft = await getPrisma().outreachDraft.findUnique({
     where: { opportunityId: id },
-    include: { opportunity: true, attachmentResume: true },
+    include: { opportunity: { include: { recruiter: true } }, attachmentResume: true },
   });
   if (!draft) notFound();
   const validation = parseOutreachValidation(draft.validation);
@@ -25,15 +39,27 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
   } catch {}
   const ready = validation.status === "PASS" && attachmentReady && contextReady && draft.status !== "NEEDS_REVIEW";
   const effectiveApproved = draft.status === "APPROVED" && ready;
+  const connected = await outlookConnected();
+  const replyRequired = replyModes.has(draft.mode);
+  const locked = lockedOutlookStates.has(draft.outlookState) || Boolean(draft.outlookMessageId);
+  let sourceCandidates: Awaited<ReturnType<typeof listOutlookSourceMessages>> = [];
+  let sourceLookupFailed = false;
+  if (connected && effectiveApproved && replyRequired && !draft.replySourceMessageId && !locked && draft.opportunity.recruiter?.email) {
+    try { sourceCandidates = await listOutlookSourceMessages(draft.opportunity.recruiter.email, { accessToken: await outlookAccessToken() }); } catch { sourceLookupFailed = true; }
+  }
+  const outlookLink = safeOutlookLink(draft.outlookWebLink);
   const save = saveOutreachDraft.bind(null, id);
   const regenerate = generateOutreachDraft.bind(null, id);
   const approve = approveOutreachDraft.bind(null, id);
+  const selectReplySource = selectOutlookReplySource.bind(null, id);
+  const createExternalDraft = createOutlookDraft.bind(null, id);
+  const confirmSent = confirmOutlookSent.bind(null, id);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-12">
       <Link className="text-sm font-medium text-emerald-700 underline" href={`/jobs/${id}`}>← Back to job</Link>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 6 · Review only</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Outreach email draft</h1><p className="mt-2 text-slate-600">No Outlook draft is created and nothing is sent in this phase.</p></div>
+        <div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 6–7 · Human review</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Outreach email draft</h1><p className="mt-2 text-slate-600">Approval is required before Outlook draft creation; nothing is ever sent automatically.</p></div>
         <span className={`rounded-full px-3 py-1 text-sm font-semibold ${effectiveApproved ? "bg-emerald-50 text-emerald-800" : ready ? "bg-slate-100 text-slate-700" : "bg-amber-50 text-amber-900"}`}>{effectiveApproved ? "Approved" : ready ? "Ready for approval" : "Needs review"}</span>
       </div>
 
@@ -52,17 +78,41 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       </section>
 
       <form action={save} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <label className="block text-sm font-medium text-slate-800">To <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.toAddress} maxLength={320} name="toAddress" required type="email" /></label>
-        <label className="block text-sm font-medium text-slate-800">Subject <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.subject} maxLength={300} name="subject" required /></label>
-        <label className="block text-sm font-medium text-slate-800">Body <span aria-hidden="true" className="text-red-700">*</span><textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={draft.body} maxLength={10_000} name="body" required rows={18} /></label>
-        <button className="rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save and validate</button>
+        <label className="block text-sm font-medium text-slate-800">To <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.toAddress} maxLength={320} name="toAddress" readOnly={locked} required type="email" /></label>
+        <label className="block text-sm font-medium text-slate-800">Subject <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.subject} maxLength={300} name="subject" readOnly={locked} required /></label>
+        <label className="block text-sm font-medium text-slate-800">Body <span aria-hidden="true" className="text-red-700">*</span><textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={draft.body} maxLength={10_000} name="body" readOnly={locked} required rows={18} /></label>
+        {!locked && <button className="rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save and validate</button>}
+        {locked && <p className="text-sm font-medium text-slate-600">Content is locked because an Outlook draft now represents this approved revision.</p>}
       </form>
 
-      <div className="mt-6 flex flex-wrap gap-3">
+      {!locked && <div className="mt-6 flex flex-wrap gap-3">
         <form action={regenerate}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800 hover:border-slate-600" type="submit">Regenerate</button></form>
         <form action={approve}><button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Approve current draft</button></form>
-      </div>
-      <p className="mt-4 text-xs text-slate-500">Generate, save, and approve send the confirmed facts and private approved context to the configured OpenAI API with response storage disabled.</p>
+      </div>}
+      <p className="mt-4 text-xs text-slate-500">Generation, saving, and approval each send confirmed facts and private approved context to the configured OpenAI API with response storage disabled.</p>
+
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 7</p><h2 className="mt-1 text-xl font-semibold text-slate-950">Outlook draft</h2><p className="mt-1 text-sm text-slate-600">Only you can send from Outlook.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{formatEnum(draft.outlookState)}</span></div>
+        {draft.outlookError && <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">{draft.outlookError}</p>}
+        {!connected && <p className="mt-5 text-sm text-slate-700"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> before creating an external draft.</p>}
+
+        {connected && effectiveApproved && replyRequired && !draft.replySourceMessageId && !locked && (
+          <div className="mt-5">
+            <h3 className="font-semibold text-slate-950">Select the original Recruiter message</h3>
+            <p className="mt-1 text-sm text-slate-600">Only messages from the confirmed Recruiter are offered; the application never guesses a thread.</p>
+            {sourceCandidates.length ? <ul className="mt-4 space-y-3">{sourceCandidates.map((message) => <li className="rounded-xl border border-slate-200 p-4" key={message.id}><p className="font-medium text-slate-950">{message.subject}</p><p className="mt-1 text-xs text-slate-500">{formatDateTime(new Date(message.receivedDateTime))} UTC</p><form action={selectReplySource} className="mt-3"><input name="sourceMessageId" type="hidden" value={message.id} /><button className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-medium" type="submit">Use this message</button></form></li>)}</ul> : <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{sourceLookupFailed ? "Reconnect Outlook and try again." : "No recent Inbox message from the confirmed Recruiter was found."}</p>}
+          </div>
+        )}
+        {draft.replySourceMessageId && replyRequired && <p className="mt-5 text-sm font-medium text-emerald-800">Original Outlook message selected and verified.</p>}
+
+        {connected && effectiveApproved && !locked && (!replyRequired || draft.replySourceMessageId) && (
+          <form action={createExternalDraft} className="mt-5"><button className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800" type="submit">Create validated Outlook draft</button></form>
+        )}
+        {draft.outlookState === OutlookDraftState.CREATING && <p className="mt-5 text-sm text-slate-700">Draft creation is in progress. Refresh before retrying.</p>}
+        {draft.outlookState === OutlookDraftState.CREATED && <div className="mt-5 flex flex-wrap items-center gap-3">{outlookLink && <a className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white" href={outlookLink} rel="noreferrer" target="_blank">Open Outlook draft</a>}<form action={confirmSent}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800" type="submit">I sent it — verify in Outlook</button></form></div>}
+        {draft.outlookState === OutlookDraftState.SENT && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Outlook confirmed the message was sent; CRM outreach tracking is updated.</p>}
+        <p className="mt-5 text-xs text-slate-500">Permission: delegated Mail.ReadWrite. Mail.Send is not requested and no send endpoint exists.</p>
+      </section>
     </div>
   );
 }
