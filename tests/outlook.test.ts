@@ -4,8 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { OutreachMode } from "../app/generated/prisma/enums";
+import nextConfig from "../next.config";
 import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "../services/outlook-crypto";
 import { createOutlookMessageDraft, inspectOutlookSentMessage } from "../services/outlook-graph";
+
+test("OAuth callback query parameters are omitted from development logs", () => {
+  const logging = nextConfig.logging;
+  if (!logging || typeof logging !== "object") assert.fail("Request logging must be configured.");
+  const incomingRequests = logging.incomingRequests;
+  if (!incomingRequests || typeof incomingRequests !== "object") assert.fail("Callback logging must use an ignore pattern.");
+  assert.ok(incomingRequests.ignore?.some((pattern) => pattern.test("/api/outlook/callback?code=fictional")));
+  assert.ok(!incomingRequests.ignore?.some((pattern) => pattern.test("/outlook?status=connected")));
+});
 
 test("Outlook cache encryption rejects tampering and Graph creates verified drafts without sending", async () => {
   const encryptionKey = Buffer.alloc(32, 7).toString("base64");
