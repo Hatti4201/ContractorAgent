@@ -6,7 +6,7 @@ import test from "node:test";
 import { OutreachMode } from "../app/generated/prisma/enums";
 import nextConfig from "../next.config";
 import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "../services/outlook-crypto";
-import { createOutlookMessageDraft, inspectOutlookSentMessage } from "../services/outlook-graph";
+import { createOutlookMessageDraft, inspectOutlookSentMessage, listOutlookInboxMessages } from "../services/outlook-graph";
 
 test("OAuth callback query parameters are omitted from development logs", () => {
   const logging = nextConfig.logging;
@@ -15,6 +15,25 @@ test("OAuth callback query parameters are omitted from development logs", () => 
   if (!incomingRequests || typeof incomingRequests !== "object") assert.fail("Callback logging must use an ignore pattern.");
   assert.ok(incomingRequests.ignore?.some((pattern) => pattern.test("/api/outlook/callback?code=fictional")));
   assert.ok(!incomingRequests.ignore?.some((pattern) => pattern.test("/outlook?status=connected")));
+});
+
+test("Outlook Inbox parsing keeps only bounded validated message metadata", async () => {
+  const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer fictional-access-token");
+    return Response.json({ value: [
+      { id: "message-1", subject: "Fictional follow-up", bodyPreview: "Fictional preview.", receivedDateTime: "2026-08-22T12:00:00.000Z", from: { emailAddress: { address: "Recruiter@Example.Invalid" } }, isDraft: false },
+      { id: "draft-1", subject: "Fictional draft", bodyPreview: "Ignored.", receivedDateTime: "2026-08-22T12:00:00.000Z", from: { emailAddress: { address: "recruiter@example.invalid" } }, isDraft: true },
+      { id: "broken-1", subject: "Broken", receivedDateTime: "not-a-date", from: { emailAddress: { address: "recruiter@example.invalid" } }, isDraft: false },
+    ] });
+  }) as typeof fetch;
+  const messages = await listOutlookInboxMessages({ accessToken: "fictional-access-token", fetcher });
+  assert.deepEqual(messages, [{
+    id: "message-1",
+    subject: "Fictional follow-up",
+    preview: "Fictional preview.",
+    fromAddress: "recruiter@example.invalid",
+    receivedAt: new Date("2026-08-22T12:00:00.000Z"),
+  }]);
 });
 
 test("Outlook cache encryption rejects tampering and Graph creates verified drafts without sending", async () => {

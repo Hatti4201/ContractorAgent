@@ -10,6 +10,13 @@ const UPLOAD_CHUNK_BYTES = 12 * 320 * 1024;
 const replyModes = new Set<OutreachMode>([OutreachMode.DIRECT_EMAIL_REPLY, OutreachMode.THREAD_FOLLOW_UP]);
 
 type FetchOptions = { accessToken: string; fetcher?: typeof fetch };
+export type OutlookInboxMessage = {
+  id: string;
+  subject: string;
+  preview: string;
+  fromAddress: string;
+  receivedAt: Date;
+};
 type GraphDraftInput = {
   mode: OutreachMode;
   toAddress: string;
@@ -162,25 +169,41 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
   }
 }
 
-export async function listOutlookSourceMessages(recruiterEmail: string, options: FetchOptions) {
-  // ponytail: recent Inbox mail covers active recruiting threads; add paging only when an older real thread is missed.
-  const path = "/me/mailFolders/inbox/messages?$select=id,subject,receivedDateTime,from,isDraft&$top=50&$orderby=receivedDateTime%20desc";
+function inboxMessage(value: unknown): OutlookInboxMessage {
+  const message = object(value);
+  const from = object(object(message.from).emailAddress);
+  if (message.isDraft !== false) throw new Error("Microsoft Graph returned an invalid Inbox message.");
+  const receivedAt = new Date(requiredString(message.receivedDateTime, "received date", 100));
+  if (Number.isNaN(receivedAt.getTime())) throw new Error("Microsoft Graph received date is invalid.");
+  return {
+    id: requiredString(message.id, "message id"),
+    subject: typeof message.subject === "string" && message.subject ? message.subject.slice(0, 500) : "(No subject)",
+    preview: typeof message.bodyPreview === "string" ? message.bodyPreview.slice(0, 2_000) : "",
+    fromAddress: requiredString(from.address, "sender address", 320).toLowerCase(),
+    receivedAt,
+  };
+}
+
+export async function listOutlookInboxMessages(options: FetchOptions) {
+  // ponytail: the latest 25 messages cover active recruiting follow-ups; add paging after a real miss.
+  const path = "/me/mailFolders/inbox/messages?$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25&$orderby=receivedDateTime%20desc";
   const result = object(await graphRequest(path, { method: "GET" }, options, [200]));
   if (!Array.isArray(result.value)) throw new Error("Microsoft Graph message list is invalid.");
   return result.value.flatMap((value) => {
-    try {
-      const message = object(value);
-      const from = object(object(message.from).emailAddress);
-      if (message.isDraft === true || typeof from.address !== "string" || from.address.toLowerCase() !== recruiterEmail.toLowerCase()) return [];
-      const receivedAt = new Date(requiredString(message.receivedDateTime, "received date", 100));
-      if (Number.isNaN(receivedAt.getTime())) return [];
-      return [{
-        id: requiredString(message.id, "message id"),
-        subject: typeof message.subject === "string" && message.subject ? message.subject.slice(0, 300) : "(No subject)",
-        receivedDateTime: receivedAt.toISOString(),
-      }];
-    } catch { return []; }
-  }).slice(0, 10);
+    try { return [inboxMessage(value)]; } catch { return []; }
+  });
+}
+
+export async function getOutlookInboxMessage(messageIdValue: string, options: FetchOptions) {
+  const path = `/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,subject,bodyPreview,receivedDateTime,from,isDraft`;
+  return inboxMessage(await graphRequest(path, { method: "GET" }, options, [200]));
+}
+
+export async function listOutlookSourceMessages(recruiterEmail: string, options: FetchOptions) {
+  return (await listOutlookInboxMessages(options))
+    .filter((message) => message.fromAddress === recruiterEmail.toLowerCase())
+    .slice(0, 10)
+    .map((message) => ({ id: message.id, subject: message.subject, receivedDateTime: message.receivedAt.toISOString() }));
 }
 
 export async function validateOutlookSourceMessage(messageIdValue: string, recruiterEmail: string, options: FetchOptions) {

@@ -107,6 +107,25 @@ enum OutlookDraftState {
   SENT
 }
 
+enum FollowUpStatus {
+  PENDING
+  FAILED
+  CONFIRMED
+  DISMISSED
+}
+
+enum FollowUpEvent {
+  RECRUITER_REPLY
+  RTR_RECEIVED
+  CLIENT_SUBMISSION
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  OFFER
+  REJECTION
+  ROLE_CLOSED
+  NO_ACTION
+}
+
 model Opportunity {
   id               String            @id @default(cuid())
   title            String
@@ -128,6 +147,7 @@ model Opportunity {
   intake           JobIntake?
   activities       Activity[]
   outreachDraft    OutreachDraft?
+  followUpSuggestions FollowUpSuggestion[]
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
 
@@ -272,4 +292,33 @@ model OutlookConnection {
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("outlook_connections")
+}
+
+model FollowUpSuggestion {
+  id                     String            @id @default(cuid())
+  outlookMessageId       String            @unique @map("outlook_message_id")
+  opportunityId          String?           @map("opportunity_id")
+  status                 FollowUpStatus    @default(PENDING)
+  fromAddress            String            @map("from_address")
+  subject                String
+  receivedAt             DateTime          @map("received_at")
+  event                  FollowUpEvent?
+  proposedActivity       ActivityType?     @map("proposed_activity")
+  proposedStage          ApplicationStage? @map("proposed_stage")
+  proposedWaitingOn      String?           @map("proposed_waiting_on")
+  proposedNextAction     String?           @map("proposed_next_action")
+  proposedNextFollowUpAt DateTime?         @map("proposed_next_follow_up_at")
+  confidence             Float?
+  evidence               Json?
+  error                  String?
+  retryCount             Int               @default(0) @map("retry_count")
+  analyzedAt             DateTime?         @map("analyzed_at")
+  decidedAt              DateTime?         @map("decided_at")
+  opportunity            Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, receivedAt])
+  @@index([opportunityId])
+  @@map("follow_up_suggestions")
 }

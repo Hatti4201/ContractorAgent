@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ApplicationStage,
   EmploymentType,
+  FollowUpStatus,
   RoleFamily,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
@@ -119,7 +120,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     applicationTrack: stage ? { is: { currentStage: stage } } : undefined,
   };
   const database = getPrisma();
-  const [opportunities, vendors, recruiters, attentionOpportunities] = await Promise.all([
+  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount] = await Promise.all([
     database.opportunity.findMany({
       where,
       select: {
@@ -155,9 +156,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         activities: { select: { type: true, occurredAt: true } },
       },
     }),
+    database.followUpSuggestion.count({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.FAILED] } } }),
   ]);
   const summary = summarizeDashboard(opportunities, filters.range);
-  const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length;
+  const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
   const selectedMetric = dashboardMetrics.find((metric) => metric.key === filters.metric)!;
 
   return (

@@ -25,7 +25,7 @@ type AnalyzerOptions = {
   fetcher?: typeof fetch;
 };
 
-function responseText(value: unknown) {
+export function responseText(value: unknown) {
   if (!value || typeof value !== "object") return null;
   const data = value as { output_text?: unknown; output?: unknown };
   if (typeof data.output_text === "string") return data.output_text;

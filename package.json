@@ -17,6 +17,7 @@
     "db:check:phase5": "tsx scripts/check-phase5.ts",
     "db:check:phase6": "tsx scripts/check-phase6.ts",
     "db:check:phase7": "tsx scripts/check-phase7.ts",
+    "db:check:phase8": "tsx scripts/check-phase8.ts",
     "ai:check:phase4": "tsx scripts/check-phase4-ai.ts",
     "ai:check:phase6": "tsx scripts/check-phase6-ai.ts"
   },
