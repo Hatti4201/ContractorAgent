@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { updateRecruiter } from "@/app/(protected)/recruiters/actions";
+import { deleteRecruiter, mergeRecruiter, updateRecruiter } from "@/app/(protected)/recruiters/actions";
+import { DeleteRecruiterForm } from "@/components/delete-job-form";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
@@ -8,6 +9,9 @@ import { getPrisma } from "@/lib/prisma";
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 const errors: Record<string, string> = {
   fields: "A name is required and the email must be a valid address.",
+  "in-use": "This recruiter still has linked opportunities. Merge them into another recruiter first, or move them by editing each job.",
+  "merge-target": "Choose a different recruiter to merge into.",
+  "merge-failed": "The merge did not run and nothing changed. Reload the directory and try again.",
   linkedin: "The profile link must be a full https:// URL.",
   "email-taken": "Another recruiter already uses that email address.",
 };
@@ -34,6 +38,12 @@ export default async function RecruiterPage({
     },
   });
   if (!recruiter) notFound();
+
+  const others = await database.recruiter.findMany({
+    where: { id: { not: id } },
+    select: { id: true, name: true, email: true },
+    orderBy: { name: "asc" },
+  });
 
   // Suggestions are matched by sender address, so a recruiter without an email has none to show.
   const suggestions = recruiter.email
@@ -124,6 +134,30 @@ export default async function RecruiterPage({
               </table>
             </div>
           ) : <p className="p-10 text-center text-slate-600">No opportunity is linked to this recruiter.</p>}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-950">Merge or remove</h2>
+        <p className="mt-1 text-sm text-slate-600">Merging moves every linked job to the other recruiter, fills only their empty contact fields, keeps anything it cannot carry in their notes, and records a correction on each moved job. It cannot be undone.</p>
+        {others.length ? (
+          <form action={mergeRecruiter.bind(null, recruiter.id)} className="mt-5 flex flex-wrap items-end gap-3">
+            <label className="text-sm font-medium text-slate-800">
+              Merge this recruiter into
+              <select className={`${inputClass} min-w-72`} name="targetId" required>
+                {others.map((other) => <option key={other.id} value={other.id}>{other.name}{other.email ? ` · ${other.email}` : ""}</option>)}
+              </select>
+            </label>
+            <button className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-2.5 font-medium text-amber-950 hover:border-amber-600" type="submit">
+              Merge and delete this record
+            </button>
+          </form>
+        ) : <p className="mt-5 text-sm text-slate-600">No other recruiter exists to merge into.</p>}
+
+        <div className="mt-6 border-t border-slate-200 pt-6">
+          {recruiter.opportunities.length ? (
+            <p className="text-sm text-slate-600">Deleting is blocked while {recruiter.opportunities.length} {recruiter.opportunities.length === 1 ? "job is" : "jobs are"} linked, because that would silently leave them without a recruiter.</p>
+          ) : <DeleteRecruiterForm action={deleteRecruiter.bind(null, recruiter.id)} />}
         </div>
       </section>
 

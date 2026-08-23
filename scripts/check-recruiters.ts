@@ -2,6 +2,7 @@ import "dotenv/config";
 import assert from "node:assert/strict";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
 import { resolveContacts } from "@/services/contacts";
+import { mergeRecruiterRecords } from "@/services/recruiter-merge";
 
 class RollbackCheck extends Error {}
 
@@ -74,13 +75,29 @@ async function main() {
       assert.equal(listed.opportunities.length, 1, "The directory must reach the recruiter's linked opportunities.");
       assert.equal(listed.opportunities[0]?.applicationTrack?.currentStage, "DISCOVERED");
       assert.equal(listed.vendor?.name, ALPHA, "The directory must reach the recruiter's vendor.");
+
+      const strayJob = await database.opportunity.create({
+        data: { title: "Fictional Stray Role", recruiterId: otherVendor.recruiterId, applicationTrack: { create: {} } },
+      });
+      const movedCount = await mergeRecruiterRecords(database, otherVendor.recruiterId!, first.recruiterId!);
+      assert.equal(movedCount, 1);
+      assert.equal(await database.recruiter.count({ where: { id: otherVendor.recruiterId! } }), 0, "The merged record must be gone.");
+      const rehomed = await database.opportunity.findUniqueOrThrow({
+        where: { id: strayJob.id },
+        include: { activities: true },
+      });
+      assert.equal(rehomed.recruiterId, first.recruiterId, "A merged job must follow the surviving recruiter, not become orphaned.");
+      assert.ok(
+        rehomed.activities.some((activity) => activity.type === "CORRECTION" && activity.description.includes("merged")),
+        "Every moved job must keep an explainable correction record.",
+      );
       throw new RollbackCheck();
     });
   } catch (error) {
     if (!(error instanceof RollbackCheck)) throw error;
   }
 
-  console.log("Recruiter directory check passed: name + vendor deduplicates without clearing known contact details, and profile fields plus linked jobs resolve; sample transaction rolled back.");
+  console.log("Recruiter directory check passed: deduplication, profile fields, linked jobs, and merge with correction records all hold; sample transaction rolled back.");
 }
 
 main()

@@ -26,3 +26,13 @@ export function DeleteResumeForm({ action }: { action: () => Promise<void> }) {
     </form>
   );
 }
+
+export function DeleteRecruiterForm({ action }: { action: () => Promise<void> }) {
+  return (
+    <form action={action} onSubmit={(event) => {
+      if (!window.confirm("Delete this recruiter? Their contact details cannot be recovered.")) event.preventDefault();
+    }}>
+      <button className="text-sm font-medium text-red-700 underline hover:text-red-900" type="submit">Delete recruiter</button>
+    </form>
+  );
+}
