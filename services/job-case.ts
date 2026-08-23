@@ -318,14 +318,38 @@ function formText(formData: FormData, name: keyof JobCase, maximum: number, requ
   return cleaned || null;
 }
 
+const factFields = [
+  ["rate", "Rate", 200],
+  ["yearsRequired", "Years required", 200],
+  ["visaRequirement", "Visa", 500],
+  ["localRequirement", "Local", 500],
+  ["relocationRequirement", "Relocation", 500],
+  ["clearanceRequirement", "Clearance", 500],
+] as const;
+
+// The analysis fields a human may correct after confirmation. Confidence, warnings and evidence stay
+// untouched: they record what the model reported, and rewriting them would fabricate the audit trail.
+export function readJobCaseFacts(formData: FormData, original: JobCase): JobCase {
+  return {
+    ...original,
+    ...Object.fromEntries(factFields.map(([name, , maximum]) => [name, formText(formData, name, maximum)])),
+    requiredSkills: (formText(formData, "requiredSkills", 5000) ?? "")
+      .split(/[\n,]/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 50),
+  };
+}
+
+export function jobCaseFactChanges(before: JobCase, after: JobCase) {
+  const changed: string[] = factFields.flatMap(([name, label]) => (before[name] ?? "") === (after[name] ?? "") ? [] : [label]);
+  if (before.requiredSkills.join("\u0000") !== after.requiredSkills.join("\u0000")) changed.push("Required skills");
+  return changed;
+}
+
 export function readReviewedJobCase(formData: FormData, original: JobCase): JobCase & { title: string } {
   const recruiterEmail = formText(formData, "recruiterEmail", 320);
   if (recruiterEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recruiterEmail)) throw new Error("Recruiter email is invalid.");
-  const requiredSkills = (formText(formData, "requiredSkills", 5000) ?? "")
-    .split(/[\n,]/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .slice(0, 50);
   const selected = <T extends string>(name: keyof JobCase, allowed: readonly T[], fallback: T) => {
     const value = formData.get(name);
     return typeof value === "string" && allowed.includes(value as T) ? value as T : fallback;
@@ -333,7 +357,7 @@ export function readReviewedJobCase(formData: FormData, original: JobCase): JobC
   const roleValue = formData.get("roleFamily");
 
   return {
-    ...original,
+    ...readJobCaseFacts(formData, original),
     title: formText(formData, "title", 200, true)!,
     client: formText(formData, "client", 200),
     vendor: formText(formData, "vendor", 200),
@@ -343,13 +367,6 @@ export function readReviewedJobCase(formData: FormData, original: JobCase): JobC
     location: formText(formData, "location", 200),
     workArrangement: selected("workArrangement", Object.values(WorkArrangement), WorkArrangement.UNKNOWN),
     employmentType: selected("employmentType", Object.values(EmploymentType), EmploymentType.UNKNOWN),
-    rate: formText(formData, "rate", 200),
-    yearsRequired: formText(formData, "yearsRequired", 200),
-    requiredSkills,
-    visaRequirement: formText(formData, "visaRequirement", 500),
-    localRequirement: formText(formData, "localRequirement", 500),
-    relocationRequirement: formText(formData, "relocationRequirement", 500),
-    clearanceRequirement: formText(formData, "clearanceRequirement", 500),
     roleFamily: typeof roleValue === "string" && Object.values(RoleFamily).includes(roleValue as RoleFamily) ? roleValue as RoleFamily : null,
   };
 }

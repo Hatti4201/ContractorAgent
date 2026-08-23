@@ -69,13 +69,13 @@ export async function createRecruiter(formData: FormData) {
 export async function updateRecruiter(id: string, formData: FormData) {
   await requireAuth();
   const parsed = readRecruiter(formData);
-  if (parsed.error) redirect(`/recruiters/${id}?error=${parsed.error}`);
+  if (parsed.error) redirect(`/recruiters/${id}?edit=1&error=${parsed.error}`);
   const { vendorName, ...input } = parsed.value;
 
   const database = getPrisma();
   if (!await database.recruiter.count({ where: { id } })) redirect("/recruiters?error=missing");
   // One email must stay one recruiter, or the directory splits the same person again.
-  if (input.email && await emailTaken(input.email, id)) redirect(`/recruiters/${id}?error=email-taken`);
+  if (input.email && await emailTaken(input.email, id)) redirect(`/recruiters/${id}?edit=1&error=email-taken`);
 
   await database.$transaction(async (transaction) => {
     await transaction.recruiter.update({

@@ -16,7 +16,7 @@ import {
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { jobFingerprint, parseJobCase, readReviewedJobCase } from "@/services/job-case";
+import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
 import { resolveContacts } from "@/services/contacts";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 
@@ -348,6 +348,32 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
   revalidatePath("/needs-attention");
   revalidatePath("/jobs");
   redirect(`/jobs/${opportunity.id}`);
+}
+
+export async function updateJobCase(id: string, formData: FormData) {
+  await requireAuth();
+  await getPrisma().$transaction(async (database) => {
+    const job = await database.opportunity.findUnique({ where: { id }, select: { jobCase: true } });
+    if (!job?.jobCase) throw new Error("This job has no confirmed JobCase to correct.");
+    const original = parseJobCase(job.jobCase);
+    const corrected = readJobCaseFacts(formData, original);
+    const changes = jobCaseFactChanges(original, corrected);
+    if (!changes.length) return;
+
+    await database.opportunity.update({ where: { id }, data: { jobCase: corrected as unknown as Prisma.InputJsonValue } });
+    await database.outreachDraft.updateMany({
+      where: { opportunityId: id, outlookState: { in: [OutlookDraftState.NOT_CREATED, OutlookDraftState.FAILED, OutlookDraftState.NEEDS_REVIEW] }, outlookMessageId: null },
+      data: { status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation, outlookState: OutlookDraftState.NEEDS_REVIEW },
+    });
+    // A corrected fact is a correction of the record, not a silent overwrite of what the analysis said.
+    await database.activity.create({
+      data: { opportunityId: id, type: ActivityType.CORRECTION, description: `Confirmed JobCase corrected by the user: ${changes.join(", ")}.` },
+    });
+  });
+
+  revalidatePath(`/jobs/${id}`);
+  revalidatePath(`/jobs/${id}/outreach`);
+  redirect(`/jobs/${id}#job-case`);
 }
 
 export async function selectResume(id: string, resumeId: string) {

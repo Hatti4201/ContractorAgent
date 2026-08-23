@@ -11,8 +11,10 @@ import { analyzeJobText } from "../services/job-analyzer";
 import {
   addRequiredReviewWarnings,
   findDuplicateMatches,
+  jobCaseFactChanges,
   jobFingerprint,
   parseJobCase,
+  readJobCaseFacts,
   type JobCase,
 } from "../services/job-case";
 
@@ -149,4 +151,42 @@ test("analyzer requests strict non-stored output and validates the response", as
   assert.equal(requestBody.store, false);
   assert.equal(requestBody.model, "test-model");
   assert.equal((requestBody.text as { format?: { strict?: boolean } }).format?.strict, true);
+});
+
+test("correcting a JobCase edits only facts and reports exactly what changed", () => {
+  const original: JobCase = {
+    title: "Java Engineer", client: null, vendor: null, recruiterName: "Pat", recruiterEmail: "pat@example.invalid",
+    recruiterPhone: null, location: "Remote", workArrangement: WorkArrangement.REMOTE, employmentType: EmploymentType.W2,
+    rate: "$65/hour", yearsRequired: "5+ years", requiredSkills: ["Java", "React"], visaRequirement: null,
+    localRequirement: null, relocationRequirement: null, clearanceRequirement: null, roleFamily: RoleFamily.JAVA_BACKEND,
+    confidence: 0.98,
+    warnings: [{ field: "rate", severity: "NEEDS_REVIEW", message: "Rate needs review.", evidence: null }],
+    evidence: [{ field: "rate", quote: "$65/hour" }],
+  };
+
+  const form = new FormData();
+  form.set("rate", "$70/hour");
+  form.set("yearsRequired", "5+ years");
+  form.set("visaRequirement", "H1B transfer accepted");
+  form.set("requiredSkills", "Java\nReact");
+  const corrected = readJobCaseFacts(form, original);
+
+  assert.equal(corrected.rate, "$70/hour");
+  assert.equal(corrected.visaRequirement, "H1B transfer accepted");
+  assert.equal(corrected.clearanceRequirement, null, "A field left blank is cleared, not silently kept.");
+  assert.deepEqual(corrected.requiredSkills, ["Java", "React"]);
+
+  // The model's own report must survive a human correction untouched.
+  assert.equal(corrected.confidence, 0.98);
+  assert.deepEqual(corrected.warnings, original.warnings);
+  assert.deepEqual(corrected.evidence, original.evidence);
+  assert.equal(corrected.title, "Java Engineer", "Identity fields are not owned by this form.");
+  assert.equal(corrected.recruiterEmail, "pat@example.invalid");
+
+  assert.deepEqual(jobCaseFactChanges(original, corrected), ["Rate", "Visa"]);
+  assert.deepEqual(jobCaseFactChanges(original, original), [], "An unchanged record reports no correction.");
+  assert.deepEqual(
+    jobCaseFactChanges(original, { ...original, requiredSkills: ["Java"] }),
+    ["Required skills"],
+  );
 });

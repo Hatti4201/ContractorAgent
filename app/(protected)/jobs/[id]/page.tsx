@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { generateOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
-import { addActivity, completeAttention, deleteJob, rescheduleAttention, selectResume, updateJob } from "@/app/(protected)/jobs/actions";
+import { addActivity, completeAttention, deleteJob, rescheduleAttention, selectResume, updateJob, updateJobCase } from "@/app/(protected)/jobs/actions";
 import { DeleteJobForm } from "@/components/delete-job-form";
 import { GenerateOutreachButton } from "@/components/generate-outreach-button";
 import { JobForm } from "@/components/job-form";
@@ -15,9 +15,10 @@ import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 const inputClass =
   "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 
-export default async function JobDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ outreachError?: string }> }) {
+export default async function JobDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ outreachError?: string; edit?: string }> }) {
   await requireAuth();
-  const [{ id }, { outreachError }] = await Promise.all([params, searchParams]);
+  const [{ id }, { outreachError, edit }] = await Promise.all([params, searchParams]);
+  const editingCase = edit === "case";
   const database = getPrisma();
   const [job, resumes] = await Promise.all([
     database.opportunity.findUnique({
@@ -86,23 +87,45 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
       </section>
 
       {confirmedCase && (
-        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-950">Confirmed JobCase</h2>
-          <p className="mt-1 text-sm text-slate-600">AI-extracted facts reviewed and confirmed by the user.</p>
-          <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Rate", confirmedCase.rate],
-              ["Years required", confirmedCase.yearsRequired],
-              ["Visa", confirmedCase.visaRequirement],
-              ["Local", confirmedCase.localRequirement],
-              ["Relocation", confirmedCase.relocationRequirement],
-              ["Clearance", confirmedCase.clearanceRequirement],
-              ["Required skills", confirmedCase.requiredSkills.join(", ") || null],
-              ["Analysis confidence", `${Math.round(confirmedCase.confidence * 100)}%`],
-            ].map(([label, value]) => (
-              <div key={label}><dt className="font-medium text-slate-500">{label}</dt><dd className="mt-1 text-slate-900">{value ?? "Unknown"}</dd></div>
-            ))}
-          </dl>
+        <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="job-case">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-950">Confirmed JobCase</h2>
+              <p className="mt-1 text-sm text-slate-600">AI-extracted facts reviewed and confirmed by the user.</p>
+            </div>
+            {editingCase
+              ? <Link className="text-sm font-medium text-slate-600 underline" href={`/jobs/${job.id}#job-case`}>Cancel</Link>
+              : <Link aria-label="Edit confirmed JobCase" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500" href={`/jobs/${job.id}?edit=case#job-case`} title="Edit confirmed JobCase">✏️ Edit</Link>}
+          </div>
+
+          {editingCase ? (
+            <form action={updateJobCase.bind(null, job.id)} className="mt-5 grid gap-5 md:grid-cols-2">
+              <label className="text-sm font-medium text-slate-800">Rate<input className={inputClass} defaultValue={confirmedCase.rate ?? ""} maxLength={200} name="rate" /></label>
+              <label className="text-sm font-medium text-slate-800">Years required<input className={inputClass} defaultValue={confirmedCase.yearsRequired ?? ""} maxLength={200} name="yearsRequired" /></label>
+              <label className="text-sm font-medium text-slate-800">Visa / work authorization<input className={inputClass} defaultValue={confirmedCase.visaRequirement ?? ""} maxLength={500} name="visaRequirement" /></label>
+              <label className="text-sm font-medium text-slate-800">Local candidate<input className={inputClass} defaultValue={confirmedCase.localRequirement ?? ""} maxLength={500} name="localRequirement" /></label>
+              <label className="text-sm font-medium text-slate-800">Relocation<input className={inputClass} defaultValue={confirmedCase.relocationRequirement ?? ""} maxLength={500} name="relocationRequirement" /></label>
+              <label className="text-sm font-medium text-slate-800">Clearance<input className={inputClass} defaultValue={confirmedCase.clearanceRequirement ?? ""} maxLength={500} name="clearanceRequirement" /></label>
+              <label className="text-sm font-medium text-slate-800 md:col-span-2">Required skills, one per line<textarea className={inputClass} defaultValue={confirmedCase.requiredSkills.join("\n")} maxLength={5000} name="requiredSkills" rows={5} /></label>
+              <p className="text-xs text-slate-500 md:col-span-2">Title, client, location, role family and recruiter are edited under Edit job. Analysis confidence and the model&apos;s evidence stay as reported. Saving records a correction and sends any unsent outreach draft back for review.</p>
+              <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save corrections</button>
+            </form>
+          ) : (
+            <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ["Rate", confirmedCase.rate],
+                ["Years required", confirmedCase.yearsRequired],
+                ["Visa", confirmedCase.visaRequirement],
+                ["Local", confirmedCase.localRequirement],
+                ["Relocation", confirmedCase.relocationRequirement],
+                ["Clearance", confirmedCase.clearanceRequirement],
+                ["Required skills", confirmedCase.requiredSkills.join(", ") || null],
+                ["Analysis confidence", `${Math.round(confirmedCase.confidence * 100)}%`],
+              ].map(([label, value]) => (
+                <div key={label}><dt className="font-medium text-slate-500">{label}</dt><dd className="mt-1 text-slate-900">{value ?? "Unknown"}</dd></div>
+              ))}
+            </dl>
+          )}
         </section>
       )}
 

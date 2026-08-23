@@ -21,11 +21,12 @@ export default async function RecruiterPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; saved?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; edit?: string }>;
 }) {
   await requireAuth();
   const { id } = await params;
-  const { error, saved } = await searchParams;
+  const { error, saved, edit } = await searchParams;
+  const editing = edit === "1";
   const database = getPrisma();
   const recruiter = await database.recruiter.findUnique({
     where: { id },
@@ -69,38 +70,61 @@ export default async function RecruiterPage({
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{errors[error] ?? "Update failed."}</p>}
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-950">Contact details</h2>
-        <form action={updateRecruiter.bind(null, recruiter.id)} className="mt-5 grid gap-5 md:grid-cols-2">
-          <label className="text-sm font-medium text-slate-800">
-            Name <span aria-hidden="true" className="text-red-700">*</span>
-            <input className={inputClass} defaultValue={recruiter.name} maxLength={200} name="name" required />
-          </label>
-          <label className="text-sm font-medium text-slate-800">
-            Vendor
-            <input className={inputClass} defaultValue={recruiter.vendor?.name ?? ""} maxLength={200} name="vendorName" />
-          </label>
-          <label className="text-sm font-medium text-slate-800">
-            Email
-            <input className={inputClass} defaultValue={recruiter.email ?? ""} maxLength={320} name="email" type="email" />
-          </label>
-          <label className="text-sm font-medium text-slate-800">
-            Phone
-            <input className={inputClass} defaultValue={recruiter.phone ?? ""} maxLength={80} name="phone" type="tel" />
-          </label>
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">
-            LinkedIn or profile URL
-            <input className={inputClass} defaultValue={recruiter.linkedinUrl ?? ""} maxLength={500} name="linkedinUrl" placeholder="https://www.linkedin.com/in/…" type="url" />
-          </label>
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">
-            Notes
-            <textarea className={inputClass} defaultValue={recruiter.notes ?? ""} maxLength={2000} name="notes" rows={4} />
-          </label>
-          <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save recruiter</button>
-        </form>
-        {recruiter.linkedinUrl && (
-          <p className="mt-5 border-t border-slate-200 pt-5 text-sm">
-            <a className="font-medium text-emerald-700 underline" href={recruiter.linkedinUrl} rel="noreferrer noopener" target="_blank">Open saved profile link</a>
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <h2 className="text-xl font-semibold text-slate-950">Contact details</h2>
+          {editing
+            ? <Link className="text-sm font-medium text-slate-600 underline" href={`/recruiters/${recruiter.id}`}>Cancel</Link>
+            : <Link aria-label="Edit contact details" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500" href={`/recruiters/${recruiter.id}?edit=1`} title="Edit contact details">✏️ Edit</Link>}
+        </div>
+
+        {editing ? (
+          <form action={updateRecruiter.bind(null, recruiter.id)} className="mt-5 grid gap-5 md:grid-cols-2">
+            <label className="text-sm font-medium text-slate-800">
+              Name <span aria-hidden="true" className="text-red-700">*</span>
+              <input className={inputClass} defaultValue={recruiter.name} maxLength={200} name="name" required />
+            </label>
+            <label className="text-sm font-medium text-slate-800">
+              Vendor
+              <input className={inputClass} defaultValue={recruiter.vendor?.name ?? ""} maxLength={200} name="vendorName" />
+            </label>
+            <label className="text-sm font-medium text-slate-800">
+              Email
+              <input className={inputClass} defaultValue={recruiter.email ?? ""} maxLength={320} name="email" type="email" />
+            </label>
+            <label className="text-sm font-medium text-slate-800">
+              Phone
+              <input className={inputClass} defaultValue={recruiter.phone ?? ""} maxLength={80} name="phone" type="tel" />
+            </label>
+            <label className="text-sm font-medium text-slate-800 md:col-span-2">
+              LinkedIn or profile URL
+              <input className={inputClass} defaultValue={recruiter.linkedinUrl ?? ""} maxLength={500} name="linkedinUrl" placeholder="https://www.linkedin.com/in/…" type="url" />
+            </label>
+            <label className="text-sm font-medium text-slate-800 md:col-span-2">
+              Notes
+              <textarea className={inputClass} defaultValue={recruiter.notes ?? ""} maxLength={2000} name="notes" rows={4} />
+            </label>
+            <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save recruiter</button>
+          </form>
+        ) : (
+          <>
+            <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+              <div><dt className="font-medium text-slate-500">Vendor</dt><dd className="mt-1 text-slate-900">{recruiter.vendor?.name ?? "Not set"}</dd></div>
+              <div><dt className="font-medium text-slate-500">Email</dt><dd className="mt-1 break-all text-slate-900">{recruiter.email ?? "Not set"}</dd></div>
+              <div><dt className="font-medium text-slate-500">Phone</dt><dd className="mt-1 text-slate-900">{recruiter.phone ?? "Not set"}</dd></div>
+              <div>
+                <dt className="font-medium text-slate-500">Profile</dt>
+                <dd className="mt-1 break-all text-slate-900">
+                  {recruiter.linkedinUrl
+                    ? <a className="font-medium text-emerald-700 underline" href={recruiter.linkedinUrl} rel="noreferrer noopener" target="_blank">{recruiter.linkedinUrl}</a>
+                    : "Not set"}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-5 border-t border-slate-200 pt-5">
+              <p className="text-sm font-medium text-slate-500">Notes</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{recruiter.notes ?? "No notes."}</p>
+            </div>
+          </>
         )}
       </section>
 
