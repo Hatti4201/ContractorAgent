@@ -1,7 +1,7 @@
-import { JobSourceType } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { isAuthenticated } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
+import { detectIntakeSource } from "@/services/intake-source";
 import { analyzeJobText } from "@/services/job-analyzer";
 import { jobFingerprint } from "@/services/job-case";
 
@@ -29,18 +29,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const sourceType = typeof input.sourceType === "string" && Object.values(JobSourceType).includes(input.sourceType as JobSourceType)
-      ? input.sourceType as JobSourceType
-      : null;
-    if (!sourceType) throw new IntakeInputError("Invalid source type.");
     const rawText = text(input.rawText, 50_000, true)!;
-    const originalSender = text(input.originalSender, 500);
-    const attachments = Array.isArray(input.attachments)
-      ? input.attachments.map((item) => text(item, 255, true)!).slice(0, 20)
-      : [];
-    if (Array.isArray(input.attachments) && input.attachments.length > 20) throw new IntakeInputError("Too many attachments.");
-    const receivedAt = input.receivedAt ? new Date(String(input.receivedAt)) : new Date();
-    if (Number.isNaN(receivedAt.getTime())) throw new IntakeInputError("Invalid received date.");
+    // The source facts are derived here, never supplied by the caller, and stay correctable on review.
+    const { sourceType, originalSender, receivedAt } = detectIntakeSource(rawText);
 
     const analysis = await analyzeJobText({ sourceType, rawText, originalSender });
     const intake = await getPrisma().jobIntake.create({
@@ -49,7 +40,6 @@ export async function POST(request: Request) {
         rawText,
         originalSender,
         receivedAt,
-        ...(attachments.length ? { attachmentMetadata: attachments } : {}),
         analysis: analysis as unknown as Prisma.InputJsonValue,
         fingerprint: jobFingerprint(rawText),
       },

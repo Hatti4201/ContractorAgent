@@ -7,6 +7,7 @@ import {
   ApplicationStage,
   EmploymentType,
   IntakeStatus,
+  JobSourceType,
   OutlookDraftState,
   OutreachDraftStatus,
   RoleFamily,
@@ -298,6 +299,12 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
     if ((reviewed.recruiterEmail || reviewed.recruiterPhone) && !reviewed.recruiterName) {
       throw new Error("Recruiter name is required with contact details.");
     }
+    // Detected source facts are only proposals until this confirmation records the reviewed values.
+    const source = {
+      sourceType: enumValue(formData.get("sourceType"), Object.values(JobSourceType), intake.sourceType),
+      originalSender: text(formData, "originalSender", 500),
+      receivedAt: dateTimeValue(formData.get("receivedAt")),
+    };
     const claimed = await database.jobIntake.updateMany({
       where: { id, status: IntakeStatus.PENDING },
       data: { status: IntakeStatus.CONFIRMED, confirmedAt: new Date() },
@@ -327,13 +334,13 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
         activities: {
           create: [
             { type: ActivityType.JOB_CREATED, description: "Opportunity created from confirmed AI intake." },
-            { type: ActivityType.JD_RECEIVED, description: `JD confirmed from ${intake.sourceType}.` },
+            { type: ActivityType.JD_RECEIVED, description: `JD confirmed from ${source.sourceType}.` },
             ...(selectedResumeId ? [{ type: ActivityType.RESUME_SELECTED, description: "Resume selected by deterministic role-family mapping." }] : []),
           ],
         },
       },
     });
-    await database.jobIntake.update({ where: { id }, data: { opportunityId: created.id } });
+    await database.jobIntake.update({ where: { id }, data: { opportunityId: created.id, ...source } });
     return created;
   });
 

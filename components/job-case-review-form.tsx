@@ -1,6 +1,8 @@
+import type { JobSourceType } from "@/app/generated/prisma/enums";
 import {
   employmentTypes,
   formatEnum,
+  jobSourceTypes,
   roleFamilies,
   workArrangements,
 } from "@/lib/job-values";
@@ -11,17 +13,38 @@ const inputClass =
 
 export function JobCaseReviewForm({
   jobCase,
+  source,
   confirmAction,
   duplicateAction,
   hasDuplicates,
 }: {
   jobCase: JobCase;
+  source: { sourceType: JobSourceType; originalSender: string | null; receivedAt: Date };
   confirmAction: (formData: FormData) => void | Promise<void>;
   duplicateAction: (formData: FormData) => void | Promise<void>;
   hasDuplicates: boolean;
 }) {
   return (
     <form action={confirmAction} className="space-y-8">
+      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
+        <legend className="px-2 text-lg font-semibold text-slate-950">Source</legend>
+        <p className="text-sm text-slate-600 md:col-span-2">Detected from the pasted text. Source type and sender decide which recipient the outreach validator will accept, so correct them here if the detection missed.</p>
+        <label className="text-sm font-medium text-slate-800">
+          Source type
+          <select className={inputClass} defaultValue={source.sourceType} name="sourceType">
+            {jobSourceTypes.map((value) => <option key={value} value={value}>{formatEnum(value)}</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-slate-800">
+          Received at (UTC)
+          <input className={inputClass} defaultValue={source.receivedAt.toISOString().slice(0, 16)} name="receivedAt" type="datetime-local" />
+        </label>
+        <label className="text-sm font-medium text-slate-800 md:col-span-2">
+          Who sent this to you
+          <input className={inputClass} defaultValue={source.originalSender ?? ""} maxLength={500} name="originalSender" placeholder="Leave blank when unknown" />
+        </label>
+      </fieldset>
+
       <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
         <legend className="px-2 text-lg font-semibold text-slate-950">Confirmed opportunity facts</legend>
         <label className="text-sm font-medium text-slate-800">

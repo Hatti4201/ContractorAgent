@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { confirmIntake } from "@/app/(protected)/jobs/actions";
 import { IntakeStatus } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
-import { formatDateTime, formatEnum } from "@/lib/job-values";
+import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { findDuplicateMatches, parseJobCase } from "@/services/job-case";
 
@@ -50,15 +50,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
         <p className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Confidence {Math.round(jobCase.confidence * 100)}%</p>
       </div>
 
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="text-lg font-semibold text-slate-950">Source</h2>
-        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
-          <div><dt className="font-medium text-slate-500">Type</dt><dd className="mt-1">{formatEnum(intake.sourceType)}</dd></div>
-          <div><dt className="font-medium text-slate-500">Received</dt><dd className="mt-1">{formatDateTime(intake.receivedAt)} UTC</dd></div>
-          <div><dt className="font-medium text-slate-500">Original sender</dt><dd className="mt-1 break-words">{intake.originalSender ?? "Unknown"}</dd></div>
-        </dl>
-        {files.length > 0 && <p className="mt-4 text-sm text-slate-700"><span className="font-medium">Attachments:</span> {files.join(", ")}</p>}
-      </section>
+      {files.length > 0 && <p className="mt-8 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><span className="font-medium">Attachments:</span> {files.join(", ")}</p>}
 
       <section className="mt-8">
         <h2 className="text-xl font-semibold text-slate-950">Warnings</h2>
@@ -92,7 +84,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       </section>
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasDuplicates={duplicates.length > 0} jobCase={jobCase} />
+        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasDuplicates={duplicates.length > 0} jobCase={jobCase} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
