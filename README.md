@@ -20,6 +20,10 @@ Phase 7 uses Microsoft delegated OAuth with only `Mail.ReadWrite`, encrypted MSA
 
 Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra, grant delegated `Mail.ReadWrite`, and do not grant `Mail.Send`. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
 
+## Outreach formatting
+
+Outreach bodies are stored as plain text and may use Markdown `**bold**` as their only markup. The Outlook draft body is built by escaping the saved text first and then converting that one marker, so the recruiter's screening labels arrive in bold and nothing else in a model-written body can become markup. The outreach screen shows the converted result as an Outlook preview before approval.
+
 ## Phase 8 boundary
 
 Phase 8 scans at most 25 recent Inbox messages and analyzes at most 10 new messages per user-triggered scan. Only mail from a confirmed Recruiter or with a strong deterministic job-title match is analyzed. Full email bodies are not stored: the private database keeps the Outlook message ID, sender, subject, short exact evidence, confidence, and proposed CRM changes.

@@ -118,13 +118,24 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     const common = {
       toAddress: "recruiter@example.invalid",
       subject: "Fictional role inquiry",
-      body: "Fictional approved body.",
+      body: "**Rate:** $80/hr W2 <not markup>",
       resumePath,
     };
     await createOutlookMessageDraft({ ...common, mode: OutreachMode.FIRST_OUTREACH, replySourceMessageId: null }, { accessToken: "fictional-access-token", fetcher });
     await createOutlookMessageDraft({ ...common, mode: OutreachMode.DIRECT_EMAIL_REPLY, replySourceMessageId: "source-message-1" }, { accessToken: "fictional-access-token", fetcher });
     assert.ok(calls.some((call) => call.url.endsWith("/source-message-1/createReply")));
     assert.ok(!calls.some((call) => call.url.endsWith("/send")));
+
+    // Both the new draft and the reply draft must carry escaped HTML, so bold survives and markup cannot.
+    const bodies = calls.flatMap((call) => {
+      const value = (call.body as { body?: { contentType?: string; content?: string } } | null)?.body;
+      return value?.content ? [value] : [];
+    });
+    assert.equal(bodies.length, 2);
+    for (const value of bodies) {
+      assert.equal(value.contentType, "HTML");
+      assert.equal(value.content, "<strong>Rate:</strong> $80/hr W2 &lt;not markup&gt;");
+    }
 
     sent = true;
     const result = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });

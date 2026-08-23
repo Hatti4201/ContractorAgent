@@ -5,6 +5,7 @@ import { confirmOutlookSent, createOutlookDraft, selectOutlookReplySource } from
 import { OutlookDraftState, OutreachMode } from "@/app/generated/prisma/enums";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { outreachBodyHtml } from "@/services/outreach-markup";
 import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { parseOutreachValidation } from "@/services/outreach-agent";
@@ -87,6 +88,16 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
         {!locked && <button className="rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save and validate</button>}
         {locked && <p className="text-sm font-medium text-slate-600">Content is locked because an Outlook draft now represents this approved revision.</p>}
       </form>
+
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800">Outlook preview</h2>
+        <p className="mt-1 text-xs text-slate-500">Exactly what the Outlook draft will contain. Wrap a screening label in ** ** to bold it.</p>
+        <div
+          className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-900"
+          // Built by outreachBodyHtml, which escapes the saved body before allowing bold.
+          dangerouslySetInnerHTML={{ __html: outreachBodyHtml(draft.body) }}
+        />
+      </section>
 
       {!locked && <div className="mt-6 flex flex-wrap gap-3">
         <form action={regenerate}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800 hover:border-slate-600" type="submit">Regenerate</button></form>

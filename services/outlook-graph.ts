@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { OutreachMode } from "@/app/generated/prisma/enums";
+import { outreachBodyHtml } from "@/services/outreach-markup";
 import { checkResumeFile } from "@/services/resume-router";
 
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
@@ -149,12 +150,12 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
       created = messageId(await graphRequest(`/me/messages/${encodeURIComponent(sourceMessageId)}/createReply`, { method: "POST" }, options, [200, 201]));
       await graphRequest(`/me/messages/${encodeURIComponent(created.id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ subject: input.subject, body: { contentType: "Text", content: input.body }, toRecipients: recipient(input.toAddress) }),
+        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, toRecipients: recipient(input.toAddress) }),
       }, options, [200]);
     } else {
       created = messageId(await graphRequest("/me/messages", {
         method: "POST",
-        body: JSON.stringify({ subject: input.subject, body: { contentType: "Text", content: input.body }, toRecipients: recipient(input.toAddress) }),
+        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, toRecipients: recipient(input.toAddress) }),
       }, options, [201]));
     }
 
