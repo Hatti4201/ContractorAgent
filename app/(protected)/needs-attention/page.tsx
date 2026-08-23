@@ -12,6 +12,7 @@ import { formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { buildAttentionItems, configuredTimeZone, type AttentionItem } from "@/services/attention";
 import { parseFollowUpEvidence } from "@/services/follow-up";
+import { mailScanState } from "@/services/follow-up-scan";
 import { outlookConnected } from "@/services/outlook-auth";
 
 function dueLabel(item: AttentionItem) {
@@ -35,7 +36,7 @@ function proposedText(value: string | null, hasBusinessChange: boolean) {
 export default async function NeedsAttentionPage({ searchParams }: { searchParams: Promise<{ mail?: string }> }) {
   await requireAuth();
   const database = getPrisma();
-  const [{ mail }, opportunities, suggestions, connected] = await Promise.all([
+  const [{ mail }, opportunities, suggestions, connected, scanState] = await Promise.all([
     searchParams,
     database.opportunity.findMany({
       select: {
@@ -63,6 +64,7 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
       take: 50,
     }),
     outlookConnected(),
+    mailScanState(),
   ]);
   const timeZone = configuredTimeZone();
   const items = buildAttentionItems(opportunities, new Date(), timeZone);
@@ -88,6 +90,13 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
         </div>
       </div>
 
+      {scanState.consecutiveFailures > 0 && (
+        <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900" role="alert">
+          The Outlook scan has failed {scanState.consecutiveFailures} time{scanState.consecutiveFailures === 1 ? "" : "s"} in a row: {scanState.lastError ?? "reason unknown"}
+          {scanState.lastSuccessAt ? ` Last successful scan: ${formatDateTime(scanState.lastSuccessAt)} UTC.` : " No scan has ever succeeded."}
+          {" "}Reconnect Outlook or check the AI configuration, then scan again.
+        </p>
+      )}
       {mail === "started" && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Scanning Outlook in the background. Watch the corner tray; suggestions appear here as they are analyzed, and you can leave this page.</p>}
 
       <section className="mt-8" aria-labelledby="email-suggestions">

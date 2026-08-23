@@ -69,45 +69,92 @@ export function suggestionData(message: OutlookInboxMessage, opportunity: Follow
   };
 }
 
+const SCAN_STATE_ID = "primary";
+
+export async function mailScanState() {
+  return getPrisma().mailScanState.upsert({
+    where: { id: SCAN_STATE_ID },
+    create: { id: SCAN_STATE_ID },
+    update: {},
+  });
+}
+
 /**
  * Reads Inbox metadata, keeps only mail that deterministically matches an active opportunity, and
  * records a pending suggestion for each. No CRM business state changes here; confirmation does that.
+ *
+ * The watermark only advances past messages this run actually decided on, so hitting the per-run
+ * analysis cap defers the remainder to the next scan instead of stepping over it.
  */
 export async function scanFollowUps(task?: TaskHandle) {
-  await task?.progress("Reading the Outlook inbox");
-  const messages = await listOutlookInboxMessages({ accessToken: await outlookAccessToken() });
   const database = getPrisma();
-  const candidates = await activeCandidates();
-  const seen = new Set((await database.followUpSuggestion.findMany({
-    where: { outlookMessageId: { in: messages.map((message) => message.id) } },
-    select: { outlookMessageId: true },
-  })).map((row) => row.outlookMessageId));
+  const state = await mailScanState();
+  await database.mailScanState.update({ where: { id: SCAN_STATE_ID }, data: { lastRunAt: new Date() } });
 
-  // Matching is local, so a scan that finds nothing new costs no model call at all.
-  const fresh = messages.flatMap((message) => {
-    if (seen.has(message.id)) return [];
-    const match = matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
-    return match.relevant ? [{ message, opportunity: candidates.find((candidate) => candidate.id === match.opportunityId) ?? null }] : [];
-  }).slice(0, MAX_ANALYSES_PER_SCAN);
-
-  let analyzed = 0;
-  for (const { message, opportunity } of fresh) {
-    analyzed += 1;
-    await task?.progress(`Analyzing message ${analyzed} of ${fresh.length}`);
-    try {
-      const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
-      await database.followUpSuggestion.create({ data: suggestionData(message, opportunity, analysis) });
-    } catch {
-      await database.followUpSuggestion.create({ data: {
-        outlookMessageId: message.id,
-        opportunityId: opportunity?.id ?? null,
-        fromAddress: message.fromAddress,
-        subject: message.subject,
-        receivedAt: message.receivedAt,
-        status: FollowUpStatus.FAILED,
-        error: "Email analysis failed. Retry after checking the Outlook and AI connections.",
-      } });
+  try {
+    await task?.progress("Reading new Outlook mail");
+    const messages = await listOutlookInboxMessages({ accessToken: await outlookAccessToken() }, state.watermark);
+    if (!messages.length) {
+      await database.mailScanState.update({
+        where: { id: SCAN_STATE_ID },
+        data: { lastSuccessAt: new Date(), consecutiveFailures: 0, lastError: null },
+      });
+      return { scanned: 0, analyzed: 0 };
     }
+
+    const candidates = await activeCandidates();
+    const seen = new Set((await database.followUpSuggestion.findMany({
+      where: { outlookMessageId: { in: messages.map((message) => message.id) } },
+      select: { outlookMessageId: true },
+    })).map((row) => row.outlookMessageId));
+
+    let analyzed = 0;
+    let decidedThrough: Date | null = null;
+    for (const message of messages) {
+      if (analyzed >= MAX_ANALYSES_PER_SCAN) break;
+      decidedThrough = message.receivedAt;
+      if (seen.has(message.id)) continue;
+      // Matching is local, so a scan that finds nothing relevant costs no model call at all.
+      const match = matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
+      if (!match.relevant) continue;
+      const opportunity = candidates.find((candidate) => candidate.id === match.opportunityId) ?? null;
+      analyzed += 1;
+      await task?.progress(`Analyzing message ${analyzed} of at most ${MAX_ANALYSES_PER_SCAN}`);
+      try {
+        const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
+        await database.followUpSuggestion.create({ data: suggestionData(message, opportunity, analysis) });
+      } catch {
+        await database.followUpSuggestion.create({ data: {
+          outlookMessageId: message.id,
+          opportunityId: opportunity?.id ?? null,
+          fromAddress: message.fromAddress,
+          subject: message.subject,
+          receivedAt: message.receivedAt,
+          status: FollowUpStatus.FAILED,
+          error: "Email analysis failed. Retry after checking the Outlook and AI connections.",
+        } });
+      }
+    }
+
+    await database.mailScanState.update({
+      where: { id: SCAN_STATE_ID },
+      data: {
+        ...(decidedThrough ? { watermark: decidedThrough } : {}),
+        lastSuccessAt: new Date(),
+        consecutiveFailures: 0,
+        lastError: null,
+      },
+    });
+    return { scanned: messages.length, analyzed };
+  } catch (error) {
+    // A scheduled scan runs unattended, so a repeated failure has to stay visible instead of silent.
+    await database.mailScanState.update({
+      where: { id: SCAN_STATE_ID },
+      data: {
+        consecutiveFailures: { increment: 1 },
+        lastError: (error instanceof Error ? error.message : "The Outlook scan failed.").slice(0, 500),
+      },
+    });
+    throw error;
   }
-  return { scanned: messages.length, analyzed };
 }

@@ -218,14 +218,21 @@ function inboxMessage(value: unknown): OutlookInboxMessage {
   };
 }
 
-export async function listOutlookInboxMessages(options: FetchOptions) {
-  // ponytail: the latest 25 messages cover active recruiting follow-ups; add paging after a real miss.
-  const path = "/me/mailFolders/inbox/messages?$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25&$orderby=receivedDateTime%20desc";
+/**
+ * Without a watermark this returns the newest messages; with one it returns the oldest messages that
+ * arrived after it, so repeated scans walk forward through the mailbox and cannot skip a run's worth.
+ */
+export async function listOutlookInboxMessages(options: FetchOptions, since?: Date | null) {
+  const select = "$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25";
+  const path = since
+    ? `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20asc&$filter=receivedDateTime%20gt%20${encodeURIComponent(since.toISOString())}`
+    : `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20desc`;
   const result = object(await graphRequest(path, { method: "GET" }, options, [200]));
   if (!Array.isArray(result.value)) throw new Error("Microsoft Graph message list is invalid.");
-  return result.value.flatMap((value) => {
+  const messages = result.value.flatMap((value) => {
     try { return [inboxMessage(value)]; } catch { return []; }
   });
+  return since ? messages : messages.reverse();
 }
 
 export async function getOutlookInboxMessage(messageIdValue: string, options: FetchOptions) {

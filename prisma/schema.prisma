@@ -359,3 +359,15 @@ model Task {
   @@index([subjectId])
   @@map("tasks")
 }
+
+model MailScanState {
+  id                  String    @id @default("primary")
+  watermark           DateTime?
+  lastRunAt           DateTime? @map("last_run_at")
+  lastSuccessAt       DateTime? @map("last_success_at")
+  consecutiveFailures Int       @default(0) @map("consecutive_failures")
+  lastError           String?   @map("last_error")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@map("mail_scan_state")
+}

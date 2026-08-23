@@ -28,6 +28,20 @@ validation all run behind the page; a tray in the corner reports progress, failu
 result. Tasks live in the server process, so stopping the server abandons whatever is running: any task
 still marked running after fifteen minutes is reported as interrupted and can be started again.
 
+## Scheduled mail scan
+
+While the server runs, the Outlook scan repeats on a schedule set by `MAIL_SCAN_*` in the environment:
+by default Monday to Friday, 06:00 to 15:00 in `APP_TIME_ZONE`, once an hour. `APP_TIME_ZONE` must be a
+real IANA name such as `America/Los_Angeles`; an unrecognised value silently falls back to UTC and
+takes follow-up due dates with it. Set `MAIL_SCAN_ENABLED=false` to turn the schedule off; the manual
+button on Needs attention runs the same code either way.
+
+Each scan asks Microsoft Graph only for mail newer than the last message it decided on, so a run that
+finds nothing new costs no model call, and the watermark advances only past messages that run actually
+handled. The schedule is a timer inside the server process: stopping the server stops it, and it
+resumes on the next tick after a restart rather than firing a burst of missed scans. Repeated failures
+are counted and reported on Needs attention, because an unattended scan must not fail quietly.
+
 ## Outreach formatting
 
 Outreach bodies are stored as plain text and may use Markdown `**bold**` as their only markup. The Outlook draft body is built by escaping the saved text first and then converting that one marker, so the recruiter's screening labels arrive in bold and nothing else in a model-written body can become markup. The outreach screen shows the converted result as an Outlook preview before approval.

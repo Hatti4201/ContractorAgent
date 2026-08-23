@@ -36,6 +36,28 @@ test("Outlook Inbox parsing keeps only bounded validated message metadata", asyn
   }]);
 });
 
+test("an incremental scan asks only for mail newer than the watermark, oldest first", async () => {
+  const urls: string[] = [];
+  const fetcher = (async (input: RequestInfo | URL) => {
+    urls.push(String(input));
+    return Response.json({ value: [
+      { id: "older", subject: "First", bodyPreview: "a", receivedDateTime: "2026-08-22T09:00:00.000Z", from: { emailAddress: { address: "r@example.invalid" } }, isDraft: false },
+      { id: "newer", subject: "Second", bodyPreview: "b", receivedDateTime: "2026-08-22T10:00:00.000Z", from: { emailAddress: { address: "r@example.invalid" } }, isDraft: false },
+    ] });
+  }) as typeof fetch;
+
+  const since = new Date("2026-08-22T08:00:00.000Z");
+  const incremental = await listOutlookInboxMessages({ accessToken: "fictional-access-token", fetcher }, since);
+  assert.ok(urls[0]?.includes(encodeURIComponent("receivedDateTime gt 2026-08-22T08:00:00.000Z")), "The watermark must be pushed into the query, not filtered locally.");
+  assert.ok(urls[0]?.includes("receivedDateTime%20asc"));
+  assert.deepEqual(incremental.map((message) => message.id), ["older", "newer"], "Walking forward requires oldest first.");
+
+  const firstEver = await listOutlookInboxMessages({ accessToken: "fictional-access-token", fetcher });
+  assert.ok(!urls[1]?.includes("$filter"), "A first scan has no watermark to filter on.");
+  assert.ok(urls[1]?.includes("receivedDateTime%20desc"), "A first scan takes the newest page.");
+  assert.deepEqual(firstEver.map((message) => message.id), ["newer", "older"], "That page is still returned oldest first.");
+});
+
 test("Outlook cache encryption rejects tampering and Graph creates verified drafts without sending", async () => {
   const encryptionKey = Buffer.alloc(32, 7).toString("base64");
   const encrypted = encryptOutlookTokenCache('{"fictional":"cache"}', encryptionKey);
