@@ -51,6 +51,13 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const selectedFile = job.selectedResume ? await checkResumeFile(job.selectedResume.filePath) : null;
   const selectedResumeReady = Boolean(job.selectedResume?.active && selectedFile?.usable);
   const outreachConfigured = Boolean(process.env.OUTREACH_CONTEXT_PATH && process.env.OPENAI_API_KEY);
+  // Naming the one unmet condition beats listing all four and leaving the reader to guess.
+  const outreachBlockers = [
+    confirmedCase ? null : "a confirmed JobCase. This job was entered manually, so analyze its source from Add job to get one.",
+    job.recruiter?.email ? null : "a recruiter email. Add one under Edit job below.",
+    selectedResumeReady ? null : `a usable resume. ${job.roleFamily ? resumeRoute.issue ?? "Choose one in Resume router above." : "This job has no confirmed role family yet, so nothing can be routed; set it under Edit job below."}`,
+    outreachConfigured ? null : "local OPENAI_API_KEY and OUTREACH_CONTEXT_PATH configuration.",
+  ].filter((blocker): blocker is string => blocker !== null);
   const outreachErrorMessage = outreachError === "configuration"
     ? "Outreach generation is not configured. Set OPENAI_API_KEY and OUTREACH_CONTEXT_PATH in the local environment, then restart the app."
     : outreachError === "failed"
@@ -188,7 +195,10 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         ) : confirmedCase && selectedResumeReady && job.recruiter?.email && outreachConfigured ? (
           <form action={generateOutreachDraft.bind(null, job.id)} className="mt-5"><GenerateOutreachButton /></form>
         ) : (
-          <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">Complete the confirmed JobCase, recruiter email, active Resume, and local `OPENAI_API_KEY` plus `OUTREACH_CONTEXT_PATH` configuration first.</p>
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-medium">The email writer is missing:</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">{outreachBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
+          </div>
         )}
         <p className="mt-3 text-xs text-slate-500">Generation sends confirmed facts and the private approved context to the configured OpenAI API with response storage disabled.</p>
       </section>
