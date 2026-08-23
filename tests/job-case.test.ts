@@ -131,7 +131,7 @@ test("duplicate detection uses fingerprint and confirmed CRM facts", () => {
 
 test("analyzer requests strict non-stored output and validates the response", async () => {
   const requests: Record<string, unknown>[] = [];
-  const fixture = sample({ title: "Sample API Role", roleFamily: RoleFamily.JAVA_REACT });
+  const fixture = sample({ title: "Sample API Role", roleFamily: RoleFamily.JAVA_FULLSTACK });
   const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
     return new Response(JSON.stringify({

@@ -11,7 +11,7 @@ import { generateOutreachContent, validateOutreachContent, type OutreachInput } 
 const skills: Record<RoleFamily, string[]> = {
   JAVA_BACKEND: ["Java", "Spring Boot"],
   JAVA_FULLSTACK: ["Java", "Angular"],
-  JAVA_REACT: ["Java", "React"],
+  PYTHON_AI: ["Python", "LLM"],
   JAVA_AI: ["Java", "Python", "Generative AI"],
   REACT: ["React", "TypeScript"],
   REACT_FULLSTACK: ["React", "Node.js"],
@@ -20,7 +20,7 @@ const skills: Record<RoleFamily, string[]> = {
 const titles: Record<RoleFamily, string> = {
   JAVA_BACKEND: "Senior Java Backend Engineer",
   JAVA_FULLSTACK: "Java Full Stack Engineer",
-  JAVA_REACT: "Java React Developer",
+  PYTHON_AI: "Python AI Engineer",
   JAVA_AI: "Java AI Engineer",
   REACT: "React Frontend Engineer",
   REACT_FULLSTACK: "React Full Stack Engineer",

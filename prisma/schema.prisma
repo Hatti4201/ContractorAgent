@@ -66,10 +66,10 @@ enum WorkArrangement {
 enum RoleFamily {
   JAVA_BACKEND
   JAVA_FULLSTACK
-  JAVA_REACT
   JAVA_AI
   REACT
   REACT_FULLSTACK
+  PYTHON_AI
 }
 
 enum JobSourceType {

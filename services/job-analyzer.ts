@@ -8,7 +8,8 @@ const instructions = `You extract facts from contractor job intake text into the
 - DIRECT_EMAIL sender may be the recruiter only when the source supports that conclusion.
 - FORWARDED_JD original sender is not the recruiter unless the forwarded content explicitly says so.
 - requiredSkills contains only clearly required technologies, without commentary.
-- roleFamily must be one of the supplied values or null. JAVA_REACT means Java with React; REACT_FULLSTACK means React with a non-Java backend.
+- roleFamily must be one of the supplied values or null. JAVA_FULLSTACK covers Java with any front end, including React.
+- REACT_FULLSTACK means React with a non-Java backend. PYTHON_AI is a Python-first AI, ML or LLM role, while JAVA_AI is a Java-first role with AI integration; neither substitutes for the other.
 - confidence covers the complete extraction, from 0 to 1.
 - evidence quotes short source excerpts for important extracted facts.
 - warnings identify ambiguity, missing or conflicting hard requirements. Do not assess the candidate.`;

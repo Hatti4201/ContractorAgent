@@ -14,7 +14,8 @@ async function main() {
           roleFamily: RoleFamily.JAVA_BACKEND,
           filePath: "/private/example.invalid/fictional-java-resume.pdf",
           version: "sample-v1",
-          active: true,
+          // Stays disabled so the check never collides with a real registered resume for this family.
+          active: false,
         },
       });
       const opportunity = await database.opportunity.create({

@@ -16,13 +16,13 @@ async function main() {
   try {
     await getPrisma().$transaction(async (database) => {
       const resume = await database.resume.create({
-        data: { name: "Fictional Outreach Resume", roleFamily: RoleFamily.JAVA_REACT, filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: true },
+        data: { name: "Fictional Outreach Resume", roleFamily: RoleFamily.PYTHON_AI, filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: false },
       });
-      const jobCase = { title: "Fictional Java React Engineer", roleFamily: RoleFamily.JAVA_REACT, recruiterEmail: "recruiter@example.invalid", confidence: 0.95 };
+      const jobCase = { title: "Fictional Python AI Engineer", roleFamily: RoleFamily.PYTHON_AI, recruiterEmail: "recruiter@example.invalid", confidence: 0.95 };
       const opportunity = await database.opportunity.create({
         data: {
-          title: "Fictional Java React Engineer",
-          roleFamily: RoleFamily.JAVA_REACT,
+          title: "Fictional Python AI Engineer",
+          roleFamily: RoleFamily.PYTHON_AI,
           selectedResumeId: resume.id,
           jobCase: jobCase as Prisma.InputJsonValue,
           applicationTrack: { create: { currentStage: ApplicationStage.DISCOVERED } },

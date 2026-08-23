@@ -15,7 +15,7 @@ class RollbackCheck extends Error {}
 async function main() {
   try {
     await getPrisma().$transaction(async (database) => {
-      const resume = await database.resume.create({ data: { name: "Fictional Phase 7 Resume", roleFamily: RoleFamily.JAVA_BACKEND, filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1" } });
+      const resume = await database.resume.create({ data: { name: "Fictional Phase 7 Resume", roleFamily: RoleFamily.JAVA_BACKEND, filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: false } });
       const opportunity = await database.opportunity.create({ data: { title: "Fictional Phase 7 Role", roleFamily: RoleFamily.JAVA_BACKEND } });
       const draft = await database.outreachDraft.create({ data: {
         opportunityId: opportunity.id,
@@ -31,7 +31,10 @@ async function main() {
         outlookMessageId: "fictional-immutable-message-id",
         outlookDraftRevision: 1,
       } });
-      const connection = await database.outlookConnection.create({ data: { encryptedTokenCache: "fictional-encrypted-cache" } });
+      // A real connection may already hold the single row, so the check reuses it rather than colliding.
+      const existingConnection = await database.outlookConnection.findFirst();
+      const connection = existingConnection ?? await database.outlookConnection.create({ data: { encryptedTokenCache: "fictional-encrypted-cache" } });
+      assert.equal(await database.outlookConnection.count(), 1, "Outlook stays a single connected mailbox.");
       await database.activity.create({ data: { opportunityId: opportunity.id, type: ActivityType.OUTLOOK_DRAFT_CREATED, description: "Fictional database check." } });
       assert.equal(draft.outlookState, OutlookDraftState.CREATED);
       assert.equal(connection.id, "primary");
