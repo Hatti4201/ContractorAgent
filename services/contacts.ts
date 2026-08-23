@@ -7,18 +7,20 @@ export type ContactInput = {
   recruiterPhone: string | null;
 };
 
+export async function resolveVendorId(database: Prisma.TransactionClient, vendorName: string | null) {
+  if (!vendorName) return null;
+  const existing = await database.vendor.findFirst({
+    where: { name: { equals: vendorName, mode: "insensitive" } },
+  });
+  return existing?.id ?? (await database.vendor.create({ data: { name: vendorName } })).id;
+}
+
 export async function resolveContacts(
   database: Prisma.TransactionClient,
   data: ContactInput,
   currentRecruiterId?: string | null,
 ) {
-  let vendorId: string | null = null;
-  if (data.vendorName) {
-    const existing = await database.vendor.findFirst({
-      where: { name: { equals: data.vendorName, mode: "insensitive" } },
-    });
-    vendorId = existing?.id ?? (await database.vendor.create({ data: { name: data.vendorName } })).id;
-  }
+  const vendorId = await resolveVendorId(database, data.vendorName);
 
   let recruiterId: string | null = null;
   if (data.recruiterName) {

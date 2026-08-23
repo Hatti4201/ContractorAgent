@@ -52,13 +52,35 @@ async function main() {
 
       const total = await database.recruiter.count({ where: { name: { in: ["Dana Renamed", "Dana Fictional"] } } });
       assert.equal(total, 2, "Four resolutions of one contact must leave exactly two recruiter rows.");
+
+      const directoryFields = await database.recruiter.update({
+        where: { id: first.recruiterId! },
+        data: { linkedinUrl: "https://example.invalid/in/fictional-recruiter", notes: "Fictional directory note." },
+      });
+      assert.equal(directoryFields.linkedinUrl, "https://example.invalid/in/fictional-recruiter");
+      assert.equal(directoryFields.notes, "Fictional directory note.");
+
+      await database.opportunity.create({
+        data: {
+          title: "Fictional Directory Role",
+          recruiterId: first.recruiterId,
+          applicationTrack: { create: {} },
+        },
+      });
+      const listed = await database.recruiter.findUniqueOrThrow({
+        where: { id: first.recruiterId! },
+        include: { vendor: true, opportunities: { include: { applicationTrack: true } } },
+      });
+      assert.equal(listed.opportunities.length, 1, "The directory must reach the recruiter's linked opportunities.");
+      assert.equal(listed.opportunities[0]?.applicationTrack?.currentStage, "DISCOVERED");
+      assert.equal(listed.vendor?.name, ALPHA, "The directory must reach the recruiter's vendor.");
       throw new RollbackCheck();
     });
   } catch (error) {
     if (!(error instanceof RollbackCheck)) throw error;
   }
 
-  console.log("Recruiter identity check passed: name + vendor deduplicates without clearing known contact details; sample transaction rolled back.");
+  console.log("Recruiter directory check passed: name + vendor deduplicates without clearing known contact details, and profile fields plus linked jobs resolve; sample transaction rolled back.");
 }
 
 main()

@@ -215,6 +215,8 @@ model Recruiter {
   name          String
   email         String?
   phone         String?
+  linkedinUrl   String?       @map("linkedin_url")
+  notes         String?
   vendorId      String?       @map("vendor_id")
   vendor        Vendor?       @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   opportunities Opportunity[]
@@ -222,6 +224,7 @@ model Recruiter {
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   @@index([email])
+  @@index([name])
   @@index([vendorId])
   @@map("recruiters")
 }

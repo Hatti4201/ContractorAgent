@@ -18,6 +18,7 @@ export function Navigation({ logoutAction }: { logoutAction: () => Promise<void>
             <Link className="hover:text-slate-950" href="/intake">Analyze JD</Link>
             <Link className="hover:text-slate-950" href="/needs-attention">Needs attention</Link>
             <Link className="hover:text-slate-950" href="/jobs">Jobs</Link>
+            <Link className="hover:text-slate-950" href="/recruiters">Recruiters</Link>
             <Link className="hover:text-slate-950" href="/resumes">Resumes</Link>
             <Link className="hover:text-slate-950" href="/outlook">Outlook</Link>
           </div>
