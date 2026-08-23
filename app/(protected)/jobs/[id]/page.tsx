@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { generateOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
 import { addActivity, completeAttention, deleteJob, rescheduleAttention, selectResume, updateJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobForm } from "@/components/delete-job-form";
+import { GenerateOutreachButton } from "@/components/generate-outreach-button";
 import { JobForm } from "@/components/job-form";
 import { requireAuth } from "@/lib/auth";
 import { activityTypes, dateInputValue, formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
@@ -14,9 +15,9 @@ import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 const inputClass =
   "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 
-export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ outreachError?: string }> }) {
   await requireAuth();
-  const { id } = await params;
+  const [{ id }, { outreachError }] = await Promise.all([params, searchParams]);
   const database = getPrisma();
   const [job, resumes] = await Promise.all([
     database.opportunity.findUnique({
@@ -46,7 +47,12 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const resumeRoute = await buildResumeRoute(job.roleFamily, roleConfidence, resumes);
   const selectedFile = job.selectedResume ? await checkResumeFile(job.selectedResume.filePath) : null;
   const selectedResumeReady = Boolean(job.selectedResume?.active && selectedFile?.usable);
-  const outreachConfigured = Boolean(process.env.OUTREACH_CONTEXT_PATH);
+  const outreachConfigured = Boolean(process.env.OUTREACH_CONTEXT_PATH && process.env.OPENAI_API_KEY);
+  const outreachErrorMessage = outreachError === "configuration"
+    ? "Outreach generation is not configured. Set OPENAI_API_KEY and OUTREACH_CONTEXT_PATH in the local environment, then restart the app."
+    : outreachError === "failed"
+      ? "Outreach generation failed. Check the private context file and AI configuration, then try again."
+      : null;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -139,12 +145,13 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="outreach-draft">
         <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-slate-950">Outreach email</h2><p className="mt-1 text-sm text-slate-600">Outlook draft creation is approval-gated; sending always remains manual.</p></div>{job.outreachDraft && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{formatEnum(job.outreachDraft.status)} · Outlook {formatEnum(job.outreachDraft.outlookState)}</span>}</div>
+        {outreachErrorMessage && <p className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{outreachErrorMessage}</p>}
         {job.outreachDraft ? (
           <Link className="mt-5 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href={`/jobs/${job.id}/outreach`}>Review outreach draft</Link>
         ) : confirmedCase && selectedResumeReady && job.recruiter?.email && outreachConfigured ? (
-          <form action={generateOutreachDraft.bind(null, job.id)} className="mt-5"><button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Generate validated preview</button></form>
+          <form action={generateOutreachDraft.bind(null, job.id)} className="mt-5"><GenerateOutreachButton /></form>
         ) : (
-          <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">Complete the confirmed JobCase, recruiter email, active Resume, and private `OUTREACH_CONTEXT_PATH` configuration first.</p>
+          <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">Complete the confirmed JobCase, recruiter email, active Resume, and local `OPENAI_API_KEY` plus `OUTREACH_CONTEXT_PATH` configuration first.</p>
         )}
         <p className="mt-3 text-xs text-slate-500">Generation sends confirmed facts and the private approved context to the configured OpenAI API with response storage disabled.</p>
       </section>

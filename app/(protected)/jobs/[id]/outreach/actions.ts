@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ActivityType, OutlookDraftState, OutreachDraftStatus } from "@/app/generated/prisma/enums";
+import { ActivityType, OutlookDraftState, OutreachDraftStatus, OutreachMode } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
@@ -26,7 +26,7 @@ function text(formData: FormData, name: string, maximum: number) {
   return cleaned;
 }
 
-async function outreachInput(id: string): Promise<OutreachInput> {
+async function outreachInput(id: string, modeOverride?: OutreachMode): Promise<OutreachInput> {
   const job = await getPrisma().opportunity.findUnique({
     where: { id },
     include: {
@@ -44,7 +44,7 @@ async function outreachInput(id: string): Promise<OutreachInput> {
   const sourceType = job.intake?.sourceType ?? null;
 
   return {
-    mode: determineOutreachMode(sourceType, activityTypes),
+    mode: modeOverride ?? determineOutreachMode(sourceType, activityTypes),
     toAddress: job.recruiter.email,
     recruiterName: job.recruiter.name,
     jobCase,
@@ -62,6 +62,12 @@ async function outreachInput(id: string): Promise<OutreachInput> {
 
 function draftStatus(validation: Awaited<ReturnType<typeof validateOutreachContent>>) {
   return validation.status === "PASS" ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW;
+}
+
+function selectedMode(formData: FormData) {
+  const value = formData.get("mode");
+  if (typeof value !== "string" || !Object.values(OutreachMode).includes(value as OutreachMode)) throw new Error("Select a valid outreach mode.");
+  return value as OutreachMode;
 }
 
 async function requireMutableDraft(id: string) {
@@ -105,6 +111,7 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         outlookDraftRevision: null,
         outlookDraftCreatedAt: null,
         sentConfirmedAt: null,
+        replySourceMessageId: null,
       },
     }),
     getPrisma().activity.create({
@@ -115,11 +122,16 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
 
 export async function generateOutreachDraft(id: string) {
   await requireAuth();
-  await requireMutableDraft(id);
-  const input = await outreachInput(id);
-  const blockers = await outreachBlockingIssues(input);
-  if (blockers.length) throw new Error(blockers[0]!.message);
-  await saveGeneratedDraft(id, input, await generateOutreachContent(input));
+  try {
+    await requireMutableDraft(id);
+    const input = await outreachInput(id);
+    const blockers = await outreachBlockingIssues(input);
+    if (blockers.length) throw new Error(blockers[0]!.message);
+    await saveGeneratedDraft(id, input, await generateOutreachContent(input));
+  } catch (error) {
+    const configuration = error instanceof Error && (error.message === "OPENAI_API_KEY is not configured." || /private/i.test(error.message));
+    redirect(`/jobs/${id}?outreachError=${configuration ? "configuration" : "failed"}`);
+  }
   revalidatePath(`/jobs/${id}`);
   redirect(`/jobs/${id}/outreach`);
 }
@@ -127,7 +139,7 @@ export async function generateOutreachDraft(id: string) {
 export async function saveOutreachDraft(id: string, formData: FormData) {
   await requireAuth();
   await requireMutableDraft(id);
-  const input = await outreachInput(id);
+  const input = await outreachInput(id, selectedMode(formData));
   input.toAddress = text(formData, "toAddress", 320);
   const content = { subject: text(formData, "subject", 300), body: text(formData, "body", 10_000) };
   const validation = await validateOutreachContent(input, content);
@@ -152,6 +164,7 @@ export async function saveOutreachDraft(id: string, formData: FormData) {
         outlookDraftRevision: null,
         outlookDraftCreatedAt: null,
         sentConfirmedAt: null,
+        replySourceMessageId: null,
       },
     }),
     getPrisma().activity.create({
@@ -166,11 +179,9 @@ export async function saveOutreachDraft(id: string, formData: FormData) {
 export async function approveOutreachDraft(id: string) {
   await requireAuth();
   await requireMutableDraft(id);
-  const [input, draft] = await Promise.all([
-    outreachInput(id),
-    getPrisma().outreachDraft.findUnique({ where: { opportunityId: id } }),
-  ]);
+  const draft = await getPrisma().outreachDraft.findUnique({ where: { opportunityId: id } });
   if (!draft) throw new Error("Outreach draft not found.");
+  const input = await outreachInput(id, draft.mode);
   input.toAddress = draft.toAddress;
   const validation = draft.attachmentResumeId === input.resume.id
     ? await validateOutreachContent(input, { subject: draft.subject, body: draft.body })

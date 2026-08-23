@@ -81,11 +81,29 @@ test("six role families generate strict non-stored previews and validator blocks
       assert.equal(request.store, false);
       assert.equal(request.model, "test-model");
       assert.equal((request.text as { format?: { strict?: boolean } }).format?.strict, true);
+      const inputPayload = JSON.parse(String(request.input)) as { attachmentConfirmed?: boolean; attachmentName?: string; attachmentVersion?: string };
+      assert.equal(inputPayload.attachmentConfirmed, true);
+      assert.match(inputPayload.attachmentName ?? "", /^Fictional .+ Resume$/);
+      assert.equal(inputPayload.attachmentVersion, "v1");
     }
 
     assert.equal(determineOutreachMode(JobSourceType.DIRECT_EMAIL, []), OutreachMode.DIRECT_EMAIL_REPLY);
     assert.equal(determineOutreachMode(JobSourceType.FORWARDED_JD, []), OutreachMode.FORWARDED_JD_OUTREACH);
     assert.equal(determineOutreachMode(JobSourceType.LINKEDIN_DM, [ActivityType.RECRUITER_REPLY]), OutreachMode.THREAD_FOLLOW_UP);
+
+    const manualModeInput: OutreachInput = {
+      mode: OutreachMode.FIRST_OUTREACH,
+      toAddress: "recruiter@example.invalid",
+      recruiterName: "Example Recruiter",
+      jobCase: jobCase(RoleFamily.JAVA_BACKEND),
+      resume: { id: "manual-mode", name: "Fictional Java Resume", version: "v1", roleFamily: RoleFamily.JAVA_BACKEND, filePath: resumePath, active: true },
+      source: { sourceType: JobSourceType.DIRECT_EMAIL, originalSender: "recruiter@example.invalid", rawText: "Fictional direct email." },
+      activityTypes: [],
+      activitySummary: [],
+      approvedContext: "Fictional context.",
+    };
+    const manualModeValidation = await validateOutreachContent(manualModeInput, { subject: "Fictional", body: "Fictional body" }, { apiKey: "test-key", model: "test-model", fetcher });
+    assert.equal(manualModeValidation.status, "PASS");
 
     const blocked: OutreachInput = {
       mode: OutreachMode.FORWARDED_JD_OUTREACH,

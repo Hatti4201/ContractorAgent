@@ -78,6 +78,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       </section>
 
       <form action={save} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        {!locked && <label className="block text-sm font-medium text-slate-800">Mode <span aria-hidden="true" className="text-red-700">*</span><select className={inputClass} defaultValue={draft.mode} name="mode" required>{Object.values(OutreachMode).map((mode) => <option key={mode} value={mode}>{formatEnum(mode)}</option>)}</select><span className="mt-1 block text-xs font-normal text-slate-500">Changing mode clears any previously selected Outlook reply message and requires revalidation.</span></label>}
         <label className="block text-sm font-medium text-slate-800">To <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.toAddress} maxLength={320} name="toAddress" readOnly={locked} required type="email" /></label>
         <label className="block text-sm font-medium text-slate-800">Subject <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.subject} maxLength={300} name="subject" readOnly={locked} required /></label>
         <label className="block text-sm font-medium text-slate-800">Body <span aria-hidden="true" className="text-red-700">*</span><textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={draft.body} maxLength={10_000} name="body" readOnly={locked} required rows={18} /></label>

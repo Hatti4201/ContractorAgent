@@ -56,3 +56,16 @@ export async function setResumeActive(id: string, active: boolean) {
   revalidatePath("/jobs");
   redirect("/resumes?saved=1");
 }
+
+export async function deleteResume(id: string) {
+  await requireAuth();
+  const database = getPrisma();
+  const resume = await database.resume.findUnique({ where: { id }, select: { id: true } });
+  if (!resume) redirect("/resumes?error=missing");
+  if (await database.outreachDraft.count({ where: { attachmentResumeId: id } })) redirect("/resumes?error=in-use");
+
+  await database.resume.delete({ where: { id } });
+  revalidatePath("/resumes");
+  revalidatePath("/jobs");
+  redirect("/resumes?saved=1");
+}

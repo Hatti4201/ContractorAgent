@@ -1,4 +1,5 @@
-import { registerResume, setResumeActive } from "@/app/(protected)/resumes/actions";
+import { deleteResume, registerResume, setResumeActive } from "@/app/(protected)/resumes/actions";
+import { DeleteResumeForm } from "@/components/delete-job-form";
 import { roleFamilies, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { checkResumeFile } from "@/services/resume-router";
@@ -9,6 +10,7 @@ const errors: Record<string, string> = {
   file: "The file must be a readable PDF, DOCX, or DOC outside this repository, with contents matching its extension.",
   duplicate: "That resume name and version already exist.",
   missing: "That registry entry no longer exists.",
+  "in-use": "This resume is attached to an outreach draft and cannot be deleted until that draft is removed.",
 };
 
 export default async function ResumesPage({ searchParams }: { searchParams: Promise<{ error?: string; saved?: string }> }) {
@@ -51,7 +53,7 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
                       const file = fileChecks.get(resume.id);
                       return (
                         <li className="rounded-xl border border-slate-200 p-4 text-sm" key={resume.id}>
-                          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-950">{resume.name} · {resume.version}</p><p className="mt-1 break-all text-xs text-slate-500">{resume.filePath}</p><p className={`mt-2 font-medium ${resume.active && file?.usable ? "text-emerald-700" : "text-amber-800"}`}>{resume.active ? file?.usable ? "Active and usable" : file?.issue : "Inactive"}</p></div><form action={setResumeActive.bind(null, resume.id, !resume.active)}><button className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 hover:border-slate-500" type="submit">{resume.active ? "Deactivate" : "Activate"}</button></form></div>
+                          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-950">{resume.name} · {resume.version}</p><p className="mt-1 break-all text-xs text-slate-500">{resume.filePath}</p><p className={`mt-2 font-medium ${resume.active && file?.usable ? "text-emerald-700" : "text-amber-800"}`}>{resume.active ? file?.usable ? "Active and usable" : file?.issue : "Inactive"}</p></div><div className="flex items-center gap-3"><form action={setResumeActive.bind(null, resume.id, !resume.active)}><button className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 hover:border-slate-500" type="submit">{resume.active ? "Deactivate" : "Activate"}</button></form><DeleteResumeForm action={deleteResume.bind(null, resume.id)} /></div></div>
                         </li>
                       );
                     })}
