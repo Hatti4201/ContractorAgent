@@ -22,7 +22,7 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 5</p>
+      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Resumes</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Resume registry</h1>
       <p className="mt-3 max-w-3xl text-slate-600">Register only real local files. Paths stay in the private database; resume files remain outside this public-code repository.</p>
       {back && <p className="mt-4 text-sm text-slate-700">Registering here returns you to the job you came from. <Link className="font-medium text-emerald-700 underline" href={`${back}#resume-router`}>Go back without adding</Link>.</p>}

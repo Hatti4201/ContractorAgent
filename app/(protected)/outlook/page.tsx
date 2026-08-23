@@ -8,7 +8,7 @@ export default async function OutlookPage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 7</p>
+      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Outlook</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Outlook connection</h1>
       <p className="mt-2 text-slate-600">Delegated Mail.ReadWrite only. The application can prepare and verify drafts, but it has no Mail.Send permission.</p>
       {notice && <p className={`mt-6 rounded-xl p-4 text-sm font-medium ${status === "connected" ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-900"}`}>{notice}</p>}

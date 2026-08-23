@@ -61,7 +61,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
     <div className="mx-auto max-w-5xl px-6 py-12">
       <Link className="text-sm font-medium text-emerald-700 underline" href={`/jobs/${id}`}>← Back to job</Link>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
-        <div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 6–7 · Human review</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Outreach email draft</h1><p className="mt-2 text-slate-600">Approval is required before Outlook draft creation; nothing is ever sent automatically.</p></div>
+        <div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Outreach</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Outreach email draft</h1><p className="mt-2 text-slate-600">Approval is required before Outlook draft creation; nothing is ever sent automatically.</p></div>
         <span className={`rounded-full px-3 py-1 text-sm font-semibold ${effectiveApproved ? "bg-emerald-50 text-emerald-800" : ready ? "bg-slate-100 text-slate-700" : "bg-amber-50 text-amber-900"}`}>{effectiveApproved ? "Approved" : ready ? "Ready for approval" : "Needs review"}</span>
       </div>
 
@@ -106,7 +106,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       <p className="mt-4 text-xs text-slate-500">Generation, saving, and approval each send confirmed facts and private approved context to the configured OpenAI API with response storage disabled.</p>
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 7</p><h2 className="mt-1 text-xl font-semibold text-slate-950">Outlook draft</h2><p className="mt-1 text-sm text-slate-600">Only you can send from Outlook.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{formatEnum(draft.outlookState)}</span></div>
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="mt-1 text-xl font-semibold text-slate-950">Outlook draft</h2><p className="mt-1 text-sm text-slate-600">Only you can send from Outlook.</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{formatEnum(draft.outlookState)}</span></div>
         {draft.outlookError && <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">{draft.outlookError}</p>}
         {!connected && <p className="mt-5 text-sm text-slate-700"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> before creating an external draft.</p>}
 

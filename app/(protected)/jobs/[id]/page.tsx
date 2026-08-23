@@ -69,7 +69,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
       <Link className="text-sm font-medium text-emerald-700 underline" href="/jobs">← All jobs</Link>
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">{formatEnum(job.applicationTrack.currentStage)}</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Jobs</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{job.title}</h1>
           <p className="mt-2 text-slate-600">{job.client ?? "Client not set"} · {job.location ?? "Location not set"} · {job.roleFamily ? formatEnum(job.roleFamily) : "Role not set"}</p>
           {job.recruiter && (

@@ -39,7 +39,7 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Contacts</p>
+      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Recruiters</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Recruiters</h1>
       <p className="mt-3 max-w-3xl text-slate-600">Every recruiter reached through an opportunity, most recently active first. Contact details stay in the private database.</p>
 

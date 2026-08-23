@@ -22,7 +22,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
   if (!intake.analysis) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Working on it</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Preparing this job</h1>
         <p className="mt-3 text-slate-600">Analysis, resume routing, drafting and validation are running in the background. This page fills in when they finish; the corner tray tracks progress and you can leave.</p>
         <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href="/jobs">Back to jobs</Link>
@@ -62,7 +62,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       <Link className="text-sm font-medium text-emerald-700 underline" href="/intake">← New analysis</Link>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Review before confirm</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">AI job analysis</h1>
         </div>
         <p className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Confidence {Math.round(jobCase.confidence * 100)}%</p>

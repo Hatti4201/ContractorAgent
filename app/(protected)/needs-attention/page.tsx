@@ -74,7 +74,7 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
     <div className="mx-auto max-w-6xl px-6 py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 8 · Human review</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Needs attention</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Needs attention</h1>
           <p className="mt-2 text-slate-600">{suggestions.length} email suggestion{suggestions.length === 1 ? "" : "s"} · {items.length} follow-up{items.length === 1 ? "" : "s"} due · {timeZone}</p>
         </div>

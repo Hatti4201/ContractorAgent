@@ -166,7 +166,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <div className="mx-auto max-w-6xl px-6 py-12">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Dashboard</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Overview</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Marketing funnel</h1>
         </div>
         <div className="flex flex-wrap gap-3">

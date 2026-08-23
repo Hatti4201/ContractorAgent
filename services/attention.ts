@@ -1,4 +1,5 @@
-import { ActivityType, ApplicationStage } from "@/app/generated/prisma/enums";
+import { ActivityType, ApplicationStage, FollowUpStatus } from "@/app/generated/prisma/enums";
+import { getPrisma } from "@/lib/prisma";
 
 type AttentionOpportunity = {
   id: string;
@@ -180,4 +181,30 @@ export function buildAttentionItems(
   return items.sort((left, right) =>
     left.dueDate.localeCompare(right.dueDate) || left.title.localeCompare(right.title),
   );
+}
+
+
+/**
+ * The navigation badge, so the daily queue is visible from anywhere. One query per page load is the
+ * price; the badge is hidden at zero so it never becomes background noise.
+ */
+export async function countNeedsAttention() {
+  const database = getPrisma();
+  const [opportunities, suggestions] = await Promise.all([
+    database.opportunity.findMany({
+      select: {
+        id: true,
+        title: true,
+        client: true,
+        vendor: { select: { name: true } },
+        recruiter: { select: { name: true } },
+        applicationTrack: {
+          select: { currentStage: true, waitingOn: true, nextAction: true, nextFollowUpAt: true, attentionClearedAt: true },
+        },
+        activities: { select: { type: true, occurredAt: true } },
+      },
+    }),
+    database.followUpSuggestion.count({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.FAILED] } } }),
+  ]);
+  return buildAttentionItems(opportunities, new Date(), configuredTimeZone()).length + suggestions;
 }

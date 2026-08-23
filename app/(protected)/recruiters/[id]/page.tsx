@@ -61,7 +61,7 @@ export default async function RecruiterPage({
       <Link className="text-sm font-medium text-emerald-700 underline" href="/recruiters">← All recruiters</Link>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Recruiter</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Recruiters</p>
           {editing
             ? <input aria-label="Recruiter name" className="mt-2 w-full min-w-72 rounded-md border border-slate-300 bg-white px-2 py-1 text-3xl font-semibold tracking-tight text-slate-950 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" defaultValue={recruiter.name} form="recruiter-details" maxLength={200} name="name" required />
             : <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{recruiter.name}</h1>}
