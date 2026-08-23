@@ -1,60 +1,42 @@
-import type { Prisma } from "@/app/generated/prisma/client";
+import { after } from "next/server";
+import { TaskKind } from "@/app/generated/prisma/enums";
 import { isAuthenticated } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { detectIntakeSource } from "@/services/intake-source";
-import { analyzeJobText } from "@/services/job-analyzer";
+import { runIntakePipeline } from "@/services/intake-pipeline";
 import { jobFingerprint } from "@/services/job-case";
-
-class IntakeInputError extends Error {}
-
-function text(value: unknown, maximum: number, required = false) {
-  const cleaned = typeof value === "string" ? value.trim() : "";
-  if (required && !cleaned) throw new IntakeInputError("Required text is missing.");
-  if (cleaned.length > maximum) throw new IntakeInputError("Text is too long.");
-  return cleaned || null;
-}
+import { startTask } from "@/services/tasks";
 
 export async function POST(request: Request) {
   if (!await isAuthenticated()) return Response.json({ error: "Unauthorized." }, { status: 401 });
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (contentLength > 100_000) return Response.json({ error: "Request is too large." }, { status: 413 });
+  if (Number(request.headers.get("content-length") ?? 0) > 100_000) return Response.json({ error: "Request is too large." }, { status: 413 });
 
-  let input: Record<string, unknown>;
+  let rawText: string;
   try {
     const value: unknown = await request.json();
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
-    input = value as Record<string, unknown>;
+    const input = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+    rawText = typeof input?.rawText === "string" ? input.rawText.trim() : "";
+    if (!rawText || rawText.length > 50_000) throw new Error();
   } catch {
-    return Response.json({ error: "Invalid request." }, { status: 400 });
+    return Response.json({ error: "Paste the job description text." }, { status: 400 });
   }
 
-  try {
-    const rawText = text(input.rawText, 50_000, true)!;
-    // The source facts are derived here, never supplied by the caller, and stay correctable on review.
-    const { sourceType, originalSender, receivedAt } = detectIntakeSource(rawText);
+  // The source facts are derived here, never supplied by the caller, and stay correctable on review.
+  const { sourceType, originalSender, receivedAt } = detectIntakeSource(rawText);
+  const intake = await getPrisma().jobIntake.create({
+    data: { sourceType, rawText, originalSender, receivedAt, fingerprint: jobFingerprint(rawText) },
+    select: { id: true },
+  });
 
-    const analysis = await analyzeJobText({ sourceType, rawText, originalSender });
-    const intake = await getPrisma().jobIntake.create({
-      data: {
-        sourceType,
-        rawText,
-        originalSender,
-        receivedAt,
-        analysis: analysis as unknown as Prisma.InputJsonValue,
-        fingerprint: jobFingerprint(rawText),
-      },
-      select: { id: true },
-    });
-    return Response.json(
-      { reviewUrl: `/intakes/${intake.id}/review` },
-      { status: 201, headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (error) {
-    if (error instanceof IntakeInputError) return Response.json({ error: error.message }, { status: 400 });
-    const configurationMissing = error instanceof Error && error.message === "OPENAI_API_KEY is not configured.";
-    return Response.json(
-      { error: configurationMissing ? "AI analyzer is not configured." : "Analysis failed. Review the input and AI configuration, then try again." },
-      { status: configurationMissing ? 503 : 502, headers: { "Cache-Control": "no-store" } },
-    );
-  }
+  // Analysis, resume routing, drafting and validation all run after this response, so pasting never waits.
+  await startTask(
+    { kind: TaskKind.INTAKE_PIPELINE, label: "Preparing a job from your pasted text", subjectId: intake.id, href: `/intakes/${intake.id}/review` },
+    (task) => runIntakePipeline(intake.id, task),
+    after,
+  );
+
+  return Response.json(
+    { reviewUrl: `/intakes/${intake.id}/review` },
+    { status: 202, headers: { "Cache-Control": "no-store" } },
+  );
 }

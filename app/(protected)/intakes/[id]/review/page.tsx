@@ -5,6 +5,7 @@ import { IntakeStatus } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { parseIntakePreview } from "@/services/intake-pipeline";
 import { findDuplicateMatches, parseJobCase } from "@/services/job-case";
 
 function attachments(value: unknown) {
@@ -18,7 +19,24 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
   if (!intake) notFound();
   if (intake.status === IntakeStatus.CONFIRMED && intake.opportunityId) redirect(`/jobs/${intake.opportunityId}`);
 
+  if (!intake.analysis) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Working on it</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Preparing this job</h1>
+        <p className="mt-3 text-slate-600">Analysis, resume routing, drafting and validation are running in the background. This page fills in when they finish; the corner tray tracks progress and you can leave.</p>
+        <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href="/jobs">Back to jobs</Link>
+      </div>
+    );
+  }
+
   const jobCase = parseJobCase(intake.analysis);
+  const preview = parseIntakePreview(intake.preview);
+  const resumes = await database.resume.findMany({
+    where: { active: true },
+    select: { id: true, name: true, version: true, roleFamily: true },
+    orderBy: [{ roleFamily: "asc" }, { name: "asc" }],
+  });
   const candidates = await database.opportunity.findMany({
     select: {
       id: true,
@@ -84,7 +102,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       </section>
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasDuplicates={duplicates.length > 0} jobCase={jobCase} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasDuplicates={duplicates.length > 0} jobCase={jobCase} preview={preview} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">

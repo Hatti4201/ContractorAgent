@@ -88,8 +88,7 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
         </div>
       </div>
 
-      {mail === "synced" && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Recent recruiting mail scanned. Review every proposed change below.</p>}
-      {mail === "failed" && <p className="mt-6 rounded-xl bg-red-50 p-4 text-sm font-medium text-red-900">Outlook scan failed. Check the Outlook and AI connections, then retry.</p>}
+      {mail === "started" && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Scanning Outlook in the background. Watch the corner tray; suggestions appear here as they are analyzed, and you can leave this page.</p>}
 
       <section className="mt-8" aria-labelledby="email-suggestions">
         <div className="flex flex-wrap items-end justify-between gap-3">

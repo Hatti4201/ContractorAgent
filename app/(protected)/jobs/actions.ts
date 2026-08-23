@@ -10,6 +10,7 @@ import {
   JobSourceType,
   OutlookDraftState,
   OutreachDraftStatus,
+  OutreachMode,
   RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
@@ -18,6 +19,8 @@ import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
 import { resolveContacts } from "@/services/contacts";
+import { parseIntakePreview } from "@/services/intake-pipeline";
+import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,6 +28,17 @@ const outdatedOutreachValidation = {
   status: "NEEDS_REVIEW",
   issues: [{ field: "source", severity: "BLOCK", message: "Job or Resume data changed; validate the outreach draft again." }],
 } satisfies Prisma.InputJsonValue;
+const editedOutreachValidation = {
+  status: "NEEDS_REVIEW",
+  issues: [{ field: "body", severity: "NEEDS_REVIEW", message: "You edited the email after it was validated; validate it again before approval." }],
+} satisfies Prisma.InputJsonValue;
+
+function readReviewedDraft(formData: FormData) {
+  const toAddress = text(formData, "draftToAddress", 320);
+  const subject = text(formData, "draftSubject", 300);
+  const body = text(formData, "draftBody", 10_000);
+  return toAddress && subject && body ? { toAddress, subject, body } : null;
+}
 const stageActivityType: Partial<Record<ApplicationStage, ActivityType>> = {
   OUTREACH_SENT: ActivityType.OUTREACH_SENT,
   RTR_SIGNED: ActivityType.RTR_SIGNED,
@@ -295,6 +309,7 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
   const opportunity = await getPrisma().$transaction(async (database) => {
     const intake = await database.jobIntake.findUnique({ where: { id } });
     if (!intake || intake.status !== IntakeStatus.PENDING) throw new Error("Intake is not available for confirmation.");
+    if (!intake.analysis) throw new Error("The analysis is still running. Confirm once it finishes.");
     const reviewed = readReviewedJobCase(formData, parseJobCase(intake.analysis));
     if ((reviewed.recruiterEmail || reviewed.recruiterPhone) && !reviewed.recruiterName) {
       throw new Error("Recruiter name is required with contact details.");
@@ -316,7 +331,13 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
       recruiterEmail: reviewed.recruiterEmail,
       recruiterPhone: reviewed.recruiterPhone,
     });
-    const selectedResumeId = await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
+
+    const preview = parseIntakePreview(intake.preview);
+    const chosenResumeId = text(formData, "resumeId", 100) ?? preview?.resumeId ?? null;
+    const selectedResumeId = chosenResumeId && await database.resume.count({ where: { id: chosenResumeId, active: true } })
+      ? chosenResumeId
+      : await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
+
     const created = await database.opportunity.create({
       data: {
         title: reviewed.title,
@@ -341,13 +362,38 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
       },
     });
     await database.jobIntake.update({ where: { id }, data: { opportunityId: created.id, ...source } });
-    return created;
+
+    const draft = readReviewedDraft(formData);
+    if (draft && preview?.mode && selectedResumeId) {
+      // The reviewed email carries the pipeline's validation only while the user left it untouched.
+      const untouched = draft.subject === preview.subject && draft.body === preview.body && draft.toAddress === preview.toAddress;
+      const approved = untouched && preview.validation?.status === "PASS";
+      await database.outreachDraft.create({
+        data: {
+          opportunityId: created.id,
+          mode: enumValue(preview.mode, Object.values(OutreachMode), OutreachMode.FIRST_OUTREACH),
+          toAddress: draft.toAddress,
+          subject: draft.subject,
+          body: draft.body,
+          attachmentResumeId: selectedResumeId,
+          contextFingerprint: outreachContextFingerprint(await loadOutreachContext()),
+          validation: (untouched && preview.validation ? preview.validation : editedOutreachValidation) as unknown as Prisma.InputJsonValue,
+          status: approved ? OutreachDraftStatus.APPROVED : OutreachDraftStatus.NEEDS_REVIEW,
+          approvedAt: approved ? new Date() : null,
+        },
+      });
+      await database.activity.createMany({ data: [
+        { opportunityId: created.id, type: ActivityType.OUTREACH_DRAFT_GENERATED, description: "Outreach draft prepared during intake and reviewed by the user." },
+        ...(approved ? [{ opportunityId: created.id, type: ActivityType.OUTREACH_DRAFT_APPROVED, description: "Outreach draft approved at intake confirmation." }] : []),
+      ] });
+    }
+    return { id: created.id, hasDraft: Boolean(draft && preview?.mode && selectedResumeId) };
   });
 
   revalidatePath("/dashboard");
   revalidatePath("/needs-attention");
   revalidatePath("/jobs");
-  redirect(`/jobs/${opportunity.id}`);
+  redirect(opportunity.hasDraft ? `/jobs/${opportunity.id}/outreach` : `/jobs/${opportunity.id}`);
 }
 
 export async function updateJobCase(id: string, formData: FormData) {

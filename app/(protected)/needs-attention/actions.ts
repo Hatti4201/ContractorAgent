@@ -2,82 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { Prisma } from "@/app/generated/prisma/client";
-import {
-  ActivityType,
-  ApplicationStage,
-  FollowUpStatus,
-} from "@/app/generated/prisma/enums";
+import { after } from "next/server";
+import { ActivityType, FollowUpStatus, TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { calendarDate, configuredTimeZone } from "@/services/attention";
 import {
   analyzeFollowUpEmail,
-  matchFollowUpOpportunity,
   parseFollowUpEvidence,
   proposalForFollowUp,
   type FollowUpAnalysis,
-  type FollowUpCandidate,
 } from "@/services/follow-up";
+import { analysisInput, scanFollowUps, suggestionData, terminalStages } from "@/services/follow-up-scan";
 import { outlookAccessToken } from "@/services/outlook-auth";
-import {
-  getOutlookInboxMessage,
-  listOutlookInboxMessages,
-  type OutlookInboxMessage,
-} from "@/services/outlook-graph";
-
-const terminalStages = new Set<ApplicationStage>([
-  ApplicationStage.HIRED,
-  ApplicationStage.NO_RESPONSE,
-  ApplicationStage.REJECTED,
-  ApplicationStage.ROLE_CLOSED,
-  ApplicationStage.WITHDRAWN,
-  ApplicationStage.DUPLICATE,
-]);
-
-async function activeCandidates(): Promise<FollowUpCandidate[]> {
-  const rows = await getPrisma().opportunity.findMany({
-    select: {
-      id: true,
-      title: true,
-      client: true,
-      recruiter: { select: { email: true } },
-      applicationTrack: { select: { currentStage: true } },
-    },
-  });
-  return rows.flatMap((row) => row.applicationTrack && !terminalStages.has(row.applicationTrack.currentStage) ? [{
-    id: row.id,
-    title: row.title,
-    client: row.client,
-    currentStage: row.applicationTrack.currentStage,
-    recruiterEmail: row.recruiter?.email ?? null,
-  }] : []);
-}
-
-function analysisInput(message: OutlookInboxMessage, opportunity: FollowUpCandidate | null) {
-  return {
-    subject: message.subject,
-    preview: message.preview,
-    receivedAt: message.receivedAt.toISOString(),
-    today: calendarDate(new Date(), configuredTimeZone()),
-    opportunity: opportunity ? { title: opportunity.title, client: opportunity.client, currentStage: opportunity.currentStage } : null,
-  };
-}
-
-function suggestionData(message: OutlookInboxMessage, opportunity: FollowUpCandidate | null, analysis: FollowUpAnalysis) {
-  return {
-    outlookMessageId: message.id,
-    opportunityId: opportunity?.id ?? null,
-    fromAddress: message.fromAddress,
-    subject: message.subject,
-    receivedAt: message.receivedAt,
-    event: analysis.event,
-    ...proposalForFollowUp(analysis, opportunity?.currentStage ?? null),
-    confidence: analysis.confidence,
-    evidence: analysis.evidence as unknown as Prisma.InputJsonValue,
-    analyzedAt: new Date(),
-  };
-}
+import { getOutlookInboxMessage } from "@/services/outlook-graph";
+import { startTask, TaskBusyError } from "@/services/tasks";
 
 function refresh(opportunityId?: string | null) {
   revalidatePath("/dashboard");
@@ -87,71 +25,61 @@ function refresh(opportunityId?: string | null) {
 
 export async function syncOutlookFollowUps() {
   await requireAuth();
-  let messages: OutlookInboxMessage[];
-  try { messages = await listOutlookInboxMessages({ accessToken: await outlookAccessToken() }); } catch {
-    redirect("/needs-attention?mail=failed");
-  }
-  const database = getPrisma();
-  const candidates = await activeCandidates();
-  const existing = new Set((await database.followUpSuggestion.findMany({
-    where: { outlookMessageId: { in: messages.map((message) => message.id) } },
-    select: { outlookMessageId: true },
-  })).map((row) => row.outlookMessageId));
-
-  let processed = 0;
-  for (const message of messages) {
-    if (existing.has(message.id) || processed >= 10) continue;
-    const match = matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
-    if (!match.relevant) continue;
-    processed += 1;
-    const opportunity = candidates.find((candidate) => candidate.id === match.opportunityId) ?? null;
-    try {
-      const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
-      await database.followUpSuggestion.create({ data: suggestionData(message, opportunity, analysis) });
-    } catch {
-      await database.followUpSuggestion.create({ data: {
-        outlookMessageId: message.id,
-        opportunityId: opportunity?.id ?? null,
-        fromAddress: message.fromAddress,
-        subject: message.subject,
-        receivedAt: message.receivedAt,
-        status: FollowUpStatus.FAILED,
-        error: "Email analysis failed. Retry after checking the Outlook and AI connections.",
-      } });
-    }
+  try {
+    // Up to ten model calls run in sequence here, so the page never waits for them.
+    await startTask(
+      { kind: TaskKind.FOLLOW_UP_SCAN, label: "Scanning Outlook for recruiter follow-ups", subjectId: "follow-up-scan", href: "/needs-attention" },
+      (task) => scanFollowUps(task).then(() => undefined),
+      after,
+    );
+  } catch (error) {
+    if (!(error instanceof TaskBusyError)) throw error;
   }
   refresh();
-  redirect("/needs-attention?mail=synced");
+  redirect("/needs-attention?mail=started");
 }
 
 export async function retryFollowUpSuggestion(id: string) {
   await requireAuth();
   const database = getPrisma();
-  const suggestion = await database.followUpSuggestion.findUnique({
-    where: { id },
-    include: { opportunity: { include: { applicationTrack: true } } },
-  });
+  const suggestion = await database.followUpSuggestion.findUnique({ where: { id }, select: { id: true, status: true, opportunityId: true } });
   if (!suggestion || suggestion.status !== FollowUpStatus.FAILED) throw new Error("This suggestion is not available for retry.");
+
   try {
-    const message = await getOutlookInboxMessage(suggestion.outlookMessageId, { accessToken: await outlookAccessToken() });
-    if (message.fromAddress !== suggestion.fromAddress) throw new Error("Outlook sender changed.");
-    const opportunity = suggestion.opportunity?.applicationTrack ? {
-      id: suggestion.opportunity.id,
-      title: suggestion.opportunity.title,
-      client: suggestion.opportunity.client,
-      recruiterEmail: null,
-      currentStage: suggestion.opportunity.applicationTrack.currentStage,
-    } : null;
-    const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
-    await database.followUpSuggestion.update({
-      where: { id },
-      data: { ...suggestionData(message, opportunity, analysis), status: FollowUpStatus.PENDING, error: null, retryCount: { increment: 1 } },
-    });
-  } catch {
-    await database.followUpSuggestion.update({
-      where: { id },
-      data: { error: "Email analysis failed. Retry after checking the Outlook and AI connections.", retryCount: { increment: 1 } },
-    });
+    await startTask(
+      { kind: TaskKind.FOLLOW_UP_RETRY, label: "Re-analyzing that recruiter email", subjectId: id, href: "/needs-attention" },
+      async () => {
+        const current = await database.followUpSuggestion.findUniqueOrThrow({
+          where: { id },
+          include: { opportunity: { include: { applicationTrack: true } } },
+        });
+        try {
+          const message = await getOutlookInboxMessage(current.outlookMessageId, { accessToken: await outlookAccessToken() });
+          if (message.fromAddress !== current.fromAddress) throw new Error("Outlook sender changed.");
+          const opportunity = current.opportunity?.applicationTrack ? {
+            id: current.opportunity.id,
+            title: current.opportunity.title,
+            client: current.opportunity.client,
+            recruiterEmail: null,
+            currentStage: current.opportunity.applicationTrack.currentStage,
+          } : null;
+          const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
+          await database.followUpSuggestion.update({
+            where: { id },
+            data: { ...suggestionData(message, opportunity, analysis), status: FollowUpStatus.PENDING, error: null, retryCount: { increment: 1 } },
+          });
+        } catch (error) {
+          await database.followUpSuggestion.update({
+            where: { id },
+            data: { error: "Email analysis failed. Retry after checking the Outlook and AI connections.", retryCount: { increment: 1 } },
+          });
+          throw error;
+        }
+      },
+      after,
+    );
+  } catch (error) {
+    if (!(error instanceof TaskBusyError)) throw error;
   }
   refresh(suggestion.opportunityId);
 }

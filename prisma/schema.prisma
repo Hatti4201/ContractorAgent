@@ -114,6 +114,22 @@ enum FollowUpStatus {
   DISMISSED
 }
 
+enum TaskStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+enum TaskKind {
+  INTAKE_PIPELINE
+  OUTREACH_REGENERATE
+  OUTREACH_VALIDATE
+  OUTLOOK_DRAFT
+  OUTLOOK_SENT_CHECK
+  FOLLOW_UP_SCAN
+  FOLLOW_UP_RETRY
+}
+
 enum FollowUpEvent {
   RECRUITER_REPLY
   RTR_RECEIVED
@@ -166,7 +182,8 @@ model JobIntake {
   originalSender     String?       @map("original_sender")
   receivedAt         DateTime      @map("received_at")
   attachmentMetadata Json?         @map("attachment_metadata")
-  analysis           Json
+  analysis           Json?
+  preview            Json?
   fingerprint        String
   status             IntakeStatus  @default(PENDING)
   opportunityId      String?       @unique @map("opportunity_id")
@@ -324,4 +341,21 @@ model FollowUpSuggestion {
   @@index([status, receivedAt])
   @@index([opportunityId])
   @@map("follow_up_suggestions")
+}
+
+model Task {
+  id         String     @id @default(cuid())
+  kind       TaskKind
+  status     TaskStatus @default(RUNNING)
+  label      String
+  subjectId  String?    @map("subject_id")
+  href       String?
+  progress   String?
+  error      String?
+  startedAt  DateTime   @default(now()) @map("started_at")
+  finishedAt DateTime?  @map("finished_at")
+
+  @@index([status, startedAt])
+  @@index([subjectId])
+  @@map("tasks")
 }

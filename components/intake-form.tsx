@@ -26,9 +26,10 @@ export function IntakeForm() {
       const result: unknown = await response.json();
       const data = result && typeof result === "object" ? result as { error?: unknown; reviewUrl?: unknown } : {};
       if (!response.ok || typeof data.reviewUrl !== "string") {
-        throw new Error(typeof data.error === "string" ? data.error : "Analysis failed.");
+        throw new Error(typeof data.error === "string" ? data.error : "Analysis could not be started.");
       }
-      router.push(data.reviewUrl);
+      // The pipeline runs in the background; the jobs list is the better place to wait.
+      router.push("/jobs");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Analysis failed.");
       setAnalyzing(false);
@@ -42,10 +43,10 @@ export function IntakeForm() {
         <textarea autoFocus className={inputClass} maxLength={50000} minLength={1} name="rawText" required rows={20} />
       </label>
 
-      <p className="text-xs leading-5 text-slate-500">Source type, sender, and received time are detected from the text itself and stay editable on the review screen. Analyze sends this source to the configured OpenAI API over HTTPS with <code>store: false</code>. Nothing becomes CRM fact until you confirm the review.</p>
+      <p className="text-xs leading-5 text-slate-500">Analyze starts a background task: source detection, analysis, resume routing, drafting and validation all run without holding this page. Watch its progress in the corner and open the review when it finishes. Requests go to the configured OpenAI API over HTTPS with <code>store: false</code>, and nothing becomes CRM fact until you confirm.</p>
       {error && <p aria-live="polite" className="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-800">{error}</p>}
       <button className="rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60" disabled={analyzing} type="submit">
-        {analyzing ? "Analyzing…" : "Analyze JD"}
+        {analyzing ? "Starting…" : "Analyze JD"}
       </button>
     </form>
   );

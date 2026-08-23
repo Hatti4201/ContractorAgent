@@ -20,6 +20,14 @@ Phase 7 uses Microsoft delegated OAuth with only `Mail.ReadWrite`, encrypted MSA
 
 Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra, grant delegated `Mail.ReadWrite`, and do not grant `Mail.Send`. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
 
+## Background tasks
+
+Every step that calls a model or Microsoft Graph runs as a background task, so no page holds you while
+it works. Pasting a job description returns immediately and the analysis, resume routing, drafting and
+validation all run behind the page; a tray in the corner reports progress, failures, and a link to the
+result. Tasks live in the server process, so stopping the server abandons whatever is running: any task
+still marked running after fifteen minutes is reported as interrupted and can be started again.
+
 ## Outreach formatting
 
 Outreach bodies are stored as plain text and may use Markdown `**bold**` as their only markup. The Outlook draft body is built by escaping the saved text first and then converting that one marker, so the recruiter's screening labels arrive in bold and nothing else in a model-written body can become markup. The outreach screen shows the converted result as an Outlook preview before approval.
