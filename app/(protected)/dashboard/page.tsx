@@ -173,11 +173,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-medium text-amber-950 hover:border-amber-500" href="/needs-attention">
             Needs attention ({attentionCount})
           </Link>
-          <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/jobs/new">
+          <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/intake">
             Add job
           </Link>
         </div>
       </div>
+
+      {query.queued && (
+        <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
+          Your pasted job is being prepared in the background. Progress is in the corner tray, and it keeps running while you work elsewhere.
+        </p>
+      )}
 
       <section aria-label="Time range" className="mt-8 flex flex-wrap gap-2">
         {timeRanges.map((range) => (

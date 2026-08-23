@@ -23,35 +23,28 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
     },
     orderBy: { name: "asc" },
   });
-  const rows = recruiters.map((recruiter) => ({
-    ...recruiter,
-    lastTouch: recruiter.opportunities.reduce<Date | null>(
-      (latest, job) => (!latest || job.updatedAt > latest ? job.updatedAt : latest),
-      null,
-    ),
-  }));
+  // Newest activity leads; a recruiter with no linked job has nothing to date, so those sit last by name.
+  const rows = recruiters
+    .map((recruiter) => ({
+      ...recruiter,
+      lastTouch: recruiter.opportunities.reduce<Date | null>(
+        (latest, job) => (!latest || job.updatedAt > latest ? job.updatedAt : latest),
+        null,
+      ),
+    }))
+    .sort((left, right) => {
+      if (!left.lastTouch || !right.lastTouch) return Number(Boolean(right.lastTouch)) - Number(Boolean(left.lastTouch)) || left.name.localeCompare(right.name);
+      return right.lastTouch.getTime() - left.lastTouch.getTime();
+    });
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Contacts</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Recruiters</h1>
-      <p className="mt-3 max-w-3xl text-slate-600">Every recruiter reached through an opportunity, with the jobs they are attached to. Contact details stay in the private database.</p>
+      <p className="mt-3 max-w-3xl text-slate-600">Every recruiter reached through an opportunity, most recently active first. Contact details stay in the private database.</p>
 
       {deleted && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">Recruiter deleted.</p>}
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{errors[error] ?? "Recruiter update failed."}</p>}
-
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-950">Add recruiter</h2>
-        <form action={createRecruiter} className="mt-5 grid gap-5 md:grid-cols-2">
-          <label className="text-sm font-medium text-slate-800">Name <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={200} name="name" required /></label>
-          <label className="text-sm font-medium text-slate-800">Vendor<input className={inputClass} maxLength={200} name="vendorName" /></label>
-          <label className="text-sm font-medium text-slate-800">Email<input className={inputClass} maxLength={320} name="email" type="email" /></label>
-          <label className="text-sm font-medium text-slate-800">Phone<input className={inputClass} maxLength={80} name="phone" type="tel" /></label>
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">LinkedIn or profile URL<input className={inputClass} maxLength={500} name="linkedinUrl" placeholder="https://www.linkedin.com/in/…" type="url" /></label>
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">Notes<textarea className={inputClass} maxLength={2000} name="notes" rows={3} /></label>
-          <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Add recruiter</button>
-        </form>
-      </section>
 
       <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         {rows.length ? (
@@ -82,11 +75,23 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
           </div>
         ) : (
           <div className="p-10 text-center">
-            <p className="text-slate-600">No recruiter has been recorded yet.</p>
-            <Link className="mt-3 inline-block font-medium text-emerald-700 underline" href="/jobs/new">Add a job with a recruiter</Link>
+            <p className="text-slate-600">No recruiter has been recorded yet. Add one below, or confirm a job that names one.</p>
           </div>
         )}
       </div>
+
+      <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" open={Boolean(error)}>
+        <summary className="cursor-pointer text-xl font-semibold text-slate-950">Add recruiter</summary>
+        <form action={createRecruiter} className="mt-5 grid gap-5 md:grid-cols-2">
+          <label className="text-sm font-medium text-slate-800">Name <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={200} name="name" required /></label>
+          <label className="text-sm font-medium text-slate-800">Vendor<input className={inputClass} maxLength={200} name="vendorName" /></label>
+          <label className="text-sm font-medium text-slate-800">Email<input className={inputClass} maxLength={320} name="email" type="email" /></label>
+          <label className="text-sm font-medium text-slate-800">Phone<input className={inputClass} maxLength={80} name="phone" type="tel" /></label>
+          <label className="text-sm font-medium text-slate-800 md:col-span-2">LinkedIn or profile URL<input className={inputClass} maxLength={500} name="linkedinUrl" placeholder="https://www.linkedin.com/in/…" type="url" /></label>
+          <label className="text-sm font-medium text-slate-800 md:col-span-2">Notes<textarea className={inputClass} maxLength={2000} name="notes" rows={3} /></label>
+          <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Add recruiter</button>
+        </form>
+      </details>
     </div>
   );
 }

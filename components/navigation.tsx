@@ -14,8 +14,7 @@ export function Navigation({ logoutAction }: { logoutAction: () => Promise<void>
             Contractor Agent
           </Link>
           <div className="hidden items-center gap-5 text-sm font-medium text-slate-600 sm:flex">
-            <Link className="hover:text-slate-950" href="/dashboard">Dashboard</Link>
-            <Link className="hover:text-slate-950" href="/intake">Analyze JD</Link>
+            <Link className="hover:text-slate-950" href="/intake">Add job</Link>
             <Link className="hover:text-slate-950" href="/needs-attention">Needs attention</Link>
             <Link className="hover:text-slate-950" href="/jobs">Jobs</Link>
             <Link className="hover:text-slate-950" href="/recruiters">Recruiters</Link>

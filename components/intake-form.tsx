@@ -28,8 +28,8 @@ export function IntakeForm() {
       if (!response.ok || typeof data.reviewUrl !== "string") {
         throw new Error(typeof data.error === "string" ? data.error : "Analysis could not be started.");
       }
-      // The pipeline runs in the background; the jobs list is the better place to wait.
-      router.push("/jobs");
+      // The pipeline runs in the background, so the home page is where the wait belongs.
+      router.push("/dashboard?queued=1");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Analysis failed.");
       setAnalyzing(false);

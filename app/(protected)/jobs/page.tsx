@@ -17,7 +17,7 @@ export default async function JobsPage() {
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Jobs</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Opportunities</h1>
         </div>
-        <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/jobs/new">
+        <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/intake">
           Add job
         </Link>
       </div>
@@ -55,7 +55,7 @@ export default async function JobsPage() {
         ) : (
           <div className="p-10 text-center">
             <p className="text-slate-600">No opportunities have been added.</p>
-            <Link className="mt-3 inline-block font-medium text-emerald-700 underline" href="/jobs/new">Add the first job</Link>
+            <Link className="mt-3 inline-block font-medium text-emerald-700 underline" href="/intake">Add the first job</Link>
           </div>
         )}
       </div>
