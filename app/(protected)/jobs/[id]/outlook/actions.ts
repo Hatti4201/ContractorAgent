@@ -10,7 +10,6 @@ import {
 } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { parseOutreachValidation } from "@/services/outreach-agent";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import {
@@ -39,7 +38,7 @@ async function preparedDraft(id: string) {
 }
 
 async function approvalIssue(draft: Awaited<ReturnType<typeof preparedDraft>>) {
-  if (draft.status !== OutreachDraftStatus.APPROVED || !draft.approvedAt || parseOutreachValidation(draft.validation).status !== "PASS") return "Approve a passing outreach draft first.";
+  if (draft.status !== OutreachDraftStatus.APPROVED || !draft.approvedAt) return "Approve the outreach draft before Outlook creation.";
   if (!draft.opportunity.recruiter?.email || draft.toAddress.toLowerCase() !== draft.opportunity.recruiter.email.toLowerCase()) return "Recipient no longer matches the confirmed Recruiter.";
   if (!draft.opportunity.roleFamily || draft.attachmentResume.roleFamily !== draft.opportunity.roleFamily || !draft.attachmentResume.active) return "Selected Resume no longer matches the confirmed Role Family.";
   const file = await checkResumeFile(draft.attachmentResume.filePath);
@@ -122,7 +121,7 @@ export async function createOutlookDraft(id: string) {
           outlookState: OutlookDraftState.CREATED,
           outlookMessageId: external.id,
           outlookWebLink: external.webLink,
-          outlookError: null,
+          outlookError: external.verificationWarning,
           outlookDraftRevision: draft.revision,
           outlookDraftCreatedAt: new Date(),
         },

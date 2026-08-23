@@ -176,7 +176,7 @@ export async function saveOutreachDraft(id: string, formData: FormData) {
   redirect(`/jobs/${id}/outreach`);
 }
 
-export async function approveOutreachDraft(id: string) {
+export async function approveOutreachDraft(id: string, formData: FormData) {
   await requireAuth();
   await requireMutableDraft(id);
   const draft = await getPrisma().outreachDraft.findUnique({ where: { opportunityId: id } });
@@ -186,7 +186,8 @@ export async function approveOutreachDraft(id: string) {
   const validation = draft.attachmentResumeId === input.resume.id
     ? await validateOutreachContent(input, { subject: draft.subject, body: draft.body })
     : { status: "NEEDS_REVIEW" as const, issues: [{ field: "attachment", severity: "BLOCK" as const, message: "Draft attachment no longer matches the selected Resume." }] };
-  const approved = validation.status === "PASS";
+  const overrideWarnings = formData.get("overrideWarnings") === "true";
+  const approved = validation.status === "PASS" || overrideWarnings;
   await getPrisma().$transaction(async (database) => {
     await database.outreachDraft.update({
       where: { opportunityId: id },
@@ -196,7 +197,7 @@ export async function approveOutreachDraft(id: string) {
         status: approved ? OutreachDraftStatus.APPROVED : OutreachDraftStatus.NEEDS_REVIEW,
         approvedAt: approved ? new Date() : null,
         outlookState: approved ? OutlookDraftState.NOT_CREATED : OutlookDraftState.NEEDS_REVIEW,
-        outlookError: approved ? null : "Outreach validation failed; review the draft before Outlook creation.",
+        outlookError: approved && validation.status !== "PASS" ? "Approved with validator warnings; review carefully before sending." : approved ? null : "Outreach validation failed; review the draft before Outlook creation.",
       },
     });
     if (approved) await database.activity.create({

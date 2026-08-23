@@ -37,8 +37,9 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
   try {
     contextReady = outreachContextFingerprint(await loadOutreachContext()) === draft.contextFingerprint;
   } catch {}
-  const ready = validation.status === "PASS" && attachmentReady && contextReady && draft.status !== "NEEDS_REVIEW";
-  const effectiveApproved = draft.status === "APPROVED" && ready;
+  const checksReady = attachmentReady && contextReady;
+  const ready = validation.status === "PASS" && checksReady && draft.status !== "NEEDS_REVIEW";
+  const effectiveApproved = draft.status === "APPROVED" && checksReady;
   const connected = await outlookConnected();
   const replyRequired = replyModes.has(draft.mode);
   const locked = lockedOutlookStates.has(draft.outlookState) || Boolean(draft.outlookMessageId);
@@ -71,10 +72,11 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       </section>
 
       <section className={`mt-6 rounded-2xl border p-5 ${ready ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
-        <h2 className="font-semibold text-slate-950">Validator</h2>
+        <h2 className="font-semibold text-slate-950">Validator (reference)</h2>
         {validation.issues.length ? <ul className="mt-3 space-y-2 text-sm text-slate-800">{validation.issues.map((issue, index) => <li key={`${issue.field}-${index}`}><span className="font-semibold">{formatEnum(issue.severity)} · {formatEnum(issue.field)}:</span> {issue.message}</li>)}</ul> : <p className="mt-2 text-sm text-emerald-900">Recipient, approved facts, source mode, and attachment checks passed.</p>}
         {!attachmentReady && <p className="mt-2 text-sm font-medium text-red-800">Attachment is inactive, missing, unreadable, or no longer matches the Role Family.</p>}
         {!contextReady && <p className="mt-2 text-sm font-medium text-red-800">Private candidate/outreach context changed or is unavailable; validate again before approval.</p>}
+        <p className="mt-3 text-xs text-slate-600">Validation findings are advisory. You make the final decision; an explicit override can continue to Outlook draft creation after reviewing the warnings.</p>
       </section>
 
       <form action={save} className="mt-8 space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -88,7 +90,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
 
       {!locked && <div className="mt-6 flex flex-wrap gap-3">
         <form action={regenerate}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800 hover:border-slate-600" type="submit">Regenerate</button></form>
-        <form action={approve}><button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Approve current draft</button></form>
+        <form action={approve}>{validation.status === "PASS" ? <button className="rounded-lg bg-emerald-700 px-4 py-2.5 font-medium text-white hover:bg-emerald-800" type="submit">Approve current draft</button> : <button className="rounded-lg bg-amber-700 px-4 py-2.5 font-medium text-white hover:bg-amber-800" name="overrideWarnings" value="true" type="submit">Approve despite warnings</button>}</form>
       </div>}
       <p className="mt-4 text-xs text-slate-500">Generation, saving, and approval each send confirmed facts and private approved context to the configured OpenAI API with response storage disabled.</p>
 

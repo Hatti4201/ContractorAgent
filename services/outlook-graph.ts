@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { basename } from "node:path";
 import { OutreachMode } from "@/app/generated/prisma/enums";
 import { checkResumeFile } from "@/services/resume-router";
@@ -63,6 +64,16 @@ async function graphRequest(path: string, init: RequestInit, options: FetchOptio
   return response.status === 204 || response.status === 404 ? null : await response.json() as unknown;
 }
 
+async function attachmentBytes(messageIdValue: string, attachmentId: string, options: FetchOptions) {
+  const response = await (options.fetcher ?? fetch)(`${GRAPH_BASE_URL}/me/messages/${encodeURIComponent(messageIdValue)}/attachments/${encodeURIComponent(attachmentId)}/$value`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${options.accessToken}`, Prefer: 'IdType="ImmutableId"' },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (response.status !== 200) throw new OutlookGraphError(response.status);
+  return Buffer.from(await response.arrayBuffer());
+}
+
 function messageId(value: unknown) {
   const message = object(value);
   return { id: requiredString(message.id, "message id"), webLink: typeof message.webLink === "string" ? message.webLink : null };
@@ -107,11 +118,11 @@ async function addAttachment(messageIdValue: string, fileName: string, content: 
 }
 
 async function attachmentMetadata(messageIdValue: string, options: FetchOptions) {
-  const value = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/attachments?$select=name,size,isInline`, { method: "GET" }, options, [200]));
+  const value = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/attachments?$select=id,name,size,isInline`, { method: "GET" }, options, [200]));
   if (!Array.isArray(value.value)) throw new Error("Microsoft Graph attachment response is invalid.");
   return value.value.map((item) => {
     const attachment = object(item);
-    return { name: requiredString(attachment.name, "attachment name", 500), size: Number(attachment.size), isInline: attachment.isInline === true };
+    return { id: typeof attachment.id === "string" && attachment.id ? attachment.id : null, name: requiredString(attachment.name, "attachment name", 500), size: Number(attachment.size), isInline: attachment.isInline === true };
   });
 }
 
@@ -152,11 +163,33 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
     const recipients = Array.isArray(message.toRecipients) ? message.toRecipients : [];
     const actualRecipient = recipients.length === 1 ? object(object(recipients[0]).emailAddress).address : null;
     const attachments = await attachmentMetadata(created.id, options);
-    const attachmentMatches = attachments.some((attachment) => !attachment.isInline && attachment.name === fileName && attachment.size === content.length);
-    if (message.isDraft !== true || message.subject !== input.subject || typeof actualRecipient !== "string" || actualRecipient.toLowerCase() !== input.toAddress.toLowerCase() || message.hasAttachments !== true || !attachmentMatches) {
-      throw new Error("Created Outlook draft did not pass recipient and attachment verification.");
+    const verificationIssues: string[] = [];
+    if (message.isDraft !== true) verificationIssues.push("Outlook did not keep the item as a draft.");
+    if (message.subject !== input.subject) verificationIssues.push("Subject verification failed: Outlook changed or omitted the subject.");
+    if (recipients.length !== 1) verificationIssues.push(`Recipient verification failed: expected exactly 1 recipient, Outlook returned ${recipients.length}.`);
+    if (typeof actualRecipient !== "string") verificationIssues.push("Recipient verification failed: Outlook returned no readable recipient address.");
+    else if (actualRecipient.toLowerCase() !== input.toAddress.toLowerCase()) verificationIssues.push("Recipient verification failed: Outlook recipient differs from the confirmed recipient.");
+    if (message.hasAttachments !== true) verificationIssues.push("Attachment verification failed: Outlook reports no attachment on the draft.");
+    if (!attachments.length) verificationIssues.push("Attachment verification failed: Outlook returned no attachment metadata.");
+    const namedAttachments = attachments.filter((attachment) => attachment.name === fileName);
+    if (!namedAttachments.length) verificationIssues.push(`Attachment verification failed: expected file "${fileName}" was not found.`);
+    else if (!namedAttachments.some((attachment) => !attachment.isInline)) verificationIssues.push(`Attachment verification failed: file "${fileName}" is marked inline instead of a file attachment.`);
+    const exactAttachment = namedAttachments.find((attachment) => !attachment.isInline && attachment.size === content.length);
+    let verificationWarning: string | null = null;
+    if (!exactAttachment) {
+      const sizes = namedAttachments.filter((attachment) => !attachment.isInline).map((attachment) => Number.isFinite(attachment.size) ? `${attachment.size} bytes` : "unknown size").join(", ");
+      const contentAttachment = namedAttachments.find((attachment) => !attachment.isInline);
+      if (!contentAttachment) verificationIssues.push(`Attachment verification failed: "${fileName}" is not a file attachment.`);
+      else if (!contentAttachment.id) verificationIssues.push(`Attachment verification failed: Outlook did not return an attachment id for "${fileName}"; retry the draft creation.`);
+      else {
+        const localHash = createHash("sha256").update(content).digest("hex");
+        const outlookHash = createHash("sha256").update(await attachmentBytes(created.id, contentAttachment.id, options)).digest("hex");
+        if (localHash !== outlookHash) verificationIssues.push(`Attachment verification failed: "${fileName}" content differs (expected ${content.length} bytes; Outlook returned ${sizes || "no readable size"}).`);
+        else verificationWarning = `Attachment size metadata differs (expected ${content.length} bytes; Outlook returned ${sizes || "no readable size"}), but SHA-256 content matches.`;
+      }
     }
-    return { id: created.id, webLink: typeof message.webLink === "string" ? message.webLink : created.webLink, attachmentName: fileName, attachmentSize: content.length };
+    if (verificationIssues.length) throw new Error(verificationIssues.join(" "));
+    return { id: created.id, webLink: typeof message.webLink === "string" ? message.webLink : created.webLink, attachmentName: fileName, attachmentSize: content.length, verificationWarning };
   } catch (error) {
     if (!created) throw new OutlookDraftCreationError(error instanceof Error ? error.message : "Outlook draft creation failed.");
     try {
