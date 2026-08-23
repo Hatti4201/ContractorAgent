@@ -1,3 +1,4 @@
+import "dotenv/config";
 import assert from "node:assert/strict";
 import { ActivityType } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";

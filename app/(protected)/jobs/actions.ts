@@ -16,6 +16,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { jobFingerprint, parseJobCase, readReviewedJobCase } from "@/services/job-case";
+import { resolveContacts } from "@/services/contacts";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -88,42 +89,6 @@ function readJob(formData: FormData) {
     nextAction: text(formData, "nextAction", 500),
     nextFollowUpAt: dateValue(formData.get("nextFollowUpAt")),
   };
-}
-
-async function resolveContacts(
-  database: Prisma.TransactionClient,
-  data: ReturnType<typeof readJob>,
-  currentRecruiterId?: string | null,
-) {
-  let vendorId: string | null = null;
-  if (data.vendorName) {
-    const existing = await database.vendor.findFirst({
-      where: { name: { equals: data.vendorName, mode: "insensitive" } },
-    });
-    vendorId = existing?.id ?? (await database.vendor.create({ data: { name: data.vendorName } })).id;
-  }
-
-  let recruiterId: string | null = null;
-  if (data.recruiterName) {
-    const existing = data.recruiterEmail
-      ? await database.recruiter.findFirst({
-          where: { email: { equals: data.recruiterEmail, mode: "insensitive" } },
-        })
-      : currentRecruiterId
-        ? await database.recruiter.findUnique({ where: { id: currentRecruiterId } })
-        : null;
-    const recruiter = existing
-      ? await database.recruiter.update({
-          where: { id: existing.id },
-          data: { name: data.recruiterName, email: data.recruiterEmail, phone: data.recruiterPhone, vendorId },
-        })
-      : await database.recruiter.create({
-          data: { name: data.recruiterName, email: data.recruiterEmail, phone: data.recruiterPhone, vendorId },
-        });
-    recruiterId = recruiter.id;
-  }
-
-  return { recruiterId, vendorId };
 }
 
 async function automaticResumeId(database: Prisma.TransactionClient, roleFamily: RoleFamily | null, confidence: number) {
@@ -339,21 +304,10 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
     });
     if (claimed.count !== 1) throw new Error("Intake was already confirmed.");
     const contacts = await resolveContacts(database, {
-      title: reviewed.title,
-      client: reviewed.client,
-      location: reviewed.location,
-      roleFamily: reviewed.roleFamily,
-      employmentType: reviewed.employmentType,
-      workArrangement: reviewed.workArrangement,
-      rawJd: intake.rawText,
       vendorName: reviewed.vendor,
       recruiterName: reviewed.recruiterName,
       recruiterEmail: reviewed.recruiterEmail,
       recruiterPhone: reviewed.recruiterPhone,
-      currentStage: markDuplicate ? ApplicationStage.DUPLICATE : ApplicationStage.DISCOVERED,
-      waitingOn: null,
-      nextAction: null,
-      nextFollowUpAt: null,
     });
     const selectedResumeId = await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
     const created = await database.opportunity.create({

@@ -16,6 +16,7 @@
 /ROADMAP.md
 /resumes/
 /skills/
+/docs/local/
 
 # environment files
 .env*

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { disconnectDatabase } from "@/lib/prisma";
 import { checkDatabase } from "@/services/database-health";
 

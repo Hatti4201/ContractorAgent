@@ -1,3 +1,4 @@
+import "dotenv/config";
 import assert from "node:assert/strict";
 import type { Prisma } from "@/app/generated/prisma/client";
 import {

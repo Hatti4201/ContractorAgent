@@ -1,0 +1,69 @@
+import "dotenv/config";
+import assert from "node:assert/strict";
+import { disconnectDatabase, getPrisma } from "@/lib/prisma";
+import { resolveContacts } from "@/services/contacts";
+
+class RollbackCheck extends Error {}
+
+const ALPHA = "Fictional Vendor Alpha";
+const BETA = "Fictional Vendor Beta";
+
+async function main() {
+  try {
+    await getPrisma().$transaction(async (database) => {
+      const first = await resolveContacts(database, {
+        vendorName: ALPHA,
+        recruiterName: "Dana Fictional",
+        recruiterEmail: "dana@example.invalid",
+        recruiterPhone: "+1-555-0100",
+      });
+
+      const nameOnly = await resolveContacts(database, {
+        vendorName: ALPHA,
+        recruiterName: "dana fictional",
+        recruiterEmail: null,
+        recruiterPhone: null,
+      });
+      assert.equal(nameOnly.recruiterId, first.recruiterId, "A name-only repeat must reuse the same recruiter row.");
+      assert.equal(nameOnly.vendorId, first.vendorId, "The same vendor name must reuse the same vendor row.");
+
+      const kept = await database.recruiter.findUniqueOrThrow({ where: { id: first.recruiterId! } });
+      assert.equal(kept.email, "dana@example.invalid", "A name-only match must not clear a known email.");
+      assert.equal(kept.phone, "+1-555-0100", "A name-only match must not clear a known phone.");
+
+      const otherVendor = await resolveContacts(database, {
+        vendorName: BETA,
+        recruiterName: "Dana Fictional",
+        recruiterEmail: null,
+        recruiterPhone: null,
+      });
+      assert.notEqual(otherVendor.recruiterId, first.recruiterId, "The same name at another vendor must stay a separate recruiter.");
+
+      const byEmail = await resolveContacts(database, {
+        vendorName: ALPHA,
+        recruiterName: "Dana Renamed",
+        recruiterEmail: "DANA@EXAMPLE.INVALID",
+        recruiterPhone: null,
+      });
+      assert.equal(byEmail.recruiterId, first.recruiterId, "A case-different email must still match the existing recruiter.");
+      const renamed = await database.recruiter.findUniqueOrThrow({ where: { id: first.recruiterId! } });
+      assert.equal(renamed.name, "Dana Renamed", "An email match must apply the newly supplied name.");
+      assert.equal(renamed.phone, null, "An email match must still apply a deliberately cleared phone.");
+
+      const total = await database.recruiter.count({ where: { name: { in: ["Dana Renamed", "Dana Fictional"] } } });
+      assert.equal(total, 2, "Four resolutions of one contact must leave exactly two recruiter rows.");
+      throw new RollbackCheck();
+    });
+  } catch (error) {
+    if (!(error instanceof RollbackCheck)) throw error;
+  }
+
+  console.log("Recruiter identity check passed: name + vendor deduplicates without clearing known contact details; sample transaction rolled back.");
+}
+
+main()
+  .catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "Recruiter identity check failed.");
+    process.exitCode = 1;
+  })
+  .finally(disconnectDatabase);
