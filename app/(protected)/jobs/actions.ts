@@ -426,22 +426,43 @@ export async function selectResume(id: string, resumeId: string) {
   await requireAuth();
   const database = getPrisma();
   const [job, resume] = await Promise.all([
-    database.opportunity.findUnique({ where: { id }, select: { id: true, roleFamily: true } }),
+    database.opportunity.findUnique({ where: { id }, select: { id: true, roleFamily: true, jobCase: true, selectedResumeId: true } }),
     database.resume.findUnique({ where: { id: resumeId } }),
   ]);
   if (!job || !resume) throw new Error("Job or resume not found.");
-  if (!job.roleFamily) throw new Error("Confirm the job role family before selecting a resume.");
   if (!resume.active || !(await checkResumeFile(resume.filePath)).usable) throw new Error("Only an active, readable resume can be selected.");
 
+  // Picking a resume is the user stating which family this job belongs to. The registry entry supplies
+  // the family, so the attachment cross-check downstream still compares two deterministic values.
+  const previousRoleFamily = job.roleFamily;
+  const roleFamilyChanged = previousRoleFamily !== resume.roleFamily;
+  const syncedJobCase = job.jobCase ? { ...parseJobCase(job.jobCase), roleFamily: resume.roleFamily } : null;
+
   await database.$transaction([
-    database.opportunity.update({ where: { id }, data: { selectedResumeId: resume.id } }),
+    database.opportunity.update({
+      where: { id },
+      data: {
+        selectedResumeId: resume.id,
+        roleFamily: resume.roleFamily,
+        ...(syncedJobCase ? { jobCase: syncedJobCase as unknown as Prisma.InputJsonValue } : {}),
+      },
+    }),
     database.outreachDraft.updateMany({
       where: { opportunityId: id, outlookState: { in: [OutlookDraftState.NOT_CREATED, OutlookDraftState.FAILED, OutlookDraftState.NEEDS_REVIEW] }, outlookMessageId: null },
       data: { attachmentResumeId: resume.id, status: OutreachDraftStatus.NEEDS_REVIEW, approvedAt: null, validation: outdatedOutreachValidation, outlookState: OutlookDraftState.NEEDS_REVIEW },
     }),
-    database.activity.create({ data: { opportunityId: id, type: ActivityType.RESUME_SELECTED, description: "Resume selected by user review." } }),
+    database.activity.createMany({ data: [
+      { opportunityId: id, type: ActivityType.RESUME_SELECTED, description: `Resume selected by user review: ${resume.name} ${resume.version}.` },
+      // Changing the family rewrites a confirmed fact, so it leaves an explainable record.
+      ...(roleFamilyChanged ? [{
+        opportunityId: id,
+        type: ActivityType.CORRECTION,
+        description: `Role family set to ${resume.roleFamily} by choosing that resume${previousRoleFamily ? ` (was ${previousRoleFamily})` : " (was unset)"}.`,
+      }] : []),
+    ] }),
   ]);
   revalidatePath(`/jobs/${id}`);
+  revalidatePath(`/jobs/${id}/outreach`);
   redirect(`/jobs/${id}#resume-router`);
 }
 

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { deleteResume, registerResume, setResumeActive } from "@/app/(protected)/resumes/actions";
 import { DeleteResumeForm } from "@/components/delete-job-form";
 import { roleFamilies, formatEnum } from "@/lib/job-values";
@@ -13,8 +14,9 @@ const errors: Record<string, string> = {
   "in-use": "This resume is attached to an outreach draft and cannot be deleted until that draft is removed.",
 };
 
-export default async function ResumesPage({ searchParams }: { searchParams: Promise<{ error?: string; saved?: string }> }) {
-  const { error, saved } = await searchParams;
+export default async function ResumesPage({ searchParams }: { searchParams: Promise<{ error?: string; saved?: string; from?: string }> }) {
+  const { error, saved, from } = await searchParams;
+  const back = typeof from === "string" && /^\/jobs\/[a-z0-9]{20,40}$/.test(from) ? from : null;
   const resumes = await getPrisma().resume.findMany({ orderBy: [{ roleFamily: "asc" }, { active: "desc" }, { updatedAt: "desc" }] });
   const fileChecks = new Map(await Promise.all(resumes.map(async (resume) => [resume.id, await checkResumeFile(resume.filePath)] as const)));
 
@@ -23,6 +25,7 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Phase 5</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Resume registry</h1>
       <p className="mt-3 max-w-3xl text-slate-600">Register only real local files. Paths stay in the private database; resume files remain outside this public-code repository.</p>
+      {back && <p className="mt-4 text-sm text-slate-700">Registering here returns you to the job you came from. <Link className="font-medium text-emerald-700 underline" href={`${back}#resume-router`}>Go back without adding</Link>.</p>}
 
       {saved && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">Registry updated.</p>}
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{errors[error] ?? "Registry update failed."}</p>}
@@ -30,6 +33,7 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-950">Add resume version</h2>
         <form action={registerResume} className="mt-5 grid gap-5 md:grid-cols-2">
+          {back && <input name="from" type="hidden" value={back} />}
           <label className="text-sm font-medium text-slate-800">Name <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={200} name="name" required /></label>
           <label className="text-sm font-medium text-slate-800">Version <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={100} name="version" required /></label>
           <label className="text-sm font-medium text-slate-800">Role family <span aria-hidden="true" className="text-red-700">*</span><select className={inputClass} name="roleFamily" required>{roleFamilies.map((role) => <option key={role} value={role}>{formatEnum(role)}</option>)}</select></label>

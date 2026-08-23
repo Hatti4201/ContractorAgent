@@ -148,7 +148,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="resume-router">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div><h2 className="text-xl font-semibold text-slate-950">Resume router</h2><p className="mt-1 text-sm text-slate-600">Deterministic registry selection; no AI-generated file paths.</p></div>
-          <Link className="text-sm font-medium text-emerald-700 underline" href="/resumes">Manage registry</Link>
+          <Link className="text-sm font-medium text-emerald-700 underline" href={`/resumes?from=/jobs/${job.id}`}>Manage registry</Link>
         </div>
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-3">
           <div><dt className="font-medium text-slate-500">Confirmed role</dt><dd className="mt-1 font-semibold text-slate-900">{job.roleFamily ? formatEnum(job.roleFamily) : "Not set"}</dd></div>
@@ -173,12 +173,19 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         {(resumeRoute.needsReview || !selectedResumeReady) && (
           <div className="mt-6">
             <h3 className="font-semibold text-slate-950">Available candidates</h3>
+            {!job.roleFamily && <p className="mt-1 text-sm text-slate-600">No role family was confirmed for this job. Choosing a resume here sets the job to that resume&apos;s family and records the correction.</p>}
             {resumeRoute.candidates.length ? (
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
                 {resumeRoute.candidates.map((resume) => (
                   <li className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 text-sm" key={resume.id}>
                     <div><p className="font-semibold text-slate-950">{resume.name} · {resume.version}</p><p className="mt-1 text-slate-600">{formatEnum(resume.roleFamily)}{resume.roleFamily === job.roleFamily ? ` · ${Math.round(roleConfidence * 100)}% role confidence` : " · Manual override"}</p></div>
-                    {job.roleFamily && resume.id !== job.selectedResumeId && <form action={selectResume.bind(null, job.id, resume.id)}><button className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 hover:border-slate-500" type="submit">Select</button></form>}
+                    {resume.id !== job.selectedResumeId && (
+                      <form action={selectResume.bind(null, job.id, resume.id)}>
+                        <button className="rounded-lg border border-slate-300 px-3 py-2 font-medium text-slate-700 hover:border-slate-500" title={resume.roleFamily === job.roleFamily ? "Attach this resume" : `Attach this resume and set the role family to ${formatEnum(resume.roleFamily)}`} type="submit">
+                          {resume.roleFamily === job.roleFamily ? "Select" : `Select · set role ${formatEnum(resume.roleFamily)}`}
+                        </button>
+                      </form>
+                    )}
                   </li>
                 ))}
               </ul>
