@@ -7,6 +7,7 @@ import { formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
+const cellInputClass = "w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 const errors: Record<string, string> = {
   fields: "A name is required and the email must be a valid address.",
   "in-use": "This recruiter still has linked opportunities. Merge them into another recruiter first, or move them by editing each job.",
@@ -61,7 +62,9 @@ export default async function RecruiterPage({
       <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Recruiter</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{recruiter.name}</h1>
+          {editing
+            ? <input aria-label="Recruiter name" className="mt-2 w-full min-w-72 rounded-md border border-slate-300 bg-white px-2 py-1 text-3xl font-semibold tracking-tight text-slate-950 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" defaultValue={recruiter.name} form="recruiter-details" maxLength={200} name="name" required />
+            : <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">{recruiter.name}</h1>}
         </div>
         <p className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{recruiter.opportunities.length} linked {recruiter.opportunities.length === 1 ? "job" : "jobs"}</p>
       </div>
@@ -70,62 +73,59 @@ export default async function RecruiterPage({
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{errors[error] ?? "Update failed."}</p>}
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <h2 className="text-xl font-semibold text-slate-950">Contact details</h2>
-          {editing
-            ? <Link className="text-sm font-medium text-slate-600 underline" href={`/recruiters/${recruiter.id}`}>Cancel</Link>
-            : <Link aria-label="Edit contact details" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500" href={`/recruiters/${recruiter.id}?edit=1`} title="Edit contact details">✏️ Edit</Link>}
-        </div>
+        <form action={updateRecruiter.bind(null, recruiter.id)} id="recruiter-details">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <h2 className="text-xl font-semibold text-slate-950">Contact details</h2>
+            <div className="flex items-center gap-3">
+              {editing ? (
+                <>
+                  <Link className="text-sm font-medium text-slate-600 underline" href={`/recruiters/${recruiter.id}`}>Cancel</Link>
+                  <button className="rounded-lg bg-slate-950 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800" type="submit">Save edits</button>
+                </>
+              ) : (
+                <Link aria-label="Edit contact details" className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500" href={`/recruiters/${recruiter.id}?edit=1`} title="Edit contact details">✏️ Edit</Link>
+              )}
+            </div>
+          </div>
 
-        {editing ? (
-          <form action={updateRecruiter.bind(null, recruiter.id)} className="mt-5 grid gap-5 md:grid-cols-2">
-            <label className="text-sm font-medium text-slate-800">
-              Name <span aria-hidden="true" className="text-red-700">*</span>
-              <input className={inputClass} defaultValue={recruiter.name} maxLength={200} name="name" required />
-            </label>
-            <label className="text-sm font-medium text-slate-800">
-              Vendor
-              <input className={inputClass} defaultValue={recruiter.vendor?.name ?? ""} maxLength={200} name="vendorName" />
-            </label>
-            <label className="text-sm font-medium text-slate-800">
-              Email
-              <input className={inputClass} defaultValue={recruiter.email ?? ""} maxLength={320} name="email" type="email" />
-            </label>
-            <label className="text-sm font-medium text-slate-800">
-              Phone
-              <input className={inputClass} defaultValue={recruiter.phone ?? ""} maxLength={80} name="phone" type="tel" />
-            </label>
-            <label className="text-sm font-medium text-slate-800 md:col-span-2">
-              LinkedIn or profile URL
-              <input className={inputClass} defaultValue={recruiter.linkedinUrl ?? ""} maxLength={500} name="linkedinUrl" placeholder="https://www.linkedin.com/in/…" type="url" />
-            </label>
-            <label className="text-sm font-medium text-slate-800 md:col-span-2">
-              Notes
-              <textarea className={inputClass} defaultValue={recruiter.notes ?? ""} maxLength={2000} name="notes" rows={4} />
-            </label>
-            <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save recruiter</button>
-          </form>
-        ) : (
-          <>
-            <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
-              <div><dt className="font-medium text-slate-500">Vendor</dt><dd className="mt-1 text-slate-900">{recruiter.vendor?.name ?? "Not set"}</dd></div>
-              <div><dt className="font-medium text-slate-500">Email</dt><dd className="mt-1 break-all text-slate-900">{recruiter.email ?? "Not set"}</dd></div>
-              <div><dt className="font-medium text-slate-500">Phone</dt><dd className="mt-1 text-slate-900">{recruiter.phone ?? "Not set"}</dd></div>
-              <div>
-                <dt className="font-medium text-slate-500">Profile</dt>
-                <dd className="mt-1 break-all text-slate-900">
-                  {recruiter.linkedinUrl
+          <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="font-medium text-slate-500">Vendor</dt>
+              <dd className="mt-1 text-slate-900">
+                {editing ? <input className={cellInputClass} defaultValue={recruiter.vendor?.name ?? ""} maxLength={200} name="vendorName" /> : recruiter.vendor?.name ?? "Not set"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Email</dt>
+              <dd className="mt-1 break-all text-slate-900">
+                {editing ? <input className={cellInputClass} defaultValue={recruiter.email ?? ""} maxLength={320} name="email" type="email" /> : recruiter.email ?? "Not set"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Phone</dt>
+              <dd className="mt-1 text-slate-900">
+                {editing ? <input className={cellInputClass} defaultValue={recruiter.phone ?? ""} maxLength={80} name="phone" type="tel" /> : recruiter.phone ?? "Not set"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-500">Profile</dt>
+              <dd className="mt-1 break-all text-slate-900">
+                {editing
+                  ? <input className={cellInputClass} defaultValue={recruiter.linkedinUrl ?? ""} maxLength={500} name="linkedinUrl" placeholder="https://www.linkedin.com/in/…" type="url" />
+                  : recruiter.linkedinUrl
                     ? <a className="font-medium text-emerald-700 underline" href={recruiter.linkedinUrl} rel="noreferrer noopener" target="_blank">{recruiter.linkedinUrl}</a>
                     : "Not set"}
-                </dd>
-              </div>
-            </dl>
-            <div className="mt-5 border-t border-slate-200 pt-5">
-              <p className="text-sm font-medium text-slate-500">Notes</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{recruiter.notes ?? "No notes."}</p>
+              </dd>
             </div>
-          </>
-        )}
+          </dl>
+
+          <div className="mt-5 border-t border-slate-200 pt-5">
+            <p className="text-sm font-medium text-slate-500">Notes</p>
+            {editing
+              ? <textarea className={`${cellInputClass} mt-1`} defaultValue={recruiter.notes ?? ""} maxLength={2000} name="notes" rows={4} />
+              : <p className="mt-1 whitespace-pre-wrap text-sm text-slate-900">{recruiter.notes ?? "No notes."}</p>}
+          </div>
+        </form>
       </section>
 
       <section className="mt-8">
