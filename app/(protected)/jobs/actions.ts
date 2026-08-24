@@ -16,6 +16,7 @@ import {
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
+import { dateTimeValue, dateValue } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
 import { resolveContacts } from "@/services/contacts";
@@ -63,22 +64,6 @@ function enumValue<T extends string>(value: FormDataEntryValue | null, allowed: 
 
 function optionalEnumValue<T extends string>(value: FormDataEntryValue | null, allowed: readonly T[]) {
   return typeof value === "string" && allowed.includes(value as T) ? (value as T) : null;
-}
-
-function dateValue(value: FormDataEntryValue | null) {
-  if (typeof value !== "string" || !value) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Invalid date.");
-  const date = new Date(`${value}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error("Invalid date.");
-  return date;
-}
-
-function dateTimeValue(value: FormDataEntryValue | null) {
-  if (typeof value !== "string" || !value) return new Date();
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) throw new Error("Invalid date and time.");
-  const date = new Date(`${value}:00.000Z`);
-  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 16) !== value) throw new Error("Invalid date and time.");
-  return date;
 }
 
 function readJob(formData: FormData) {

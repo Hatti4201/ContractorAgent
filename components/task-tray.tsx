@@ -11,9 +11,12 @@ type Task = {
   href: string | null;
   progress: string | null;
   error: string | null;
+  finishedAt: string | null;
 };
 
 const POLL_MS = 2000;
+// Covers the redirect and mount window, so a task that landed just before this tray existed still refreshes it.
+const GRACE_MS = 10_000;
 const tone: Record<Task["status"], string> = {
   RUNNING: "border-slate-200 bg-white",
   DONE: "border-emerald-200 bg-emerald-50",
@@ -24,11 +27,13 @@ export function TaskTray() {
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
-  const running = useRef(0);
+  const seen = useRef(new Map<string, Task["status"]>());
+  const mountedAt = useRef(0);
 
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
+    mountedAt.current = Date.now();
 
     async function poll() {
       try {
@@ -36,10 +41,17 @@ export function TaskTray() {
         if (active && response.ok) {
           const data = await response.json() as { tasks?: Task[] };
           const next = data.tasks ?? [];
-          const count = next.filter((task) => task.status === "RUNNING").length;
           // A task that just ended has already written its results, so the open page needs new data.
-          if (count < running.current) router.refresh();
-          running.current = count;
+          // Work that finished before the first poll counts too: short tasks routinely beat it here,
+          // which used to leave the page showing the state it was redirected with.
+          let landed = false;
+          for (const task of next) {
+            const before = seen.current.get(task.id);
+            const justFinished = task.finishedAt !== null && Date.parse(task.finishedAt) >= mountedAt.current - GRACE_MS;
+            if (task.status !== "RUNNING" && (before === "RUNNING" || (before === undefined && justFinished))) landed = true;
+            seen.current.set(task.id, task.status);
+          }
+          if (landed) router.refresh();
           setTasks(next);
         }
       } catch {

@@ -39,3 +39,30 @@ export function formatDateTime(value: Date) {
 export function dateInputValue(value: Date | null) {
   return value?.toISOString().slice(0, 10) ?? "";
 }
+
+/**
+ * A date input submits exactly what it renders, so this stays strict and rejects an impossible day.
+ */
+export function dateValue(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Invalid date.");
+  const date = new Date(`${value}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) throw new Error("Invalid date.");
+  return date;
+}
+
+/**
+ * A datetime-local input renders minutes but submits seconds, and sometimes milliseconds, as soon as
+ * the field is touched. Accept those, and still reject an hour or a month that cannot exist.
+ */
+export function dateTimeValue(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value) return new Date();
+  const parts = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d{1,3})?$/.exec(value);
+  if (!parts) throw new Error("Invalid date and time.");
+  const [, day, hour, minute, second = "00"] = parts;
+  const date = new Date(`${day}T${hour}:${minute}:${second}.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 19) !== `${day}T${hour}:${minute}:${second}`) {
+    throw new Error("Invalid date and time.");
+  }
+  return date;
+}
