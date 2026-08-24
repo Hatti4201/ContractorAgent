@@ -229,6 +229,7 @@ type DuplicateCandidate = {
   jdFingerprint: string | null;
   createdAt: Date;
   vendor: { name: string } | null;
+  recruiter: { name: string } | null;
   applicationTrack: { currentStage: ApplicationStage } | null;
 };
 
@@ -240,6 +241,11 @@ export type DuplicateMatch = {
   createdAt: Date;
   score: number;
   reasons: string[];
+  vendor: string | null;
+  recruiter: string | null;
+  rate: string | null;
+  /** Only an identical JD text is the same posting twice; everything else is another channel for one role. */
+  exact: boolean;
 };
 
 function normalized(value: string | null | undefined) {
@@ -269,18 +275,20 @@ export function findDuplicateMatches(
   candidates: DuplicateCandidate[],
 ) {
   return candidates.flatMap((candidate): DuplicateMatch[] => {
-    const candidateFingerprint = candidate.jdFingerprint ?? (candidate.rawJd ? jobFingerprint(candidate.rawJd) : null);
-    if (candidateFingerprint === fingerprint) return [{
+    const previous = confirmedCase(candidate);
+    const channel = {
       id: candidate.id,
       title: candidate.title,
       client: candidate.client,
       stage: candidate.applicationTrack?.currentStage ?? null,
       createdAt: candidate.createdAt,
-      score: 1,
-      reasons: ["Exact JD fingerprint"],
-    }];
+      vendor: candidate.vendor?.name ?? null,
+      recruiter: candidate.recruiter?.name ?? null,
+      rate: previous?.rate ?? null,
+    };
+    const candidateFingerprint = candidate.jdFingerprint ?? (candidate.rawJd ? jobFingerprint(candidate.rawJd) : null);
+    if (candidateFingerprint === fingerprint) return [{ ...channel, score: 1, reasons: ["Identical JD text"], exact: true }];
 
-    const previous = confirmedCase(candidate);
     const reasons: string[] = [];
     let score = titleSimilarity(jobCase.title, candidate.title) * 0.35;
     if (score >= 0.18) reasons.push("Similar job title");
@@ -298,15 +306,7 @@ export function findDuplicateMatches(
       reasons.push("Created within 180 days");
     }
     if (score < 0.3) return [];
-    return [{
-      id: candidate.id,
-      title: candidate.title,
-      client: candidate.client,
-      stage: candidate.applicationTrack?.currentStage ?? null,
-      createdAt: candidate.createdAt,
-      score: Math.min(score, 0.99),
-      reasons,
-    }];
+    return [{ ...channel, score: Math.min(score, 0.99), reasons, exact: false }];
   }).sort((left, right) => right.score - left.score || right.createdAt.getTime() - left.createdAt.getTime()).slice(0, 5);
 }
 

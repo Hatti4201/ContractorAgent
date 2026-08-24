@@ -19,7 +19,7 @@ export function JobCaseReviewForm({
   resumes,
   confirmAction,
   duplicateAction,
-  hasDuplicates,
+  hasExactDuplicate,
 }: {
   jobCase: JobCase;
   source: { sourceType: JobSourceType; originalSender: string | null; receivedAt: Date };
@@ -27,7 +27,7 @@ export function JobCaseReviewForm({
   resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
   confirmAction: (formData: FormData) => void | Promise<void>;
   duplicateAction: (formData: FormData) => void | Promise<void>;
-  hasDuplicates: boolean;
+  hasExactDuplicate: boolean;
 }) {
   return (
     <form action={confirmAction} className="space-y-8">
@@ -147,9 +147,10 @@ export function JobCaseReviewForm({
         <button className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800" type="submit">
           {preview?.subject ? "Confirm and create job with draft" : "Confirm and create opportunity"}
         </button>
-        {hasDuplicates && (
+        {/* A second vendor on one role is a normal channel; only the same JD text twice is a duplicate. */}
+        {hasExactDuplicate && (
           <button className="rounded-lg border border-amber-400 bg-amber-50 px-5 py-3 font-medium text-amber-950 hover:border-amber-600" formAction={duplicateAction} type="submit">
-            Create and mark duplicate
+            Same posting again — create and mark duplicate
           </button>
         )}
       </div>

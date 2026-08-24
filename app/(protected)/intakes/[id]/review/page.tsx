@@ -49,6 +49,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       jdFingerprint: true,
       createdAt: true,
       vendor: { select: { name: true } },
+      recruiter: { select: { name: true } },
       applicationTrack: { select: { currentStage: true } },
     },
   });
@@ -84,25 +85,27 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       </section>
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <h2 className="text-xl font-semibold text-slate-950">Possible duplicates</h2>
+        <h2 className="text-xl font-semibold text-slate-950">Other channels for this role</h2>
+        <p className="mt-1 text-sm text-slate-600">One role reaches you through several vendors, which is normal. Check who is already working it and how far they got.</p>
         {duplicates.length ? (
           <ul className="mt-4 space-y-3">
             {duplicates.map((match) => (
-              <li className="rounded-xl border border-amber-200 bg-white p-4" key={match.id}>
+              <li className={`rounded-xl border bg-white p-4 ${match.exact ? "border-amber-300" : "border-slate-200"}`} key={match.id}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Link className="font-semibold text-emerald-700 underline" href={`/jobs/${match.id}`}>{match.title}</Link>
-                  <span className="text-sm font-semibold text-amber-900">{Math.round(match.score * 100)}% similar</span>
+                  <span className={`text-sm font-semibold ${match.exact ? "text-amber-900" : "text-slate-600"}`}>{match.exact ? "Identical JD text" : `${Math.round(match.score * 100)}% match`}</span>
                 </div>
-                <p className="mt-1 text-sm text-slate-600">{match.client ?? "Client unknown"} · Existing path: {match.stage ? formatEnum(match.stage) : "Not tracked"}</p>
+                <p className="mt-1 text-sm text-slate-700">{match.vendor ?? "Vendor unknown"} · {match.recruiter ?? "Recruiter unknown"} · {match.stage ? formatEnum(match.stage) : "Not tracked"}</p>
+                <p className="mt-1 text-sm text-slate-600">{match.client ?? "Client unknown"}{match.rate ? ` · ${match.rate}` : ""}</p>
                 <p className="mt-2 text-xs text-slate-500">{match.reasons.join(" · ")}</p>
               </li>
             ))}
           </ul>
-        ) : <p className="mt-3 text-sm text-slate-600">No likely duplicate found in the current CRM.</p>}
+        ) : <p className="mt-3 text-sm text-slate-600">No other opportunity in the CRM looks like this one.</p>}
       </section>
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasDuplicates={duplicates.length > 0} jobCase={jobCase} preview={preview} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} jobCase={jobCase} preview={preview} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">

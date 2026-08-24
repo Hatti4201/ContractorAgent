@@ -93,6 +93,7 @@ test("duplicate detection uses fingerprint and confirmed CRM facts", () => {
       jdFingerprint: null,
       createdAt: receivedAt,
       vendor: null,
+      recruiter: null,
       applicationTrack: { currentStage: ApplicationStage.OUTREACH_SENT },
     },
     {
@@ -106,6 +107,7 @@ test("duplicate detection uses fingerprint and confirmed CRM facts", () => {
       jdFingerprint: null,
       createdAt: new Date("2026-08-01T12:00:00.000Z"),
       vendor: { name: "Example Vendor" },
+      recruiter: { name: "Example Recruiter" },
       applicationTrack: { currentStage: ApplicationStage.RECRUITER_ENGAGED },
     },
     {
@@ -119,6 +121,7 @@ test("duplicate detection uses fingerprint and confirmed CRM facts", () => {
       jdFingerprint: null,
       createdAt: new Date("2024-01-01T12:00:00.000Z"),
       vendor: null,
+      recruiter: null,
       applicationTrack: { currentStage: ApplicationStage.REJECTED },
     },
   ];
@@ -127,6 +130,10 @@ test("duplicate detection uses fingerprint and confirmed CRM facts", () => {
   assert.deepEqual(matches.map((match) => match.id), ["exact", "near"]);
   assert.equal(matches[0]?.score, 1);
   assert.ok((matches[1]?.score ?? 0) >= 0.8);
+  // A second vendor on the same role must stay a channel, not a duplicate the user is nudged to mark.
+  assert.deepEqual(matches.map((match) => match.exact), [true, false]);
+  assert.equal(matches[1]?.vendor, "Example Vendor");
+  assert.equal(matches[1]?.recruiter, "Example Recruiter");
 });
 
 test("analyzer requests strict non-stored output and validates the response", async () => {

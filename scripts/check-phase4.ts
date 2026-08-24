@@ -79,6 +79,7 @@ async function main() {
           jdFingerprint: true,
           createdAt: true,
           vendor: { select: { name: true } },
+          recruiter: { select: { name: true } },
           applicationTrack: { select: { currentStage: true } },
         },
       });
