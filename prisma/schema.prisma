@@ -69,6 +69,7 @@ enum RoleFamily {
   JAVA_AI
   REACT
   REACT_FULLSTACK
+  REACT_AI
   PYTHON_AI
 }
 

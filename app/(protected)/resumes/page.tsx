@@ -44,7 +44,7 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
       </section>
 
       <section className="mt-8">
-        <h2 className="text-xl font-semibold text-slate-950">Six-family registry</h2>
+        <h2 className="text-xl font-semibold text-slate-950">By role family</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           {roleFamilies.map((role) => {
             const entries = resumes.filter((resume) => resume.roleFamily === role);

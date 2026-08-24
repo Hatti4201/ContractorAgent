@@ -15,6 +15,7 @@ const skills: Record<RoleFamily, string[]> = {
   JAVA_AI: ["Java", "Python", "Generative AI"],
   REACT: ["React", "TypeScript"],
   REACT_FULLSTACK: ["React", "Node.js"],
+  REACT_AI: ["React", "TypeScript", "LLM APIs"],
 };
 
 const titles: Record<RoleFamily, string> = {
@@ -24,6 +25,7 @@ const titles: Record<RoleFamily, string> = {
   JAVA_AI: "Java AI Engineer",
   REACT: "React Frontend Engineer",
   REACT_FULLSTACK: "React Full Stack Engineer",
+  REACT_AI: "React AI Application Engineer",
 };
 
 function sample(roleFamily: RoleFamily): JobCase {
@@ -89,7 +91,7 @@ async function main() {
     const w2 = await generateOutreachContent(engagementInput(EmploymentType.W2));
     assert.doesNotMatch(w2.body, /Fictional Employer LLC/, "A W2 email must not carry employer details.");
 
-    console.log(`Phase 6 AI generated and validated all six fictional Role Families; ${needsReview} correctly remained NEEDS_REVIEW. Engagement-specific employer rules fired only for C2C. No email content was logged.`);
+    console.log(`Phase 6 AI generated and validated every fictional Role Family; ${needsReview} correctly remained NEEDS_REVIEW. Engagement-specific employer rules fired only for C2C. No email content was logged.`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

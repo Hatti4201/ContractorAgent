@@ -10,6 +10,7 @@ const instructions = `You extract facts from contractor job intake text into the
 - requiredSkills contains only clearly required technologies, without commentary.
 - roleFamily must be one of the supplied values or null. JAVA_FULLSTACK covers Java with any front end, including React.
 - REACT_FULLSTACK means React with a non-Java backend. PYTHON_AI is a Python-first AI, ML or LLM role, while JAVA_AI is a Java-first role with AI integration; neither substitutes for the other.
+- REACT_AI is a front-end-first role whose product is AI driven: LLM interfaces, streaming output, AI SDK integration. Building the models or data pipelines is PYTHON_AI, not REACT_AI. Where the intake does not require AI work, use REACT or REACT_FULLSTACK.
 - employmentType names how the worker is engaged, and the intake often spells it out. C2C covers "C2C", "Corp to Corp", "corp-to-corp" and any arrangement paid through the candidate's own or an employer's company. W2 covers "W2" and "W-2" direct employment through the vendor. CONTRACT_1099 covers 1099 independent contracting. FULL_TIME is a permanent or direct-hire role. CONTRACT is a contract whose payment arrangement is not stated. UNKNOWN is only for an intake that says nothing about engagement at all.
 - When several arrangements are offered, set employmentType to the first one stated and record the others in warnings, so nothing the intake offered is lost.
 - confidence covers the complete extraction, from 0 to 1.

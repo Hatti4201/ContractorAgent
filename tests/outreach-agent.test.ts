@@ -44,7 +44,7 @@ function jobCase(roleFamily: RoleFamily): JobCase {
   };
 }
 
-test("six role families generate strict non-stored previews and validator blocks unsafe routing", async () => {
+test("every role family generates strict non-stored previews and validator blocks unsafe routing", async () => {
   const directory = await mkdtemp(join(tmpdir(), "contractor-agent-outreach-"));
   try {
     const resumePath = join(directory, "fictional-resume.pdf");
@@ -76,7 +76,8 @@ test("six role families generate strict non-stored previews and validator blocks
       assert.equal((await validateOutreachContent(input, content, { apiKey: "test-key", model: "test-model", fetcher })).status, "PASS");
     }
 
-    assert.equal(requests.length, 12);
+    // Derived from the enum, so adding a role family never leaves this number behind.
+    assert.equal(requests.length, Object.values(RoleFamily).length * 2, "Each family costs one generation and one validation.");
     for (const request of requests) {
       assert.equal(request.store, false);
       assert.equal(request.model, "test-model");
