@@ -1,9 +1,9 @@
 import Image from "next/image";
 import { HomeLink, NavigationLinks, type NavigationItem } from "@/components/navigation-links";
 
-export function Navigation({ logoutAction, attentionCount }: { logoutAction: () => Promise<void>; attentionCount: number }) {
+export function Navigation({ logoutAction, attentionCount, intakeCount }: { logoutAction: () => Promise<void>; attentionCount: number; intakeCount: number }) {
   const items: NavigationItem[] = [
-    { href: "/intake", label: "Add job", accent: true },
+    { href: "/intake", label: "Add job", accent: true, badge: intakeCount || undefined },
     { href: "/needs-attention", label: "Needs attention", badge: attentionCount || undefined },
     { href: "/jobs", label: "Jobs" },
     { href: "/recruiters", label: "Recruiters" },

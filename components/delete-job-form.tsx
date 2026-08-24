@@ -36,3 +36,13 @@ export function DeleteRecruiterForm({ action }: { action: () => Promise<void> })
     </form>
   );
 }
+
+export function DiscardIntakeForm({ action }: { action: () => Promise<void> }) {
+  return (
+    <form action={action} onSubmit={(event) => {
+      if (!window.confirm("Discard this pasted source? The analysis already paid for cannot be recovered.")) event.preventDefault();
+    }}>
+      <button className="text-sm font-medium text-red-700 underline hover:text-red-900" type="submit">Discard</button>
+    </form>
+  );
+}

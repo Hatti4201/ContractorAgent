@@ -3,7 +3,8 @@ import { isAuthenticated } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { sweepStaleTasks } from "@/services/tasks";
 
-const RECENT_MS = 60_000;
+// A finished task stays listed long enough to be noticed; the intake queue is the durable entry point.
+const RECENT_MS = 5 * 60_000;
 
 export async function GET() {
   if (!await isAuthenticated()) return Response.json({ error: "Unauthorized." }, { status: 401 });
