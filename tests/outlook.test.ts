@@ -76,6 +76,8 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     let currentAttachmentName = "fictional-resume.pdf";
     let currentAttachmentSize = Buffer.byteLength(resumeContent);
     let mismatchAttachment = false;
+    let sizeOnlyMismatch = false;
+    let sentBodyText = "Rate: $80/hr W2 <not markup>";
     let sent = false;
     let sourceAddress = "recruiter@example.invalid";
 
@@ -90,7 +92,7 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
         return new Response(null, { status: 201 });
       }
       assert.equal(headers.get("authorization"), "Bearer fictional-access-token");
-      assert.equal(headers.get("prefer"), 'IdType="ImmutableId"');
+      assert.ok(headers.get("prefer")?.startsWith('IdType="ImmutableId"'));
 
       if (method === "POST" && (url.endsWith("/me/messages") || url.endsWith("/createReply"))) {
         draftNumber += 1;
@@ -120,7 +122,10 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
         return Response.json({ uploadUrl: "https://outlook.office.com/upload/fictional" }, { status: 201 });
       }
       if (method === "GET" && url.includes("/attachments?")) {
-        return Response.json({ value: [{ name: currentAttachmentName, size: mismatchAttachment ? 1 : currentAttachmentSize, isInline: false }] });
+        return Response.json({ value: [{ id: "attachment-1", name: currentAttachmentName, size: mismatchAttachment || sizeOnlyMismatch ? 1 : currentAttachmentSize, isInline: false }] });
+      }
+      if (method === "GET" && url.endsWith("/$value")) {
+        return new Response(mismatchAttachment ? "fictional replaced content" : resumeContent);
       }
       if (method === "GET" && url.includes("?$select=id,isDraft")) {
         return Response.json({
@@ -129,6 +134,7 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
           sentDateTime: sent ? "2026-08-22T01:00:00.000Z" : null,
           subject: currentSubject,
           toRecipients: [{ emailAddress: { address: currentRecipient } }],
+          body: { contentType: "text", content: sentBodyText },
           hasAttachments: true,
           webLink: "https://outlook.office.com/mail/deeplink/compose",
         });
@@ -141,6 +147,7 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
       toAddress: "recruiter@example.invalid",
       subject: "Fictional role inquiry",
       body: "**Rate:** $80/hr W2 <not markup>",
+      ccAddress: null,
       resumePath,
     };
     await createOutlookMessageDraft({ ...common, mode: OutreachMode.FIRST_OUTREACH, replySourceMessageId: null }, { accessToken: "fictional-access-token", fetcher });
@@ -158,11 +165,36 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
       assert.equal(value.contentType, "HTML");
       assert.equal(value.content, "<strong>Rate:</strong> $80/hr W2 &lt;not markup&gt;");
     }
+    // An empty cc list is still sent, so a reply draft cannot inherit a copy nobody approved.
+    const sentCc = calls.flatMap((call) => {
+      const value = (call.body as { ccRecipients?: unknown[] } | null)?.ccRecipients;
+      return Array.isArray(value) ? [value] : [];
+    });
+    assert.equal(sentCc.length, 2);
+    assert.ok(sentCc.every((value) => value.length === 0), "No copy was approved, so none may be set.");
 
     sent = true;
     const result = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
-    assert.equal(result.sent, true);
-    assert.equal(result.matchesApprovedRouting, true);
+    assert.ok(result.sent);
+    assert.deepEqual(result.differences, []);
+
+    // Outlook reports the MIME-encoded size on sent mail, so only the content hash may decide.
+    sizeOnlyMismatch = true;
+    const resized = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
+    assert.ok(resized.sent);
+    assert.deepEqual(resized.differences, [], "A size-only difference must not be reported as a changed attachment.");
+    sizeOnlyMismatch = false;
+
+    // The user edited the mail in Outlook before sending: the sent version is reported for archiving, not rejected.
+    currentSubject = "Fictional role inquiry (edited in Outlook)";
+    sentBodyText = "Edited by the user before sending.";
+    const edited = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
+    assert.ok(edited.sent);
+    assert.deepEqual(edited.differences, ["subject"]);
+    assert.equal(edited.subject, "Fictional role inquiry (edited in Outlook)");
+    assert.equal(edited.body, "Edited by the user before sending.");
+    assert.equal(edited.toAddress, common.toAddress);
+    currentSubject = common.subject;
 
     sent = false;
     const largeResumePath = join(directory, "fictional-large-resume.pdf");

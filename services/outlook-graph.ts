@@ -22,6 +22,7 @@ export type OutlookInboxMessage = {
 type GraphDraftInput = {
   mode: OutreachMode;
   toAddress: string;
+  ccAddress: string | null;
   subject: string;
   body: string;
   replySourceMessageId: string | null;
@@ -82,6 +83,14 @@ function messageId(value: unknown) {
 
 function recipient(address: string) {
   return [{ emailAddress: { address } }];
+}
+
+function recipientFields(input: GraphDraftInput) {
+  return {
+    toRecipients: recipient(input.toAddress),
+    // Always sent, so clearing the copy on a reply draft actually removes the inherited one.
+    ccRecipients: input.ccAddress ? recipient(input.ccAddress) : [],
+  };
 }
 
 async function addAttachment(messageIdValue: string, fileName: string, content: Buffer, options: FetchOptions) {
@@ -150,17 +159,17 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
       created = messageId(await graphRequest(`/me/messages/${encodeURIComponent(sourceMessageId)}/createReply`, { method: "POST" }, options, [200, 201]));
       await graphRequest(`/me/messages/${encodeURIComponent(created.id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, toRecipients: recipient(input.toAddress) }),
+        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, ...recipientFields(input) }),
       }, options, [200]);
     } else {
       created = messageId(await graphRequest("/me/messages", {
         method: "POST",
-        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, toRecipients: recipient(input.toAddress) }),
+        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, ...recipientFields(input) }),
       }, options, [201]));
     }
 
     await addAttachment(created.id, fileName, content, options);
-    const message = object(await graphRequest(`/me/messages/${encodeURIComponent(created.id)}?$select=id,isDraft,webLink,toRecipients,subject,hasAttachments`, { method: "GET" }, options, [200]));
+    const message = object(await graphRequest(`/me/messages/${encodeURIComponent(created.id)}?$select=id,isDraft,webLink,toRecipients,ccRecipients,subject,hasAttachments`, { method: "GET" }, options, [200]));
     const recipients = Array.isArray(message.toRecipients) ? message.toRecipients : [];
     const actualRecipient = recipients.length === 1 ? object(object(recipients[0]).emailAddress).address : null;
     const attachments = await attachmentMetadata(created.id, options);
@@ -170,6 +179,13 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
     if (recipients.length !== 1) verificationIssues.push(`Recipient verification failed: expected exactly 1 recipient, Outlook returned ${recipients.length}.`);
     if (typeof actualRecipient !== "string") verificationIssues.push("Recipient verification failed: Outlook returned no readable recipient address.");
     else if (actualRecipient.toLowerCase() !== input.toAddress.toLowerCase()) verificationIssues.push("Recipient verification failed: Outlook recipient differs from the confirmed recipient.");
+    const copies = Array.isArray(message.ccRecipients) ? message.ccRecipients : [];
+    const copyValue = copies.length === 1 ? object(object(copies[0]).emailAddress).address : null;
+    const actualCopy = typeof copyValue === "string" ? copyValue : null;
+    if (input.ccAddress && (copies.length !== 1 || actualCopy?.toLowerCase() !== input.ccAddress.toLowerCase())) {
+      verificationIssues.push(`Copy verification failed: expected exactly ${input.ccAddress} on cc, Outlook returned ${copies.length} address(es).`);
+    }
+    if (!input.ccAddress && copies.length) verificationIssues.push(`Copy verification failed: Outlook added ${copies.length} unexpected cc address(es).`);
     if (message.hasAttachments !== true) verificationIssues.push("Attachment verification failed: Outlook reports no attachment on the draft.");
     if (!attachments.length) verificationIssues.push("Attachment verification failed: Outlook returned no attachment metadata.");
     const namedAttachments = attachments.filter((attachment) => attachment.name === fileName);
@@ -256,22 +272,56 @@ export async function validateOutlookSourceMessage(messageIdValue: string, recru
   return requiredString(message.id, "message id");
 }
 
-export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string; resumePath: string }, options: FetchOptions) {
+export type SentMessageArchive = {
+  sent: true;
+  sentAt: Date;
+  subject: string;
+  body: string;
+  toAddress: string;
+  differences: string[];
+};
+
+/** A size mismatch alone proves nothing: Outlook reports the MIME-encoded size on sent mail. */
+async function sentAttachmentMatches(messageIdValue: string, fileName: string, content: Buffer, options: FetchOptions) {
+  const candidates = (await attachmentMetadata(messageIdValue, options)).filter((attachment) => !attachment.isInline && attachment.name === fileName);
+  if (!candidates.length) return false;
+  if (candidates.some((attachment) => attachment.size === content.length)) return true;
+  const identified = candidates.find((attachment) => attachment.id)?.id;
+  if (!identified) return false;
+  const localHash = createHash("sha256").update(content).digest("hex");
+  const outlookHash = createHash("sha256").update(await attachmentBytes(messageIdValue, identified, options)).digest("hex");
+  return localHash === outlookHash;
+}
+
+/**
+ * Reports what Outlook actually sent, so the user's own edits can be archived as the record of truth.
+ * Differences are described, never used to reject the message.
+ */
+export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string; resumePath: string }, options: FetchOptions): Promise<SentMessageArchive | { sent: false; sentAt: null }> {
   const checked = await checkResumeFile(expected.resumePath);
   if (!checked.usable || !checked.canonicalPath) throw new Error(checked.issue ?? "Selected Resume is unavailable.");
   const content = await readFile(checked.canonicalPath);
   const fileName = basename(checked.canonicalPath);
-  const message = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,isDraft,sentDateTime,toRecipients,subject,hasAttachments`, { method: "GET" }, options, [200]));
-  if (message.isDraft === true || typeof message.sentDateTime !== "string") return { sent: false as const, matchesApprovedRouting: false, sentAt: null };
-  const recipients = Array.isArray(message.toRecipients) ? message.toRecipients : [];
-  const actualRecipient = recipients.length === 1 ? object(object(recipients[0]).emailAddress).address : null;
-  const attachments = await attachmentMetadata(messageIdValue, options);
-  const attachmentMatches = attachments.some((attachment) => !attachment.isInline && attachment.name === fileName && attachment.size === content.length);
+  const message = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,isDraft,sentDateTime,toRecipients,subject,body,hasAttachments`, {
+    method: "GET",
+    // Plain text keeps the archived copy readable; the reply history Outlook appends is part of what was sent.
+    headers: { Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"' },
+  }, options, [200]));
+  if (message.isDraft === true || typeof message.sentDateTime !== "string") return { sent: false as const, sentAt: null };
   const sentAt = new Date(message.sentDateTime);
   if (Number.isNaN(sentAt.getTime())) throw new Error("Microsoft Graph sent time is invalid.");
-  return {
-    sent: true as const,
-    matchesApprovedRouting: typeof actualRecipient === "string" && actualRecipient.toLowerCase() === expected.toAddress.toLowerCase() && message.subject === expected.subject && message.hasAttachments === true && attachmentMatches,
-    sentAt,
-  };
+
+  const recipients = (Array.isArray(message.toRecipients) ? message.toRecipients : [])
+    .map((entry) => object(object(entry).emailAddress).address)
+    .filter((address): address is string => typeof address === "string" && Boolean(address));
+  const subject = typeof message.subject === "string" ? message.subject.slice(0, 300) : "";
+  const bodyValue = message.body && typeof message.body === "object" ? object(message.body).content : null;
+  const body = typeof bodyValue === "string" ? bodyValue.slice(0, 100_000) : "";
+  const attachmentMatches = message.hasAttachments === true && await sentAttachmentMatches(messageIdValue, fileName, content, options);
+
+  const differences: string[] = [];
+  if (recipients.length !== 1 || recipients[0]!.toLowerCase() !== expected.toAddress.toLowerCase()) differences.push("recipient");
+  if (subject !== expected.subject) differences.push("subject");
+  if (!attachmentMatches) differences.push("attachment");
+  return { sent: true as const, sentAt, subject, body, toAddress: recipients.join(", ").slice(0, 1_000), differences };
 }

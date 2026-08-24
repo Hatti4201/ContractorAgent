@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { ActivityType, OutlookDraftState, OutreachDraftStatus, OutreachMode, TaskKind } from "@/app/generated/prisma/enums";
+import { ActivityType, EmploymentType, OutlookDraftState, OutreachDraftStatus, OutreachMode, TaskKind } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
+import { employerCcSetting } from "@/services/employer";
 import { parseJobCase } from "@/services/job-case";
 import { checkResumeFile } from "@/services/resume-router";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -102,8 +103,14 @@ async function requireMutableDraft(id: string) {
   }
 }
 
+/** A C2C engagement copies the employer by default; the user can clear it before any draft leaves. */
+function defaultCcAddress(input: OutreachInput) {
+  return input.jobCase.employmentType === EmploymentType.C2C ? employerCcSetting().address : null;
+}
+
 async function saveGeneratedDraft(id: string, input: OutreachInput, content: OutreachContent) {
   const validation = await validateOutreachContent(input, content);
+  const ccAddress = defaultCcAddress(input);
   await getPrisma().$transaction([
     getPrisma().outreachDraft.upsert({
       where: { opportunityId: id },
@@ -117,6 +124,7 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         contextFingerprint: outreachContextFingerprint(input.approvedContext),
         validation: validation as unknown as Prisma.InputJsonValue,
         status: draftStatus(validation),
+        ccAddress,
       },
       update: {
         mode: input.mode,
@@ -127,6 +135,7 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         contextFingerprint: outreachContextFingerprint(input.approvedContext),
         validation: validation as unknown as Prisma.InputJsonValue,
         status: draftStatus(validation),
+        ccAddress,
         approvedAt: null,
         revision: { increment: 1 },
         outlookState: OutlookDraftState.NOT_CREATED,
@@ -136,6 +145,9 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         outlookDraftRevision: null,
         outlookDraftCreatedAt: null,
         sentConfirmedAt: null,
+        sentSubject: null,
+        sentBody: null,
+        sentToAddress: null,
         replySourceMessageId: null,
       },
     }),
@@ -197,6 +209,9 @@ export async function saveOutreachDraft(id: string, formData: FormData) {
         outlookDraftRevision: null,
         outlookDraftCreatedAt: null,
         sentConfirmedAt: null,
+        sentSubject: null,
+        sentBody: null,
+        sentToAddress: null,
         replySourceMessageId: null,
       },
     }),
@@ -264,6 +279,21 @@ export async function approveOutreachDraft(id: string, formData: FormData) {
     });
   });
   revalidatePath(`/jobs/${id}`);
+  revalidatePath(`/jobs/${id}/outreach`);
+  redirect(`/jobs/${id}/outreach`);
+}
+
+export async function setOutreachCopy(id: string, formData: FormData) {
+  await requireAuth();
+  await requireMutableDraft(id);
+  const wanted = formData.get("copyEmployer") === "on";
+  const setting = employerCcSetting();
+  if (wanted && !setting.address) redirect(`/jobs/${id}/outreach?copy=unavailable`);
+
+  await getPrisma().outreachDraft.update({
+    where: { opportunityId: id },
+    data: { ccAddress: wanted ? setting.address : null },
+  });
   revalidatePath(`/jobs/${id}/outreach`);
   redirect(`/jobs/${id}/outreach`);
 }

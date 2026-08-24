@@ -19,6 +19,7 @@ import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
 import { resolveContacts } from "@/services/contacts";
+import { employerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
@@ -373,6 +374,8 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
           opportunityId: created.id,
           mode: enumValue(preview.mode, Object.values(OutreachMode), OutreachMode.FIRST_OUTREACH),
           toAddress: draft.toAddress,
+          // A C2C engagement copies the employer by default; it stays visible and clearable on review.
+          ccAddress: reviewed.employmentType === EmploymentType.C2C ? employerCcSetting().address : null,
           subject: draft.subject,
           body: draft.body,
           attachmentResumeId: selectedResumeId,

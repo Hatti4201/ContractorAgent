@@ -27,6 +27,8 @@ import { startTask, TaskBusyError } from "@/services/tasks";
 
 const lockedStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
 const completedStates = new Set<OutlookDraftState>([OutlookDraftState.CREATED, OutlookDraftState.SENT]);
+// NEEDS_REVIEW is included so a message flagged earlier still has a way to be checked and archived.
+const sentCheckStates = new Set<OutlookDraftState>([OutlookDraftState.CREATED, OutlookDraftState.NEEDS_REVIEW]);
 
 async function preparedDraft(id: string) {
   const draft = await getPrisma().outreachDraft.findUnique({
@@ -119,6 +121,7 @@ export async function createOutlookDraft(id: string) {
           external = await createOutlookMessageDraft({
             mode: draft.mode,
             toAddress: draft.toAddress,
+            ccAddress: draft.ccAddress,
             subject: draft.subject,
             body: draft.body,
             replySourceMessageId: draft.replySourceMessageId,
@@ -176,7 +179,7 @@ export async function createOutlookDraft(id: string) {
 export async function confirmOutlookSent(id: string) {
   await requireAuth();
   const draft = await preparedDraft(id);
-  if (draft.outlookState !== OutlookDraftState.CREATED || !draft.outlookMessageId) throw new Error("Create the Outlook draft before confirming send.");
+  if (!sentCheckStates.has(draft.outlookState) || !draft.outlookMessageId) throw new Error("Create the Outlook draft before confirming send.");
   const messageId = draft.outlookMessageId;
 
   try {
@@ -202,20 +205,26 @@ export async function confirmOutlookSent(id: string) {
           await getPrisma().outreachDraft.update({ where: { id: draft.id }, data: { outlookError: "Outlook still reports this item as a draft. Send it manually, then check again." } });
           throw new Error("Outlook still reports this item as a draft. Send it manually, then check again.");
         }
-        if (!result.matchesApprovedRouting) {
-          await getPrisma().$transaction([
-            getPrisma().outreachDraft.update({ where: { id: draft.id }, data: { outlookState: OutlookDraftState.NEEDS_REVIEW, outlookError: "The sent message recipient, subject, or attachment differs from the approved draft.", sentConfirmedAt: result.sentAt } }),
-            getPrisma().activity.create({ data: { opportunityId: id, type: ActivityType.CORRECTION, description: "Outlook reported a sent message that differs from the approved routing; manual review required.", occurredAt: result.sentAt } }),
-          ]);
-          throw new Error("The sent message differs from the approved draft; review it.");
-        }
-
+        // The user is the sender, so what left the mailbox wins; a difference is recorded, never rejected.
+        const differences = result.differences;
+        const note = differences.length ? `Archived the version you sent from Outlook, which differs from the approved draft (${differences.join(", ")}).` : null;
         await getPrisma().$transaction(async (database) => {
-          await database.outreachDraft.update({ where: { id: draft.id }, data: { outlookState: OutlookDraftState.SENT, outlookError: null, sentConfirmedAt: result.sentAt } });
+          await database.outreachDraft.update({
+            where: { id: draft.id },
+            data: {
+              outlookState: OutlookDraftState.SENT,
+              outlookError: note,
+              sentConfirmedAt: result.sentAt,
+              sentSubject: result.subject,
+              sentBody: result.body,
+              sentToAddress: result.toAddress,
+            },
+          });
           const stageChanged = draft.opportunity.applicationTrack?.currentStage === ApplicationStage.DISCOVERED;
           if (stageChanged) await database.applicationTrack.update({ where: { opportunityId: id }, data: { currentStage: ApplicationStage.OUTREACH_SENT } });
           await database.activity.createMany({ data: [
-            { opportunityId: id, type: ActivityType.OUTREACH_SENT, description: "Outlook confirmed that the user sent the approved draft.", occurredAt: result.sentAt },
+            { opportunityId: id, type: ActivityType.OUTREACH_SENT, description: "Outlook confirmed the user sent the message; the sent version is archived.", occurredAt: result.sentAt },
+            ...(differences.length ? [{ opportunityId: id, type: ActivityType.CORRECTION, description: `The sent message differs from the approved draft (${differences.join(", ")}); the sent version is archived as the record of truth.`, occurredAt: result.sentAt }] : []),
             ...(stageChanged ? [{ opportunityId: id, type: ActivityType.STAGE_CHANGED, description: "Stage changed from DISCOVERED to OUTREACH_SENT after Outlook send confirmation.", occurredAt: result.sentAt }] : []),
           ] });
         });

@@ -170,9 +170,10 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           </form>
         )}
 
-        {(resumeRoute.needsReview || !selectedResumeReady) && (
-          <div className="mt-6">
-            <h3 className="font-semibold text-slate-950">Available candidates</h3>
+        {/* Always reachable, so a resume can be swapped again later, not only while routing needs review. */}
+        <details className="mt-6" open={resumeRoute.needsReview || !selectedResumeReady}>
+          <summary className="cursor-pointer font-semibold text-slate-950">Change resume</summary>
+          <div className="mt-3">
             {!job.roleFamily && <p className="mt-1 text-sm text-slate-600">No role family was confirmed for this job. Choosing a resume here sets the job to that resume&apos;s family and records the correction.</p>}
             {resumeRoute.candidates.length ? (
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -191,7 +192,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               </ul>
             ) : <p className="mt-3 text-sm text-slate-600">No active, readable resume is available. Add one in the registry.</p>}
           </div>
-        )}
+        </details>
       </section>
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="outreach-draft">

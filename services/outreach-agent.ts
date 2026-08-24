@@ -81,7 +81,12 @@ const generationInstructions = `Write a concise recruiter outreach email from su
 - Mention the resume as attached only when attachmentConfirmed is true; use the supplied attachment name and version if needed.
 - The recipient and attachment are already selected by the application; output only subject and body.
 - Markdown ** ** bold is the only markup allowed, and no other Markdown may appear.
-- Bold exactly the facts a recruiter screens on before submitting a candidate: the years-of-experience claim, and the labels of the tech stack, work authorization, location, availability, rate, clearance and relocation lines. Write each of those facts on its own line as "Label: value" and bold only the label with its colon.
+- The approved context decides which facts the email contains. Rules there that add content for a given
+  engagement type, such as employer details when jobCase.employmentType is C2C, must be followed in full.
+- Bolding is a separate decision from inclusion, and this list never limits what the email may contain.
+  Bold the years-of-experience claim, and the label of every screening line the email does contain:
+  tech stack, work authorization, location, availability, rate, clearance, relocation, employer.
+  Write each such fact on its own line as "Label: value" and bold only the label with its colon.
 - Write the years-of-experience claim in numeric form, such as "8+ years of ... experience".
 - Never bold greetings, whole sentences, or optional nice-to-have details.
 - Do not include file paths, unsupported promises, or a send instruction.`;

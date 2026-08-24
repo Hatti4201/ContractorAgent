@@ -278,6 +278,7 @@ model OutreachDraft {
   opportunityId      String              @unique @map("opportunity_id")
   mode               OutreachMode
   toAddress           String              @map("to_address")
+  ccAddress           String?             @map("cc_address")
   subject             String
   body                String
   attachmentResumeId String              @map("attachment_resume_id")
@@ -294,6 +295,9 @@ model OutreachDraft {
   outlookDraftCreatedAt DateTime?           @map("outlook_draft_created_at")
   replySourceMessageId  String?             @map("reply_source_message_id")
   sentConfirmedAt       DateTime?           @map("sent_confirmed_at")
+  sentSubject           String?             @map("sent_subject")
+  sentBody              String?             @map("sent_body")
+  sentToAddress         String?             @map("sent_to_address")
   opportunity        Opportunity         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   attachmentResume   Resume              @relation(fields: [attachmentResumeId], references: [id], onDelete: Restrict)
   createdAt          DateTime             @default(now()) @map("created_at")

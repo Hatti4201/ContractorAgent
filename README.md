@@ -42,6 +42,13 @@ handled. The schedule is a timer inside the server process: stopping the server 
 resumes on the next tick after a restart rather than firing a burst of missed scans. Repeated failures
 are counted and reported on Needs attention, because an unattended scan must not fail quietly.
 
+## Employer copy
+
+A C2C engagement copies the employer by default. The address comes only from `EMPLOYER_CC_ADDRESS` in the
+local environment, never from the model, and it is shown with a checkbox on the outreach screen so it can
+be cleared before any Outlook draft exists. Outlook draft creation verifies the copy landed exactly as
+approved, and refuses a draft carrying a copy nobody approved. Leave the setting unset to never copy anyone.
+
 ## Outreach formatting
 
 Outreach bodies are stored as plain text and may use Markdown `**bold**` as their only markup. The Outlook draft body is built by escaping the saved text first and then converting that one marker, so the recruiter's screening labels arrive in bold and nothing else in a model-written body can become markup. The outreach screen shows the converted result as an Outlook preview before approval.

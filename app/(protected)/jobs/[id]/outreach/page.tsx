@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveOutreachDraft, generateOutreachDraft, saveOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
+import { approveOutreachDraft, generateOutreachDraft, saveOutreachDraft, setOutreachCopy } from "@/app/(protected)/jobs/[id]/outreach/actions";
 import { confirmOutlookSent, createOutlookDraft, selectOutlookReplySource } from "@/app/(protected)/jobs/[id]/outlook/actions";
 import { OutlookDraftState, OutreachMode } from "@/app/generated/prisma/enums";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { employerCcSetting } from "@/services/employer";
 import { outreachBodyHtml } from "@/services/outreach-markup";
 import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -31,6 +32,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
     include: { opportunity: { include: { recruiter: true } }, attachmentResume: true },
   });
   if (!draft) notFound();
+  const employerCopy = employerCcSetting();
   const validation = parseOutreachValidation(draft.validation);
   const file = await checkResumeFile(draft.attachmentResume.filePath);
   const attachmentReady = draft.attachmentResume.active && file.usable && draft.attachmentResume.roleFamily === draft.opportunity.roleFamily;
@@ -44,6 +46,8 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
   const connected = await outlookConnected();
   const replyRequired = replyModes.has(draft.mode);
   const locked = lockedOutlookStates.has(draft.outlookState) || Boolean(draft.outlookMessageId);
+  // A flagged message still has to be checkable, otherwise NEEDS_REVIEW is a dead end.
+  const sentCheckAvailable = Boolean(draft.outlookMessageId) && (draft.outlookState === OutlookDraftState.CREATED || draft.outlookState === OutlookDraftState.NEEDS_REVIEW);
   let sourceCandidates: Awaited<ReturnType<typeof listOutlookSourceMessages>> = [];
   let sourceLookupFailed = false;
   if (connected && effectiveApproved && replyRequired && !draft.replySourceMessageId && !locked && draft.opportunity.recruiter?.email) {
@@ -90,6 +94,23 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       </form>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-800">Copy my employer</h2>
+        <p className="mt-1 text-xs text-slate-500">Suggested for a C2C engagement. The address comes from your private configuration, never from the model, and this draft is currently {draft.ccAddress ? `copying ${draft.ccAddress}` : "copying nobody"}.</p>
+        {employerCopy.issue && <p className="mt-2 text-xs font-medium text-red-800">{employerCopy.issue}</p>}
+        {!employerCopy.address && !employerCopy.issue && <p className="mt-2 text-xs font-medium text-amber-800">No employer address is configured, so no copy can be added.</p>}
+        {!locked && employerCopy.address && (
+          <form action={setOutreachCopy.bind(null, draft.opportunityId)} className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+              <input className="h-4 w-4" defaultChecked={Boolean(draft.ccAddress)} name="copyEmployer" type="checkbox" />
+              Copy {employerCopy.address} on this email
+            </label>
+            <button className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500" type="submit">Apply</button>
+          </form>
+        )}
+        {locked && <p className="mt-2 text-xs text-slate-600">Locked: the Outlook draft already exists. Change the copy in Outlook itself.</p>}
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">Outlook preview</h2>
         <p className="mt-1 text-xs text-slate-500">Exactly what the Outlook draft will contain. Wrap a screening label in ** ** to bold it.</p>
         <div
@@ -123,8 +144,11 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
           <form action={createExternalDraft} className="mt-5"><button className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800" type="submit">Create validated Outlook draft</button></form>
         )}
         {draft.outlookState === OutlookDraftState.CREATING && <p className="mt-5 text-sm text-slate-700">Draft creation is in progress. Refresh before retrying.</p>}
-        {draft.outlookState === OutlookDraftState.CREATED && <div className="mt-5 flex flex-wrap items-center gap-3">{outlookLink && <a className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white" href={outlookLink} rel="noreferrer" target="_blank">Open Outlook draft</a>}<form action={confirmSent}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800" type="submit">I sent it — verify in Outlook</button></form></div>}
-        {draft.outlookState === OutlookDraftState.SENT && <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Outlook confirmed the message was sent; CRM outreach tracking is updated.</p>}
+        {sentCheckAvailable && <div className="mt-5 flex flex-wrap items-center gap-3">{outlookLink && <a className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white" href={outlookLink} rel="noreferrer" target="_blank">Open Outlook draft</a>}<form action={confirmSent}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800" type="submit">I sent it — verify in Outlook</button></form></div>}
+        {draft.outlookState === OutlookDraftState.SENT && <>
+          <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Outlook confirmed the message was sent; CRM outreach tracking is updated.</p>
+          {draft.sentBody !== null && <details className="mt-4 rounded-xl border border-slate-200 p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-800">Archived sent version</summary><dl className="mt-3 space-y-2 text-sm text-slate-700"><div><dt className="font-medium text-slate-950">To</dt><dd>{draft.sentToAddress}</dd></div><div><dt className="font-medium text-slate-950">Subject</dt><dd>{draft.sentSubject}</dd></div><div><dt className="font-medium text-slate-950">Body</dt><dd className="whitespace-pre-wrap">{draft.sentBody}</dd></div></dl><p className="mt-3 text-xs text-slate-500">This is what left your mailbox. The approved draft above is kept unchanged for comparison.</p></details>}
+        </>}
         <p className="mt-5 text-xs text-slate-500">Permission: delegated Mail.ReadWrite. Mail.Send is not requested and no send endpoint exists.</p>
       </section>
     </div>

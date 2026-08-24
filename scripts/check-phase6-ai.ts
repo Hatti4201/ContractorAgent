@@ -61,7 +61,35 @@ async function main() {
       assert.ok(validation.status === "PASS" || validation.status === "NEEDS_REVIEW");
       if (validation.status === "NEEDS_REVIEW") needsReview += 1;
     }
-    console.log(`Phase 6 AI generated and validated all six fictional Role Families; ${needsReview} correctly remained NEEDS_REVIEW. No email content was logged.`);
+    // A context rule that fires on one engagement type must actually reach the email, and must stay
+    // out of it otherwise. The employer here is fictional; no real employer detail enters this check.
+    const employerContext = [
+      "This is a fictional test profile. Approved candidate facts: Example Candidate has professional experience with Java and React,",
+      "and may say the selected resume is attached. Do not state years, rate, visa category, clearance, certification, location or relocation.",
+      "C2C rule: when the engagement is C2C, the email must include the employer as",
+      '"Employer: Fictional Employer LLC" and "Employer Contact: employer@example.invalid".',
+      "For any other engagement type the email must not mention an employer at all.",
+    ].join(" ");
+    const engagementInput = (employmentType: EmploymentType): OutreachInput => ({
+      mode: OutreachMode.FIRST_OUTREACH,
+      toAddress: "recruiter@example.invalid",
+      recruiterName: "Example Recruiter",
+      jobCase: { ...sample(RoleFamily.JAVA_BACKEND), employmentType },
+      resume: { id: "employer-check", name: "Fictional Employer Resume", version: "sample-v1", roleFamily: RoleFamily.JAVA_BACKEND, filePath, active: true },
+      source: { sourceType: JobSourceType.PLAIN_TEXT, originalSender: null, rawText: "Fictional role source." },
+      activityTypes: [], activitySummary: [],
+      approvedContext: employerContext,
+    });
+
+    const corpToCorp = await generateOutreachContent(engagementInput(EmploymentType.C2C));
+    assert.match(corpToCorp.body, /Fictional Employer LLC/, "A C2C email must carry the employer the context requires.");
+    assert.match(corpToCorp.body, /employer@example\.invalid/, "The employer contact must reach the email too.");
+    assert.match(corpToCorp.body, /\*\*Employer/, "Employer is a screening line, so its label is bold.");
+
+    const w2 = await generateOutreachContent(engagementInput(EmploymentType.W2));
+    assert.doesNotMatch(w2.body, /Fictional Employer LLC/, "A W2 email must not carry employer details.");
+
+    console.log(`Phase 6 AI generated and validated all six fictional Role Families; ${needsReview} correctly remained NEEDS_REVIEW. Engagement-specific employer rules fired only for C2C. No email content was logged.`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
