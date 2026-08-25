@@ -179,7 +179,11 @@ export async function createOutlookDraft(id: string) {
 export async function confirmOutlookSent(id: string) {
   await requireAuth();
   const draft = await preparedDraft(id);
-  if (!sentCheckStates.has(draft.outlookState) || !draft.outlookMessageId) throw new Error("Create the Outlook draft before confirming send.");
+  if (!sentCheckStates.has(draft.outlookState) || !draft.outlookMessageId) {
+    await getPrisma().outreachDraft.update({ where: { id: draft.id }, data: { outlookError: "Create the Outlook draft before confirming send." } });
+    refresh(id);
+    redirect(`/jobs/${id}/outreach`);
+  }
   const messageId = draft.outlookMessageId;
 
   try {
