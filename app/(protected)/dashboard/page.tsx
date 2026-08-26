@@ -8,7 +8,7 @@ import {
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
-import { applicationStages, employmentTypes, formatDateTime, formatEnum, roleFamilies } from "@/lib/job-values";
+import { applicationStages, employmentTypes, formatDateTime, formatEnum, intakeStates, roleFamilies } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import {
   dashboardMetrics,
@@ -18,6 +18,7 @@ import {
   type TimeRange,
 } from "@/services/dashboard-analytics";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
+import { queuedIntakes } from "@/services/intake-queue";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -121,7 +122,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     applicationTrack: stage ? { is: { currentStage: stage } } : undefined,
   };
   const database = getPrisma();
-  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount] = await Promise.all([
+  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue] = await Promise.all([
     database.opportunity.findMany({
       where,
       select: {
@@ -158,6 +159,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       },
     }),
     database.followUpSuggestion.count({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.FAILED] } } }),
+    queuedIntakes(database),
   ]);
   const summary = summarizeDashboard(opportunities, filters.range);
   const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
@@ -186,6 +188,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
           Outlook confirmed the send, and the version you actually sent is archived. <Link className="underline" href={`/jobs/${sentJobId}/outreach`}>Open the archived email</Link>
         </p>
+      )}
+
+      {queue.length > 0 && (
+        <section className="mt-8">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className="text-xl font-semibold text-slate-950">Waiting for your review ({queue.length})</h2>
+            <p className="text-sm text-slate-600">Oldest first. Discarding a source stays on its review page.</p>
+          </div>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {queue.map((intake) => (
+              <li key={intake.id}>
+                <Link className="flex h-full flex-col rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-emerald-600" href={`/intakes/${intake.id}/review`} title={intake.detail ?? undefined}>
+                  <span className="truncate text-sm font-semibold text-slate-950">{intake.title}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
+                    <span className="truncate">{intake.recruiterName ?? "Recruiter unknown"}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${intakeStates[intake.state]!.tone}`}>{intakeStates[intake.state]!.label}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section className="mt-8 rounded-2xl border-2 border-emerald-600 bg-white p-6 shadow-sm">

@@ -14,6 +14,13 @@ export const jobSourceTypes = Object.values(JobSourceType);
 export const roleFamilies = Object.values(RoleFamily);
 export const workArrangements = Object.values(WorkArrangement);
 
+export const intakeStates: Record<string, { label: string; tone: string }> = {
+  ANALYZING: { label: "Preparing", tone: "bg-slate-100 text-slate-700" },
+  READY: { label: "Ready to review", tone: "bg-emerald-50 text-emerald-800" },
+  STOPPED: { label: "Needs your input", tone: "bg-amber-50 text-amber-900" },
+  FAILED: { label: "Interrupted", tone: "bg-red-50 text-red-800" },
+};
+
 export function formatEnum(value: string) {
   return value
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")

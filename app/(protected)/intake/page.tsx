@@ -3,15 +3,8 @@ import { discardIntake } from "@/app/(protected)/intake/actions";
 import { DiscardIntakeForm } from "@/components/delete-job-form";
 import { IntakeForm } from "@/components/intake-form";
 import { requireAuth } from "@/lib/auth";
-import { formatDateTime, formatEnum } from "@/lib/job-values";
+import { formatDateTime, formatEnum, intakeStates } from "@/lib/job-values";
 import { queuedIntakes } from "@/services/intake-queue";
-
-const state: Record<string, { label: string; tone: string }> = {
-  ANALYZING: { label: "Preparing", tone: "bg-slate-100 text-slate-700" },
-  READY: { label: "Ready to review", tone: "bg-emerald-50 text-emerald-800" },
-  STOPPED: { label: "Needs your input", tone: "bg-amber-50 text-amber-900" },
-  FAILED: { label: "Interrupted", tone: "bg-red-50 text-red-800" },
-};
 
 export default async function IntakePage({ searchParams }: { searchParams: Promise<{ discarded?: string; error?: string }> }) {
   await requireAuth();
@@ -41,7 +34,7 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
                     {intake.detail && <p className="mt-2 text-sm text-amber-900">{intake.detail}</p>}
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${state[intake.state]!.tone}`}>{state[intake.state]!.label}</span>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${intakeStates[intake.state]!.tone}`}>{intakeStates[intake.state]!.label}</span>
                     <DiscardIntakeForm action={discardIntake.bind(null, intake.id)} />
                   </div>
                 </div>

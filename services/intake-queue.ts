@@ -8,6 +8,7 @@ export type QueuedIntake = {
   createdAt: Date;
   sourceType: string;
   title: string;
+  recruiterName: string | null;
   state: "ANALYZING" | "READY" | "STOPPED" | "FAILED";
   detail: string | null;
 };
@@ -19,7 +20,8 @@ export type QueuedIntake = {
 export async function queuedIntakes(database: Prisma.TransactionClient = getPrisma()): Promise<QueuedIntake[]> {
   const intakes = await database.jobIntake.findMany({
     where: { status: IntakeStatus.PENDING },
-    orderBy: { createdAt: "desc" },
+    // Oldest first: the queue is work to clear, not a feed.
+    orderBy: { createdAt: "asc" },
     take: 50,
   });
   if (!intakes.length) return [];
@@ -30,18 +32,19 @@ export async function queuedIntakes(database: Prisma.TransactionClient = getPris
   })).flatMap((task) => (task.subjectId ? [task.subjectId] : [])));
 
   return intakes.map((intake) => {
-    const analysis = intake.analysis as { title?: string | null } | null;
+    const analysis = intake.analysis as { title?: string | null; recruiterName?: string | null } | null;
     const preview = parseIntakePreview(intake.preview);
     const title = analysis?.title?.slice(0, 120) || intake.rawText.trim().split("\n")[0]?.slice(0, 120) || "Untitled source";
+    const recruiterName = analysis?.recruiterName?.slice(0, 120) || null;
     if (!intake.analysis) {
-      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title,
+      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName,
         state: failed.has(intake.id) ? "FAILED" : "ANALYZING",
         detail: failed.has(intake.id) ? "Analysis did not finish. Open it to try again." : null } as const;
     }
     if (preview?.brake) {
-      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, state: "STOPPED", detail: preview.brake } as const;
+      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "STOPPED", detail: preview.brake } as const;
     }
-    return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, state: "READY", detail: null } as const;
+    return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "READY", detail: null } as const;
   });
 }
 
