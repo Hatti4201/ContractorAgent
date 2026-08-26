@@ -115,6 +115,22 @@ test("every role family generates strict non-stored previews and validator block
     assert.equal(versionNamed.status, "NEEDS_REVIEW");
     assert.ok(versionNamed.issues.some((issue) => issue.field === "body" && /version/i.test(issue.message)));
 
+    // Status is stated, never negotiated: an eligibility question must not reach the recruiter.
+    const asksAboutStatus = await validateOutreachContent(
+      manualModeInput,
+      { subject: "Fictional", body: "Fictional body. Would STEM OPT candidates be considered?" },
+      { fetcher: async () => { throw new Error("AI must not run when the email already asks about status."); } },
+    );
+    assert.equal(asksAboutStatus.status, "NEEDS_REVIEW");
+    assert.ok(asksAboutStatus.issues.some((issue) => issue.field === "body" && /authorization/i.test(issue.message)));
+
+    const ordinaryQuestion = await validateOutreachContent(
+      manualModeInput,
+      { subject: "Fictional", body: "Fictional body. Could you share the interview process?" },
+      { apiKey: "test-key", model: "test-model", fetcher },
+    );
+    assert.equal(ordinaryQuestion.status, "PASS", "A question that names no status must still pass.");
+
     const blocked: OutreachInput = {
       mode: OutreachMode.FORWARDED_JD_OUTREACH,
       toAddress: "recruiter@example.invalid",
