@@ -10,6 +10,8 @@ const forwardMarkers = [
 const fromLine = /^[ \t>]*from[ \t]*[:：][ \t]*(.+)$/im;
 const dateLine = /^[ \t>]*(?:sent|date)[ \t]*[:：][ \t]*(.+)$/im;
 const toLine = /^[ \t>]*to[ \t]*[:：][ \t]*(.+)$/im;
+// Only /in/ is a person; /jobs/view/ and company pages are the posting, not the recruiter.
+const profileLink = /https:\/\/(?:[a-z0-9-]+\.)?linkedin\.com\/in\/[^\s<>"')\]]+/i;
 
 function sentDate(rawText: string, now: Date) {
   const captured = dateLine.exec(rawText)?.[1]?.trim();
@@ -18,6 +20,12 @@ function sentDate(rawText: string, now: Date) {
   // A header date only wins when it is plausible; anything else falls back to the paste time.
   if (Number.isNaN(parsed.getTime()) || parsed.getUTCFullYear() < 2000) return now;
   return parsed.getTime() > now.getTime() + 86_400_000 ? now : parsed;
+}
+
+/** Deterministic pick from the pasted text: the link is quoted verbatim, never inferred. */
+export function detectRecruiterProfile(rawText: string) {
+  const found = profileLink.exec(rawText)?.[0].replace(/[.,;:]+$/, "");
+  return found && found.length <= 500 ? found : null;
 }
 
 export function detectIntakeSource(rawText: string, now = new Date()) {

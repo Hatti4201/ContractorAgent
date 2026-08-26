@@ -5,7 +5,19 @@ export type ContactInput = {
   recruiterName: string | null;
   recruiterEmail: string | null;
   recruiterPhone: string | null;
+  recruiterLinkedin?: string | null;
 };
+
+/** Returns false for anything that is not an https URL, so the caller can report it instead of storing junk. */
+export function profileUrl(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.toString() : false;
+  } catch {
+    return false;
+  }
+}
 
 export async function resolveVendorId(database: Prisma.TransactionClient, vendorName: string | null) {
   if (!vendorName) return null;
@@ -43,11 +55,13 @@ export async function resolveContacts(
             name: data.recruiterName,
             email: byName ? existing.email : data.recruiterEmail,
             phone: byName ? data.recruiterPhone ?? existing.phone : data.recruiterPhone,
+            // Only the recruiter page can clear a profile link; a job form that never showed it must not.
+            linkedinUrl: data.recruiterLinkedin ?? existing.linkedinUrl,
             vendorId,
           },
         })
       : await database.recruiter.create({
-          data: { name: data.recruiterName, email: data.recruiterEmail, phone: data.recruiterPhone, vendorId },
+          data: { name: data.recruiterName, email: data.recruiterEmail, phone: data.recruiterPhone, linkedinUrl: data.recruiterLinkedin ?? null, vendorId },
         });
     recruiterId = recruiter.id;
   }

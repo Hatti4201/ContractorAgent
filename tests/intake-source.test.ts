@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JobSourceType, OutreachMode } from "@/app/generated/prisma/enums";
-import { detectIntakeSource } from "@/services/intake-source";
+import { detectIntakeSource, detectRecruiterProfile } from "@/services/intake-source";
 import { determineOutreachMode } from "@/services/outreach-agent";
 
 const now = new Date("2026-08-22T18:00:00.000Z");
@@ -69,4 +69,12 @@ test("detected source drives the outreach mode that guards the recipient", () =>
 
   const plain = detectIntakeSource("Senior Java Developer, W2 only.", now);
   assert.equal(determineOutreachMode(plain.sourceType, []), OutreachMode.FIRST_OUTREACH);
+});
+
+test("a pasted profile link is quoted as-is, and a job posting link is not a person", () => {
+  const post = "Hiring a Java engineer.\nApply: https://www.linkedin.com/jobs/view/1234567890/\nReach me at https://www.linkedin.com/in/example-recruiter-01/, thanks!";
+  assert.equal(detectRecruiterProfile(post), "https://www.linkedin.com/in/example-recruiter-01/");
+  assert.equal(detectRecruiterProfile("Apply here: https://www.linkedin.com/jobs/view/1234567890/"), null);
+  assert.equal(detectRecruiterProfile("No link at all."), null);
+  assert.equal(detectRecruiterProfile("http://www.linkedin.com/in/example-recruiter-01"), null, "Only https may be stored.");
 });

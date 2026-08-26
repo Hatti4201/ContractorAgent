@@ -6,6 +6,7 @@ import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview } from "@/services/intake-pipeline";
+import { detectRecruiterProfile } from "@/services/intake-source";
 import { findDuplicateMatches, parseJobCase } from "@/services/job-case";
 
 function attachments(value: unknown) {
@@ -105,7 +106,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       </section>
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} jobCase={jobCase} preview={preview} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">

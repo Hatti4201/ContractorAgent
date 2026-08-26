@@ -19,7 +19,7 @@ import { requireAuth } from "@/lib/auth";
 import { dateTimeValue, dateValue } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
-import { resolveContacts } from "@/services/contacts";
+import { profileUrl, resolveContacts } from "@/services/contacts";
 import { employerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -311,11 +311,15 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
       data: { status: IntakeStatus.CONFIRMED, confirmedAt: new Date() },
     });
     if (claimed.count !== 1) throw new Error("Intake was already confirmed.");
+    // The profile link is user-entered only; the analyzer never guesses a URL.
+    const recruiterLinkedin = profileUrl(text(formData, "recruiterLinkedin", 500));
+    if (recruiterLinkedin === false) throw new Error("The recruiter profile link must be a full https:// URL.");
     const contacts = await resolveContacts(database, {
       vendorName: reviewed.vendor,
       recruiterName: reviewed.recruiterName,
       recruiterEmail: reviewed.recruiterEmail,
       recruiterPhone: reviewed.recruiterPhone,
+      recruiterLinkedin,
     });
 
     const preview = parseIntakePreview(intake.preview);

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { resolveVendorId } from "@/services/contacts";
+import { profileUrl, resolveVendorId } from "@/services/contacts";
 import { mergeRecruiterRecords } from "@/services/recruiter-merge";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -13,16 +13,6 @@ function text(formData: FormData, name: string, maximum: number) {
   const value = formData.get(name);
   const cleaned = typeof value === "string" ? value.trim() : "";
   return cleaned && cleaned.length <= maximum ? cleaned : null;
-}
-
-function profileUrl(value: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.toString() : false;
-  } catch {
-    return false;
-  }
 }
 
 function readRecruiter(formData: FormData) {

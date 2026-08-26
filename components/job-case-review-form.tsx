@@ -14,6 +14,7 @@ const inputClass =
 
 export function JobCaseReviewForm({
   jobCase,
+  recruiterLinkedin,
   source,
   preview,
   resumes,
@@ -22,6 +23,7 @@ export function JobCaseReviewForm({
   hasExactDuplicate,
 }: {
   jobCase: JobCase;
+  recruiterLinkedin: string | null;
   source: { sourceType: JobSourceType; originalSender: string | null; receivedAt: Date };
   preview: IntakePreview | null;
   resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
@@ -91,6 +93,7 @@ export function JobCaseReviewForm({
         <label className="text-sm font-medium text-slate-800">Name<input className={inputClass} defaultValue={jobCase.recruiterName ?? ""} maxLength={200} name="recruiterName" /></label>
         <label className="text-sm font-medium text-slate-800">Email<input className={inputClass} defaultValue={jobCase.recruiterEmail ?? ""} maxLength={320} name="recruiterEmail" type="email" /></label>
         <label className="text-sm font-medium text-slate-800">Phone<input className={inputClass} defaultValue={jobCase.recruiterPhone ?? ""} maxLength={80} name="recruiterPhone" type="tel" /></label>
+        <label className="text-sm font-medium text-slate-800">LinkedIn or profile URL<input className={inputClass} defaultValue={recruiterLinkedin ?? ""} maxLength={500} name="recruiterLinkedin" placeholder="https://www.linkedin.com/in/…" type="url" /><span className="mt-1 block text-xs font-normal text-slate-500">Filled in only when the pasted text contains a linkedin.com/in/ link, quoted as-is. Leaving it empty keeps whatever this recruiter already has.</span></label>
       </fieldset>
 
       <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
