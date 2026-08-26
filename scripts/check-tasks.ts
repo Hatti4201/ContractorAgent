@@ -46,7 +46,21 @@ async function main() {
     assert.match(swept.error ?? "", /server stopped/i);
 
     await deferred[0]!();
-    console.log("Background task check passed: success, failure, duplicate refusal, and stale sweep all recorded.");
+
+    // The outreach page shows a wait instead of 404 while a first draft is still being written, and
+    // it recognises that state only by this exact subject, kind and status.
+    const waiting = await database.task.create({
+      data: { kind: TaskKind.OUTREACH_REGENERATE, label: "Fictional draft in progress", subjectId: SUBJECT },
+    });
+    created.push(waiting.id);
+    const pageQuery = () => database.task.count({
+      where: { subjectId: SUBJECT, kind: TaskKind.OUTREACH_REGENERATE, status: TaskStatus.RUNNING },
+    });
+    assert.equal(await pageQuery(), 1, "A draft still being written must be discoverable, or the page falls back to 404.");
+    await database.task.update({ where: { id: waiting.id }, data: { status: TaskStatus.DONE, finishedAt: new Date() } });
+    assert.equal(await pageQuery(), 0, "Once nothing is running, a missing draft really is a missing page.");
+
+    console.log("Background task check passed: success, failure, duplicate refusal, stale sweep, and the in-progress draft state all recorded.");
   } finally {
     await database.task.deleteMany({ where: { subjectId: SUBJECT } });
   }

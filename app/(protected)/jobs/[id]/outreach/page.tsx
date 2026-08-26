@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { approveOutreachDraft, generateOutreachDraft, saveOutreachDraft, setOutreachCopy } from "@/app/(protected)/jobs/[id]/outreach/actions";
 import { confirmOutlookSent, createOutlookDraft, selectOutlookReplySource } from "@/app/(protected)/jobs/[id]/outlook/actions";
-import { OutlookDraftState, OutreachMode } from "@/app/generated/prisma/enums";
+import { OutlookDraftState, OutreachMode, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { employerCcSetting } from "@/services/employer";
@@ -31,7 +31,22 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
     where: { opportunityId: id },
     include: { opportunity: { include: { recruiter: true } }, attachmentResume: true },
   });
-  if (!draft) notFound();
+  if (!draft) {
+    // The first generation writes this row only after two model calls, and the action redirects here
+    // at once. A missing draft with work still running is a wait, not a page that does not exist.
+    const writing = await getPrisma().task.count({
+      where: { subjectId: id, kind: TaskKind.OUTREACH_REGENERATE, status: TaskStatus.RUNNING },
+    });
+    if (!writing) notFound();
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Outreach</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Writing your email</h1>
+        <p className="mt-3 text-slate-600">The draft is being written and validated in the background. This page fills in when it finishes; the corner tray tracks progress and you can leave.</p>
+        <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href={`/jobs/${id}`}>Back to the job</Link>
+      </div>
+    );
+  }
   const employerCopy = employerCcSetting();
   const validation = parseOutreachValidation(draft.validation);
   const file = await checkResumeFile(draft.attachmentResume.filePath);
