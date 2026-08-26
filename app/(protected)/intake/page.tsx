@@ -51,7 +51,7 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
-      <div className="mt-8"><IntakeForm /></div>
+      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
     </div>
   );
 }

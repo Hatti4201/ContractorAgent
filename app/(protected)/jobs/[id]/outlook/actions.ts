@@ -185,6 +185,7 @@ export async function confirmOutlookSent(id: string) {
     redirect(`/jobs/${id}/outreach`);
   }
   const messageId = draft.outlookMessageId;
+  let archived = false;
 
   try {
     await startTask(
@@ -232,6 +233,7 @@ export async function confirmOutlookSent(id: string) {
             ...(stageChanged ? [{ opportunityId: id, type: ActivityType.STAGE_CHANGED, description: "Stage changed from DISCOVERED to OUTREACH_SENT after Outlook send confirmation.", occurredAt: result.sentAt }] : []),
           ] });
         });
+        archived = true;
       },
       after,
     );
@@ -239,5 +241,6 @@ export async function confirmOutlookSent(id: string) {
     if (!(error instanceof TaskBusyError)) throw error;
   }
   refresh(id);
-  redirect(`/jobs/${id}/outreach`);
+  // A confirmed send is the end of this job's outreach work; anything else stays here with its banner.
+  redirect(archived ? `/dashboard?sent=${id}` : `/jobs/${id}/outreach`);
 }

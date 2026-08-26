@@ -106,6 +106,15 @@ test("every role family generates strict non-stored previews and validator block
     const manualModeValidation = await validateOutreachContent(manualModeInput, { subject: "Fictional", body: "Fictional body" }, { apiKey: "test-key", model: "test-model", fetcher });
     assert.equal(manualModeValidation.status, "PASS");
 
+    // The email may say a resume is attached; naming its version must be caught without asking the model.
+    const versionNamed = await validateOutreachContent(
+      manualModeInput,
+      { subject: "Fictional", body: "Fictional body, resume v1 attached." },
+      { fetcher: async () => { throw new Error("AI must not run when the version is already named."); } },
+    );
+    assert.equal(versionNamed.status, "NEEDS_REVIEW");
+    assert.ok(versionNamed.issues.some((issue) => issue.field === "body" && /version/i.test(issue.message)));
+
     const blocked: OutreachInput = {
       mode: OutreachMode.FORWARDED_JD_OUTREACH,
       toAddress: "recruiter@example.invalid",

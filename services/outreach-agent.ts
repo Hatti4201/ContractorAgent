@@ -78,7 +78,8 @@ const generationInstructions = `Write a concise recruiter outreach email from su
 - Never turn job requirements or permission to express interest into a claim that the candidate has that skill, background, or experience.
 - Never invent experience, rate, authorization, employer details, clearance, certifications, location, relocation, or local status.
 - Respect the supplied mode: first outreach, existing-thread follow-up, direct-email reply, or forwarded-JD new outreach.
-- Mention the resume as attached only when attachmentConfirmed is true; use the supplied attachment name and version if needed.
+- Mention the resume as attached only when attachmentConfirmed is true, and say only that it is attached.
+- Never write the attachment file name, its version, or a role-family label in the email.
 - The recipient and attachment are already selected by the application; output only subject and body.
 - Markdown ** ** bold is the only markup allowed, and no other Markdown may appear.
 - The approved context decides which facts the email contains. Rules there that add content for a given
@@ -96,6 +97,7 @@ const validatorInstructions = `Audit a proposed recruiter email against the supp
 - Flag every unsupported candidate or job claim, including experience, rate, authorization, employer, clearance, certification, location, relocation, and local status.
 - Check recruiter name, job title, employment terms, tech stack, mode, subject, attachment wording, and approved context.
 - Treat attachmentConfirmed, attachmentName, and attachmentVersion as application-confirmed facts; only mention an attachment when attachmentConfirmed is true.
+- The email must say the resume is attached without naming the file, its version, or a role-family label; flag it when it does.
 - PASS only when every statement is supported. Otherwise return NEEDS_REVIEW with concise issues.
 - Do not rewrite the email.`;
 
@@ -244,6 +246,11 @@ function localValidationIssues(input: OutreachInput, content?: OutreachContent) 
   }
   if (content && (!content.subject.trim() || content.subject.length > 300)) add("subject", "Subject is missing or too long.");
   if (content && (!content.body.trim() || content.body.length > 10_000)) add("body", "Email body is missing or too long.");
+  // ponytail: the version carries a digit and cannot be mistaken for prose; the file name is left to the validator.
+  const version = input.resume.version.trim();
+  if (content && version.length >= 2 && /\d/.test(version) && content.body.toLowerCase().includes(version.toLowerCase())) {
+    issues.push({ field: "body", severity: "NEEDS_REVIEW", message: "The email states the resume version; say only that the resume is attached." });
+  }
   return issues;
 }
 

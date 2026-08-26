@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { IntakeForm } from "@/components/intake-form";
 import {
   ApplicationStage,
   EmploymentType,
@@ -161,6 +162,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const summary = summarizeDashboard(opportunities, filters.range);
   const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
   const selectedMetric = dashboardMetrics.find((metric) => metric.key === filters.metric)!;
+  // Only our own redirect writes this, so anything that is not a plain id is ignored rather than linked.
+  const sentJobId = typeof query.sent === "string" && /^[a-z0-9]+$/i.test(query.sent) ? query.sent : null;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -179,11 +182,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      {sentJobId && (
+        <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
+          Outlook confirmed the send, and the version you actually sent is archived. <Link className="underline" href={`/jobs/${sentJobId}/outreach`}>Open the archived email</Link>
+        </p>
+      )}
+
       {query.queued && (
         <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
           Your pasted job is being prepared in the background. Progress is in the corner tray, and it keeps running while you work elsewhere.
         </p>
       )}
+
+      <section className="mt-8 rounded-2xl border-2 border-emerald-600 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">Add a job</h2>
+            <p className="mt-1 text-sm text-slate-600">Paste the job post, LinkedIn message, recruiter email or forwarded JD. Analysis, resume routing and the draft all run in the background.</p>
+          </div>
+          <Link className="text-sm font-medium text-emerald-700 underline" href="/intake">Sources waiting for review, or enter a job manually →</Link>
+        </div>
+        <div className="mt-5"><IntakeForm autoFocus={false} hint={false} rows={5} /></div>
+      </section>
 
       <section aria-label="Time range" className="mt-8 flex flex-wrap gap-2">
         {timeRanges.map((range) => (
