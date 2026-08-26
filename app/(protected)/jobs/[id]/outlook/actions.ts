@@ -23,7 +23,7 @@ import {
   validateOutlookSourceMessage,
 } from "@/services/outlook-graph";
 import { checkResumeFile } from "@/services/resume-router";
-import { startTask, TaskBusyError } from "@/services/tasks";
+import { runTaskNow, startTask, TaskBusyError } from "@/services/tasks";
 
 const lockedStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
 const completedStates = new Set<OutlookDraftState>([OutlookDraftState.CREATED, OutlookDraftState.SENT]);
@@ -188,7 +188,8 @@ export async function confirmOutlookSent(id: string) {
   let archived = false;
 
   try {
-    await startTask(
+    // Runs in the request, not after it: a couple of Graph reads, and the verdict decides where you land.
+    await runTaskNow(
       { kind: TaskKind.OUTLOOK_SENT_CHECK, label: "Checking Outlook for the sent message", subjectId: id, href: `/jobs/${id}/outreach` },
       async () => {
         let result: Awaited<ReturnType<typeof inspectOutlookSentMessage>>;
@@ -235,7 +236,6 @@ export async function confirmOutlookSent(id: string) {
         });
         archived = true;
       },
-      after,
     );
   } catch (error) {
     if (!(error instanceof TaskBusyError)) throw error;
