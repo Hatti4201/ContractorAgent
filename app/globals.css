@@ -1,7 +1,19 @@
 @import "tailwindcss";
 
+/*
+ * One tinted palette instead of a restyle per page: every bg-slate-50, border-slate-200 and
+ * bg-slate-100 chip across the app cools down with these. Only the light end is redefined, so
+ * body text and headings keep the contrast they were written with.
+ */
+@theme {
+  --color-slate-50: #f3f7fd;
+  --color-slate-100: #e8f0fa;
+  --color-slate-200: #dae6f4;
+  --color-slate-300: #c3d4e9;
+}
+
 :root {
-  --background: #f8fafc;
+  --background: #eaf2fc;
   --foreground: #0f172a;
 }
 
@@ -14,7 +26,9 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* The platform UI face reads cleaner than Arial at small sizes, which is most of this app. */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
