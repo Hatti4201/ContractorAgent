@@ -15,6 +15,7 @@ import {
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
+import { createOutlookDraft } from "@/app/(protected)/jobs/[id]/outlook/actions";
 import { requireAuth } from "@/lib/auth";
 import { dateTimeValue, dateValue } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
@@ -290,7 +291,13 @@ export async function rescheduleAttention(id: string, formData: FormData) {
   redirect(`/jobs/${id}#attention-actions`);
 }
 
-export async function confirmIntake(id: string, markDuplicate: boolean, formData: FormData) {
+/**
+ * `outlookDraft` runs the whole remaining chain from this one click. The page it is called from
+ * shows the recipient, subject, body and attachment and lets the user edit them first, which is what
+ * RESTRICTIONS requires before an external draft exists; nothing is approved that the validator
+ * did not pass, and creation still stops with a banner when anything drifted.
+ */
+export async function confirmIntake(id: string, markDuplicate: boolean, outlookDraft: boolean, formData: FormData) {
   await requireAuth();
   const opportunity = await getPrisma().$transaction(async (database) => {
     const intake = await database.jobIntake.findUnique({ where: { id } });
@@ -385,6 +392,8 @@ export async function confirmIntake(id: string, markDuplicate: boolean, formData
   revalidatePath("/dashboard");
   revalidatePath("/needs-attention");
   revalidatePath("/jobs");
+  // createOutlookDraft redirects to the outreach page either way: with the draft, or with the reason.
+  if (outlookDraft && opportunity.hasDraft) await createOutlookDraft(opportunity.id);
   redirect(opportunity.hasDraft ? `/jobs/${opportunity.id}/outreach` : `/jobs/${opportunity.id}`);
 }
 

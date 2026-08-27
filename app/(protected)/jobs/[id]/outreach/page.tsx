@@ -10,11 +10,10 @@ import { outreachBodyHtml } from "@/services/outreach-markup";
 import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { parseOutreachValidation } from "@/services/outreach-agent";
-import { listOutlookSourceMessages } from "@/services/outlook-graph";
+import { listOutlookSourceMessages, replyModes } from "@/services/outlook-graph";
 import { checkResumeFile } from "@/services/resume-router";
 
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
-const replyModes = new Set<OutreachMode>([OutreachMode.DIRECT_EMAIL_REPLY, OutreachMode.THREAD_FOLLOW_UP]);
 const lockedOutlookStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
 
 function safeOutlookLink(value: string | null) {

@@ -19,8 +19,10 @@ export function JobCaseReviewForm({
   preview,
   resumes,
   confirmAction,
+  confirmAndDraftAction,
   duplicateAction,
   hasExactDuplicate,
+  straightThrough,
 }: {
   jobCase: JobCase;
   recruiterLinkedin: string | null;
@@ -28,8 +30,10 @@ export function JobCaseReviewForm({
   preview: IntakePreview | null;
   resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
   confirmAction: (formData: FormData) => void | Promise<void>;
+  confirmAndDraftAction: (formData: FormData) => void | Promise<void>;
   duplicateAction: (formData: FormData) => void | Promise<void>;
   hasExactDuplicate: boolean;
+  straightThrough: boolean;
 }) {
   return (
     <form action={confirmAction} className="space-y-8">
@@ -147,7 +151,14 @@ export function JobCaseReviewForm({
       )}
 
       <div className="flex flex-wrap gap-3">
-        <button className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800" type="submit">
+        {straightThrough && (
+          <button className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800" formAction={confirmAndDraftAction} type="submit">
+            Confirm and create the Outlook draft
+          </button>
+        )}
+        <button className={straightThrough
+          ? "rounded-lg border border-slate-400 bg-white px-5 py-3 font-medium text-slate-800 hover:border-slate-600"
+          : "rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800"} type="submit">
           {preview?.subject ? "Confirm and create job with draft" : "Confirm and create opportunity"}
         </button>
         {/* A second vendor on one role is a normal channel; only the same JD text twice is a duplicate. */}
@@ -157,6 +168,7 @@ export function JobCaseReviewForm({
           </button>
         )}
       </div>
+      {straightThrough && <p className="text-xs leading-5 text-slate-500">The first button runs the rest in one go: the job is created, the validated email is approved, and the Outlook draft is built with the resume attached. Editing the email above sends it back for revalidation instead, so use the second button then. Sending is still yours alone.</p>}
     </form>
   );
 }

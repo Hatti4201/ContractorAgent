@@ -9,7 +9,7 @@ const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 const SIMPLE_ATTACHMENT_LIMIT = 3 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES = 150 * 1024 * 1024;
 const UPLOAD_CHUNK_BYTES = 12 * 320 * 1024;
-const replyModes = new Set<OutreachMode>([OutreachMode.DIRECT_EMAIL_REPLY, OutreachMode.THREAD_FOLLOW_UP]);
+export const replyModes = new Set<OutreachMode>([OutreachMode.DIRECT_EMAIL_REPLY, OutreachMode.THREAD_FOLLOW_UP]);
 
 type FetchOptions = { accessToken: string; fetcher?: typeof fetch };
 export type OutlookInboxMessage = {

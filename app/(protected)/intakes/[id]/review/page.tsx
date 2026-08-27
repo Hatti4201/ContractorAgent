@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { confirmIntake } from "@/app/(protected)/jobs/actions";
-import { IntakeStatus } from "@/app/generated/prisma/enums";
+import { IntakeStatus, type OutreachMode } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { detectRecruiterProfile } from "@/services/intake-source";
+import { outlookConnected } from "@/services/outlook-auth";
+import { replyModes } from "@/services/outlook-graph";
 import { findDuplicateMatches, parseJobCase } from "@/services/job-case";
 
 function attachments(value: unknown) {
@@ -55,8 +57,18 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
     },
   });
   const duplicates = findDuplicateMatches(jobCase, intake.fingerprint, intake.receivedAt, candidates);
-  const confirm = confirmIntake.bind(null, intake.id, false);
-  const markDuplicate = confirmIntake.bind(null, intake.id, true);
+  const confirm = confirmIntake.bind(null, intake.id, false, false);
+  const markDuplicate = confirmIntake.bind(null, intake.id, true, false);
+  const confirmAndDraft = confirmIntake.bind(null, intake.id, false, true);
+  // One click may run the rest of the chain only where nothing is left to decide: a first outreach
+  // the validator passed, with a resume routed and Outlook connected. Anything else keeps its stop.
+  const straightThrough = Boolean(
+    preview?.mode
+      && !replyModes.has(preview.mode as OutreachMode)
+      && preview.validation?.status === "PASS"
+      && preview.resumeId
+      && await outlookConnected(),
+  );
   const files = attachments(intake.attachmentMetadata);
 
   return (
@@ -106,7 +118,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       </section>
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
