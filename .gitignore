@@ -3,6 +3,7 @@
 
 # Next.js
 /.next
+/.next-agent
 /out
 
 # generated Prisma client
