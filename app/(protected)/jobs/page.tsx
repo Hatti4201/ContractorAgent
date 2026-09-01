@@ -2,8 +2,7 @@ import Link from "next/link";
 import { Highlight, MarkedText } from "@/components/highlight";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatEnum } from "@/lib/job-values";
-import { getPrisma } from "@/lib/prisma";
-import { hiddenMatches, searchJobs, type SearchedJob } from "@/services/job-search";
+import { hiddenMatches, listJobs, searchJobs, type ListedJob, type Snippet } from "@/services/job-search";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
@@ -14,17 +13,9 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   const term = (typeof q === "string" ? q : "").trim().slice(0, 200);
 
   const search = term ? await searchJobs(term) : null;
-  const jobs: SearchedJob[] = search?.jobs ?? await getPrisma().opportunity.findMany({
-    include: {
-      applicationTrack: true,
-      recruiter: true,
-      vendor: true,
-      selectedResume: true,
-      outreachDraft: { select: { subject: true, body: true, sentSubject: true, sentBody: true, toAddress: true } },
-      activities: { select: { description: true }, take: 0 },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
+  const jobs: ListedJob[] = search?.jobs ?? await listJobs();
+  // Snippets are read off the searched rows, so the plain listing never loads a JD or an email body.
+  const snippets = new Map<string, Snippet[]>(search?.jobs.map((job) => [job.id, hiddenMatches(job, term)]));
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -66,7 +57,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {jobs.map((job) => {
-                  const snippets = term ? hiddenMatches(job, term) : [];
+                  const matched = snippets.get(job.id) ?? [];
                   const phoneOnly = Boolean(job.recruiterId && search?.phoneMatched.has(job.recruiterId));
                   return (
                     <tr className="hover:bg-slate-50" key={job.id}>
@@ -80,7 +71,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                             ? <><Highlight term={term} text={job.selectedResume.name} /> <Highlight term={term} text={job.selectedResume.version} /></>
                             : "not selected"}
                         </span>
-                        {snippets.map((snippet, index) => (
+                        {matched.map((snippet, index) => (
                           <span className="mt-1 block text-xs text-slate-500" key={index}>
                             <span className="font-medium text-slate-700">{snippet.label}:</span> {snippet.before}<MarkedText>{snippet.match}</MarkedText>{snippet.after}
                           </span>

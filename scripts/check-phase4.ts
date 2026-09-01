@@ -10,6 +10,7 @@ import {
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
+import { runIntakePipeline } from "@/services/intake-pipeline";
 import { findDuplicateMatches, jobFingerprint, parseJobCase, type JobCase } from "@/services/job-case";
 
 class RollbackCheck extends Error {}
@@ -84,6 +85,9 @@ async function main() {
         },
       });
       assert.equal(findDuplicateMatches(analysis, fingerprint, intake.receivedAt, candidates)[0]?.score, 1);
+
+      // Discarding a source deletes its row; a pipeline already running on it must end, not fail.
+      await runIntakePipeline("intake-that-was-discarded");
       throw new RollbackCheck();
     });
   } catch (error) {

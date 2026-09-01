@@ -51,17 +51,35 @@ export function hiddenMatches(job: SearchedJob, term: string): Snippet[] {
     .slice(0, MAX_SNIPPETS);
 }
 
-const jobSelection = {
-  applicationTrack: true,
-  recruiter: true,
-  vendor: true,
-  selectedResume: true,
-  outreachDraft: { select: { subject: true, body: true, sentSubject: true, sentBody: true, toAddress: true } },
-} satisfies Prisma.OpportunityInclude;
+/** What a row shows. Nothing here is a long text column, so listing every job stays cheap. */
+const listSelection = {
+  id: true,
+  title: true,
+  client: true,
+  roleFamily: true,
+  recruiterId: true,
+  applicationTrack: { select: { currentStage: true, nextFollowUpAt: true } },
+  recruiter: { select: { name: true, phone: true } },
+  vendor: { select: { name: true } },
+  selectedResume: { select: { name: true, version: true } },
+} satisfies Prisma.OpportunitySelect;
 
+/** The long columns are read only while searching them, and only for the rows that matched. */
+const searchSelection = {
+  ...listSelection,
+  rawJd: true,
+  recruiter: { select: { name: true, phone: true, notes: true } },
+  outreachDraft: { select: { subject: true, body: true, sentSubject: true, sentBody: true } },
+} satisfies Prisma.OpportunitySelect;
+
+export type ListedJob = Prisma.OpportunityGetPayload<{ select: typeof listSelection }>;
 export type SearchedJob = Prisma.OpportunityGetPayload<{
-  include: typeof jobSelection & { activities: { select: { description: true } } };
+  select: typeof searchSelection & { activities: { select: { description: true } } };
 }>;
+
+export function listJobs(database = getPrisma()) {
+  return database.opportunity.findMany({ select: listSelection, orderBy: { updatedAt: "desc" } });
+}
 
 export type JobSearch = {
   jobs: SearchedJob[];
@@ -109,7 +127,7 @@ export async function searchJobs(term: string, database = getPrisma()): Promise<
         ...(phoneMatched.size ? [{ recruiterId: { in: [...phoneMatched] } }] : []),
       ],
     },
-    include: { ...jobSelection, activities: { where: { description: contains }, select: { description: true }, take: 1 } },
+    select: { ...searchSelection, activities: { where: { description: contains }, select: { description: true }, take: 1 } },
     orderBy: { updatedAt: "desc" },
     take: MAX_RESULTS + 1,
   });

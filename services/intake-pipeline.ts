@@ -44,11 +44,26 @@ async function savePreview(intakeId: string, preview: IntakePreview) {
   });
 }
 
+/** Prisma reports a row that is required but gone as P2025, whatever step reached for it. */
+function intakeDiscarded(error: unknown) {
+  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2025";
+}
+
 /**
  * Runs analysis, deterministic resume routing, drafting and validation before any Opportunity exists.
  * Nothing here becomes authoritative CRM data; the result is a preview the user confirms.
  */
 export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
+  try {
+    await prepareIntake(intakeId, task);
+  } catch (error) {
+    // Discarding a source deletes its row. A run already under way then has nothing left to write,
+    // which is the user finishing with it, not a failure worth a red notice and a Prisma stack.
+    if (!intakeDiscarded(error)) throw error;
+  }
+}
+
+async function prepareIntake(intakeId: string, task?: TaskHandle) {
   const intake = await getPrisma().jobIntake.findUniqueOrThrow({ where: { id: intakeId } });
 
   await task?.progress("Analyzing the job description");
