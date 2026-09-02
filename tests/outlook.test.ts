@@ -6,7 +6,7 @@ import test from "node:test";
 import { OutreachMode } from "../app/generated/prisma/enums";
 import nextConfig from "../next.config";
 import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "../services/outlook-crypto";
-import { createOutlookMessageDraft, inspectOutlookSentMessage, listOutlookInboxMessages } from "../services/outlook-graph";
+import { createOutlookMessageDraft, inboxIntakeText, inspectOutlookSentMessage, listOutlookInboxMessages } from "../services/outlook-graph";
 
 test("OAuth callback query parameters are omitted from development logs", () => {
   const logging = nextConfig.logging;
@@ -211,4 +211,18 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("a mail taken from the inbox carries the headers a paste would have lost", () => {
+  const text = inboxIntakeText({
+    subject: "Fictional Java role",
+    fromAddress: "recruiter@example.invalid",
+    receivedAt: new Date("2026-09-01T17:30:00.000Z"),
+    body: "Are you available for a 6 month contract?",
+  });
+  // The sender has to survive verbatim: the reply validator looks for that address in this text.
+  assert.match(text, /^From: recruiter@example\.invalid$/m);
+  assert.match(text, /^Subject: Fictional Java role$/m);
+  assert.match(text, /^Sent: 2026-09-01T17:30:00\.000Z$/m);
+  assert.ok(text.endsWith("Are you available for a 6 month contract?"));
 });

@@ -186,6 +186,7 @@ model JobIntake {
   analysis           Json?
   preview            Json?
   fingerprint        String
+  sourceMessageId    String?       @unique @map("source_message_id")
   status             IntakeStatus  @default(PENDING)
   opportunityId      String?       @unique @map("opportunity_id")
   opportunity        Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)

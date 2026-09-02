@@ -247,6 +247,33 @@ function inboxMessage(value: unknown): OutlookInboxMessage {
  * Without a watermark this returns the newest messages; with one it returns the oldest messages that
  * arrived after it, so repeated scans walk forward through the mailbox and cannot skip a run's worth.
  */
+/**
+ * The full message behind a listed one. Plain text is requested so the analyzer reads what the user
+ * reads, and the real headers are put back on top: they are the evidence that this is mail to reply
+ * to, and the recipient validator looks for the sender's address in exactly that text.
+ */
+export async function readOutlookInboxMessage(messageIdValue: string, options: FetchOptions) {
+  const value = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,subject,body,receivedDateTime,from,isDraft`, {
+    method: "GET",
+    headers: { Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"' },
+  }, options, [200]));
+  const message = inboxMessage({ ...value, bodyPreview: "" });
+  const bodyValue = value.body && typeof value.body === "object" ? object(value.body).content : null;
+  const body = typeof bodyValue === "string" ? bodyValue.slice(0, 45_000) : "";
+  return { ...message, body };
+}
+
+/** The header block a pasted email would have carried, rebuilt from the message Graph returned. */
+export function inboxIntakeText(message: { subject: string; fromAddress: string; receivedAt: Date; body: string }) {
+  return [
+    `From: ${message.fromAddress}`,
+    `Sent: ${message.receivedAt.toISOString()}`,
+    `Subject: ${message.subject}`,
+    "",
+    message.body,
+  ].join("\n").trim();
+}
+
 export async function listOutlookInboxMessages(options: FetchOptions, since?: Date | null) {
   const select = "$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25";
   const path = since

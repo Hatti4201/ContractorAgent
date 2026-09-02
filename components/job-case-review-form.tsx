@@ -16,6 +16,7 @@ const inputClass =
 export function JobCaseReviewForm({
   jobCase,
   recruiterLinkedin,
+  sourceMessageId,
   source,
   preview,
   resumes,
@@ -29,6 +30,7 @@ export function JobCaseReviewForm({
 }: {
   jobCase: JobCase;
   recruiterLinkedin: string | null;
+  sourceMessageId: string | null;
   source: { sourceType: JobSourceType; originalSender: string | null; receivedAt: Date };
   preview: IntakePreview | null;
   resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
@@ -70,7 +72,7 @@ export function JobCaseReviewForm({
                 <div className="mt-2 space-y-2">
                   {threads.map((message) => (
                     <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm" key={message.id}>
-                      <input className="mt-1" name="replySourceMessageId" required type="radio" value={message.id} />
+                      <input className="mt-1" defaultChecked={message.id === sourceMessageId} name="replySourceMessageId" required type="radio" value={message.id} />
                       <span>
                         <span className="font-medium text-slate-950">{message.subject}</span>
                         <span className="mt-0.5 block text-xs text-slate-500">{message.receivedDateTime.slice(0, 16).replace("T", " ")} UTC</span>
