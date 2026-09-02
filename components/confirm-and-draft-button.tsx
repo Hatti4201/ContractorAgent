@@ -26,7 +26,9 @@ export function ConfirmAndDraftButton({
     setBusy(true);
     try {
       const { jobId, url } = await action(new FormData(form));
-      if (url && tab) tab.location.href = url;
+      // replace, not assign: the blank placeholder leaves no history entry behind, so the tab holds
+      // a single page -- the state a browser is willing to let Outlook close again after Send.
+      if (url && tab) tab.location.replace(url);
       else tab?.close();
       router.push(`/jobs/${jobId}/outreach`);
     } catch {
