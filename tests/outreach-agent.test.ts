@@ -124,6 +124,22 @@ test("every role family generates strict non-stored previews and validator block
     assert.equal(asksAboutStatus.status, "NEEDS_REVIEW");
     assert.ok(asksAboutStatus.issues.some((issue) => issue.field === "body" && /authorization/i.test(issue.message)));
 
+    // Being local is the candidate's fact: the city has to come from the approved context.
+    const unbackedLocal = await validateOutreachContent(
+      manualModeInput,
+      { subject: "Fictional", body: "Local to Fictional City (Fictional Bay)." },
+      { fetcher: async () => { throw new Error("AI must not run when a local claim has no backing.") } },
+    );
+    assert.equal(unbackedLocal.status, "NEEDS_REVIEW");
+    assert.ok(unbackedLocal.issues.some((issue) => issue.field === "body" && /local/i.test(issue.message)));
+
+    const backedLocal = await validateOutreachContent(
+      { ...manualModeInput, approvedContext: "Fictional context. Commutable: Fictional City, Sample Town." },
+      { subject: "Fictional", body: "Local to Fictional City (Fictional Bay)." },
+      { apiKey: "test-key", model: "test-model", fetcher },
+    );
+    assert.equal(backedLocal.status, "PASS", "A city the context covers must still pass.");
+
     const ordinaryQuestion = await validateOutreachContent(
       manualModeInput,
       { subject: "Fictional", body: "Fictional body. Could you share the interview process?" },

@@ -77,6 +77,7 @@ const generationInstructions = `Write a concise recruiter outreach email from su
 - Use only candidate facts in that approved context and job facts in JobCase.
 - Never turn job requirements or permission to express interest into a claim that the candidate has that skill, background, or experience.
 - Never invent experience, rate, authorization, employer details, clearance, certifications, location, relocation, or local status.
+- Whenever JobCase.location names a city, write that line for a reader who knows nothing about the area: when the approved context puts that city within the candidate's commuting range, write it as "Local to <city> (<the wider area the context names>)". Never imply nearness for a city the context does not cover, and never name an area of your own.
 - Never ask the recruiter about visa, work authorization, sponsorship or eligibility, and never ask whether a status such as OPT, STEM OPT, EAD, H1B, H4, L2 or GC would be considered. State the candidate's authorization exactly as the approved context words it and leave the judgement to the recruiter.
 - Respect the supplied mode: first outreach, existing-thread follow-up, direct-email reply, or forwarded-JD new outreach.
 - Mention the resume as attached only when attachmentConfirmed is true, and say only that it is attached.
@@ -99,6 +100,7 @@ const validatorInstructions = `Audit a proposed recruiter email against the supp
 - Check recruiter name, job title, employment terms, tech stack, mode, subject, attachment wording, and approved context.
 - Treat attachmentConfirmed, attachmentName, and attachmentVersion as application-confirmed facts; only mention an attachment when attachmentConfirmed is true.
 - The email must say the resume is attached without naming the file, its version, or a role-family label; flag it when it does.
+- A claim of being local or nearby must be backed by the approved context: the city has to be one the context covers, and the wider area has to be the one the context names. Flag every other nearness claim.
 - Flag any question about visa, work authorization, sponsorship or eligibility: the email states the candidate's status and never asks whether it qualifies.
 - PASS only when every statement is supported. Otherwise return NEEDS_REVIEW with concise issues.
 - Do not rewrite the email.`;
@@ -248,6 +250,12 @@ function localValidationIssues(input: OutreachInput, content?: OutreachContent) 
   }
   if (content && (!content.subject.trim() || content.subject.length > 300)) add("subject", "Subject is missing or too long.");
   if (content && (!content.body.trim() || content.body.length > 10_000)) add("body", "Email body is missing or too long.");
+  // Being local is a fact about the candidate, so the city it names has to come from the approved
+  // context rather than from what the model believes about the map.
+  const localClaim = content && /\blocal to ([^(),.\n]{2,60})/i.exec(content.body);
+  if (localClaim && !input.approvedContext.toLowerCase().includes(localClaim[1]!.trim().toLowerCase())) {
+    add("body", `The email claims to be local to "${localClaim[1]!.trim()}", which the approved context does not cover.`);
+  }
   // Acronyms stay case-sensitive so ordinary words ("opt out", "gc") cannot trip the check.
   const statusQuestion = /[^.!?\n]*\b(?:[Vv]isa|[Gg]reen [Cc]ard|[Ss]ponsor\w*|[Ww]ork authoriz\w*|OPT|EAD|H-?1B|H-?4|L-?2|GC)\b[^.!?\n]*\?/;
   if (content && statusQuestion.test(content.body)) {
