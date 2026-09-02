@@ -1,3 +1,4 @@
+import { ConfirmAndDraftButton } from "@/components/confirm-and-draft-button";
 import type { JobSourceType, RoleFamily } from "@/app/generated/prisma/enums";
 import type { IntakePreview } from "@/services/intake-pipeline";
 import {
@@ -23,6 +24,8 @@ export function JobCaseReviewForm({
   duplicateAction,
   hasExactDuplicate,
   straightThrough,
+  employerCopy,
+  threads,
 }: {
   jobCase: JobCase;
   recruiterLinkedin: string | null;
@@ -30,14 +33,87 @@ export function JobCaseReviewForm({
   preview: IntakePreview | null;
   resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
   confirmAction: (formData: FormData) => void | Promise<void>;
-  confirmAndDraftAction: (formData: FormData) => void | Promise<void>;
+  confirmAndDraftAction: (formData: FormData) => Promise<{ jobId: string; url: string | null }>;
   duplicateAction: (formData: FormData) => void | Promise<void>;
   hasExactDuplicate: boolean;
   straightThrough: boolean;
+  employerCopy: { address: string; defaultOn: boolean } | null;
+  /** Null unless the mode replies into a thread; then one of these must be chosen. */
+  threads: Array<{ id: string; subject: string; receivedDateTime: string }> | null;
 }) {
   return (
     <form action={confirmAction} className="space-y-8">
-      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
+      {preview?.brake && (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">
+          No email was drafted: {preview.brake}
+        </p>
+      )}
+
+      {preview?.subject && preview.body && (
+        <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6">
+          <legend className="px-2 text-lg font-semibold text-slate-950">Outreach email</legend>
+          {preview.validation && (
+            <div className={`rounded-xl border p-4 text-sm md:col-span-2 ${preview.validation.status === "PASS" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+              <p className="font-semibold">Validator: {preview.validation.status === "PASS" ? "Every statement is supported" : "Needs review before approval"}</p>
+              {preview.validation.issues.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {preview.validation.issues.map((issue, index) => <li key={`${issue.field}-${index}`}>{formatEnum(issue.field)}: {issue.message}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+          <label className="text-sm font-medium text-slate-800">To<input className={inputClass} defaultValue={preview.toAddress ?? ""} maxLength={320} name="draftToAddress" type="email" /></label>
+          {threads && (
+            <fieldset className="md:col-span-2">
+              <legend className="text-sm font-medium text-slate-800">Reply into which message from this recruiter</legend>
+              {threads.length ? (
+                <div className="mt-2 space-y-2">
+                  {threads.map((message) => (
+                    <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm" key={message.id}>
+                      <input className="mt-1" name="replySourceMessageId" required type="radio" value={message.id} />
+                      <span>
+                        <span className="font-medium text-slate-950">{message.subject}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">{message.receivedDateTime.slice(0, 16).replace("T", " ")} UTC</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : <p className="mt-2 text-sm text-amber-900">No recent Inbox message from this recruiter was found, so the reply thread has to be picked on the job page after confirming.</p>}
+            </fieldset>
+          )}
+          {employerCopy && (
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-800 md:col-span-2">
+              <input defaultChecked={employerCopy.defaultOn} name="copyEmployer" type="checkbox" value="true" />
+              Copy {employerCopy.address} on this email
+            </label>
+          )}
+          <label className="text-sm font-medium text-slate-800">Subject<input className={inputClass} defaultValue={preview.subject} maxLength={300} name="draftSubject" /></label>
+          <label className="text-sm font-medium text-slate-800 md:col-span-2">
+            Body
+            <textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={preview.body} maxLength={10_000} name="draftBody" rows={16} />
+            <span className="mt-1 block text-xs font-normal text-slate-500">Wrap a screening label in ** ** to bold it in Outlook. Editing here sends the email back for revalidation instead of approving it.</span>
+          </label>
+        </fieldset>
+      )}
+
+      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6">
+        <legend className="px-2 text-lg font-semibold text-slate-950">Resume</legend>
+        {resumes.length ? (
+          <label className="text-sm font-medium text-slate-800 md:col-span-2">
+            Attachment
+            <select className={inputClass} defaultValue={preview?.resumeId ?? ""} name="resumeId">
+              <option value="">Decide automatically from the confirmed role family</option>
+              {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.name} · {resume.version} · {formatEnum(resume.roleFamily)}</option>)}
+            </select>
+          </label>
+        ) : <p className="text-sm text-slate-600">No active resume is registered yet.</p>}
+      </fieldset>
+
+      <details className="rounded-2xl border border-slate-200 bg-white p-6">
+        <summary className="cursor-pointer text-lg font-semibold text-slate-950">Source, facts and requirements</summary>
+        <p className="mt-1 text-sm text-slate-600">Analyzed from the pasted text. Open this only when something needs correcting.</p>
+        <div className="mt-5 space-y-8">
+      <fieldset className="grid gap-5 md:grid-cols-2">
         <legend className="px-2 text-lg font-semibold text-slate-950">Source</legend>
         <p className="text-sm text-slate-600 md:col-span-2">Detected from the pasted text. Source type and sender decide which recipient the outreach validator will accept, so correct them here if the detection missed.</p>
         <label className="text-sm font-medium text-slate-800">
@@ -56,7 +132,7 @@ export function JobCaseReviewForm({
         </label>
       </fieldset>
 
-      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
+      <fieldset className="grid gap-5 md:grid-cols-2">
         <legend className="px-2 text-lg font-semibold text-slate-950">Confirmed opportunity facts</legend>
         <label className="text-sm font-medium text-slate-800">
           Job title <span aria-hidden="true" className="text-red-700">*</span>
@@ -92,7 +168,7 @@ export function JobCaseReviewForm({
         </label>
       </fieldset>
 
-      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
+      <fieldset className="grid gap-5 md:grid-cols-2">
         <legend className="px-2 text-lg font-semibold text-slate-950">Recruiter</legend>
         <label className="text-sm font-medium text-slate-800">Name<input className={inputClass} defaultValue={jobCase.recruiterName ?? ""} maxLength={200} name="recruiterName" /></label>
         <label className="text-sm font-medium text-slate-800">Email<input className={inputClass} defaultValue={jobCase.recruiterEmail ?? ""} maxLength={320} name="recruiterEmail" type="email" /></label>
@@ -100,61 +176,19 @@ export function JobCaseReviewForm({
         <label className="text-sm font-medium text-slate-800">LinkedIn or profile URL<input className={inputClass} defaultValue={recruiterLinkedin ?? ""} maxLength={500} name="recruiterLinkedin" placeholder="https://www.linkedin.com/in/…" type="url" /><span className="mt-1 block text-xs font-normal text-slate-500">Filled in only when the pasted text contains a linkedin.com/in/ link, quoted as-is. Leaving it empty keeps whatever this recruiter already has.</span></label>
       </fieldset>
 
-      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6 md:grid-cols-2">
+      <fieldset className="grid gap-5 md:grid-cols-2">
         <legend className="px-2 text-lg font-semibold text-slate-950">Hard requirements</legend>
         <label className="text-sm font-medium text-slate-800">Visa / work authorization<input className={inputClass} defaultValue={jobCase.visaRequirement ?? ""} maxLength={500} name="visaRequirement" /></label>
         <label className="text-sm font-medium text-slate-800">Local candidate<input className={inputClass} defaultValue={jobCase.localRequirement ?? ""} maxLength={500} name="localRequirement" /></label>
         <label className="text-sm font-medium text-slate-800">Relocation<input className={inputClass} defaultValue={jobCase.relocationRequirement ?? ""} maxLength={500} name="relocationRequirement" /></label>
         <label className="text-sm font-medium text-slate-800">Clearance<input className={inputClass} defaultValue={jobCase.clearanceRequirement ?? ""} maxLength={500} name="clearanceRequirement" /></label>
       </fieldset>
-
-      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6">
-        <legend className="px-2 text-lg font-semibold text-slate-950">Resume</legend>
-        {resumes.length ? (
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">
-            Attachment
-            <select className={inputClass} defaultValue={preview?.resumeId ?? ""} name="resumeId">
-              <option value="">Decide automatically from the confirmed role family</option>
-              {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.name} · {resume.version} · {formatEnum(resume.roleFamily)}</option>)}
-            </select>
-          </label>
-        ) : <p className="text-sm text-slate-600">No active resume is registered yet.</p>}
-      </fieldset>
-
-      {preview?.brake && (
-        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">
-          No email was drafted: {preview.brake}
-        </p>
-      )}
-
-      {preview?.subject && preview.body && (
-        <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6">
-          <legend className="px-2 text-lg font-semibold text-slate-950">Outreach email</legend>
-          {preview.validation && (
-            <div className={`rounded-xl border p-4 text-sm md:col-span-2 ${preview.validation.status === "PASS" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
-              <p className="font-semibold">Validator: {preview.validation.status === "PASS" ? "Every statement is supported" : "Needs review before approval"}</p>
-              {preview.validation.issues.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {preview.validation.issues.map((issue, index) => <li key={`${issue.field}-${index}`}>{formatEnum(issue.field)}: {issue.message}</li>)}
-                </ul>
-              )}
-            </div>
-          )}
-          <label className="text-sm font-medium text-slate-800">To<input className={inputClass} defaultValue={preview.toAddress ?? ""} maxLength={320} name="draftToAddress" type="email" /></label>
-          <label className="text-sm font-medium text-slate-800">Subject<input className={inputClass} defaultValue={preview.subject} maxLength={300} name="draftSubject" /></label>
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">
-            Body
-            <textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={preview.body} maxLength={10_000} name="draftBody" rows={16} />
-            <span className="mt-1 block text-xs font-normal text-slate-500">Wrap a screening label in ** ** to bold it in Outlook. Editing here sends the email back for revalidation instead of approving it.</span>
-          </label>
-        </fieldset>
-      )}
+        </div>
+      </details>
 
       <div className="flex flex-wrap gap-3">
         {straightThrough && (
-          <button className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800" formAction={confirmAndDraftAction} type="submit">
-            Confirm and create the Outlook draft
-          </button>
+          <ConfirmAndDraftButton action={confirmAndDraftAction}>Confirm and open the Outlook draft</ConfirmAndDraftButton>
         )}
         <button className={straightThrough
           ? "rounded-lg border border-slate-400 bg-white px-5 py-3 font-medium text-slate-800 hover:border-slate-600"
@@ -168,7 +202,7 @@ export function JobCaseReviewForm({
           </button>
         )}
       </div>
-      {straightThrough && <p className="text-xs leading-5 text-slate-500">The first button runs the rest in one go: the job is created, the validated email is approved, and the Outlook draft is built with the resume attached. Editing the email above sends it back for revalidation instead, so use the second button then. Sending is still yours alone.</p>}
+      {straightThrough && <p className="text-xs leading-5 text-slate-500">The first button runs the rest in one go: the job is created, the validated email is approved, and the Outlook draft opens in a new tab with the resume attached — Outlook closes that tab itself once you send, and this one stays on the job. Editing the email above sends it back for revalidation instead, so use the second button then. Sending is still yours alone.</p>}
     </form>
   );
 }

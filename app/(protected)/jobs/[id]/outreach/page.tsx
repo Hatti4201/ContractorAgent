@@ -10,19 +10,11 @@ import { outreachBodyHtml } from "@/services/outreach-markup";
 import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { parseOutreachValidation } from "@/services/outreach-agent";
-import { listOutlookSourceMessages, replyModes } from "@/services/outlook-graph";
+import { listOutlookSourceMessages, replyModes, safeOutlookLink } from "@/services/outlook-graph";
 import { checkResumeFile } from "@/services/resume-router";
 
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 const lockedOutlookStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
-
-function safeOutlookLink(value: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && ["outlook.office.com", "outlook.office365.com", "outlook.live.com"].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`)) ? value : null;
-  } catch { return null; }
-}
 
 export default async function OutreachDraftPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

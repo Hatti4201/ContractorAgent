@@ -15,7 +15,9 @@ import {
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
-import { createOutlookDraft } from "@/app/(protected)/jobs/[id]/outlook/actions";
+import { buildOutlookDraft } from "@/app/(protected)/jobs/[id]/outlook/actions";
+import { outlookAccessToken } from "@/services/outlook-auth";
+import { replyModes, validateOutlookSourceMessage } from "@/services/outlook-graph";
 import { requireAuth } from "@/lib/auth";
 import { dateTimeValue, dateValue } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
@@ -291,13 +293,7 @@ export async function rescheduleAttention(id: string, formData: FormData) {
   redirect(`/jobs/${id}#attention-actions`);
 }
 
-/**
- * `outlookDraft` runs the whole remaining chain from this one click. The page it is called from
- * shows the recipient, subject, body and attachment and lets the user edit them first, which is what
- * RESTRICTIONS requires before an external draft exists; nothing is approved that the validator
- * did not pass, and creation still stops with a banner when anything drifted.
- */
-export async function confirmIntake(id: string, markDuplicate: boolean, outlookDraft: boolean, formData: FormData) {
+async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData: FormData) {
   await requireAuth();
   const opportunity = await getPrisma().$transaction(async (database) => {
     const intake = await database.jobIntake.findUnique({ where: { id } });
@@ -362,16 +358,28 @@ export async function confirmIntake(id: string, markDuplicate: boolean, outlookD
 
     const draft = readReviewedDraft(formData);
     if (draft && preview?.mode && selectedResumeId) {
+      const mode = enumValue(preview.mode, Object.values(OutreachMode), OutreachMode.FIRST_OUTREACH);
+      // A reply must land in a thread the recruiter really sent, so the posted id is confirmed
+      // against Graph rather than believed. Failing that, the draft keeps none and says so later.
+      let replySourceMessageId: string | null = null;
+      const postedSource = text(formData, "replySourceMessageId", 20_000);
+      if (postedSource && replyModes.has(mode) && reviewed.recruiterEmail) {
+        try {
+          replySourceMessageId = await validateOutlookSourceMessage(postedSource, reviewed.recruiterEmail, { accessToken: await outlookAccessToken() });
+        } catch { replySourceMessageId = null; }
+      }
       // The reviewed email carries the pipeline's validation only while the user left it untouched.
       const untouched = draft.subject === preview.subject && draft.body === preview.body && draft.toAddress === preview.toAddress;
       const approved = untouched && preview.validation?.status === "PASS";
       await database.outreachDraft.create({
         data: {
           opportunityId: created.id,
-          mode: enumValue(preview.mode, Object.values(OutreachMode), OutreachMode.FIRST_OUTREACH),
+          mode,
+          replySourceMessageId,
           toAddress: draft.toAddress,
           // A C2C engagement copies the employer by default; it stays visible and clearable on review.
-          ccAddress: reviewed.employmentType === EmploymentType.C2C ? employerCcSetting().address : null,
+          // The address itself is never model-supplied; the review screen only decides whether to use it.
+          ccAddress: formData.get("copyEmployer") === "true" ? employerCcSetting().address : null,
           subject: draft.subject,
           body: draft.body,
           attachmentResumeId: selectedResumeId,
@@ -392,9 +400,26 @@ export async function confirmIntake(id: string, markDuplicate: boolean, outlookD
   revalidatePath("/dashboard");
   revalidatePath("/needs-attention");
   revalidatePath("/jobs");
-  // createOutlookDraft redirects to the outreach page either way: with the draft, or with the reason.
-  if (outlookDraft && opportunity.hasDraft) await createOutlookDraft(opportunity.id);
+  return opportunity;
+}
+
+export async function confirmIntake(id: string, markDuplicate: boolean, formData: FormData) {
+  const opportunity = await confirmIntakeRecord(id, markDuplicate, formData);
   redirect(opportunity.hasDraft ? `/jobs/${opportunity.id}/outreach` : `/jobs/${opportunity.id}`);
+}
+
+/**
+ * The whole remaining chain from one click. The review screen shows the recipient, subject, body and
+ * attachment and lets the user edit them first, which is the line RESTRICTIONS draws before an
+ * external draft exists; nothing is approved that the validator did not pass. The Outlook link is
+ * returned rather than redirected to, so the caller can hand it to the tab it already opened.
+ */
+export async function confirmIntakeWithDraft(id: string, formData: FormData) {
+  const opportunity = await confirmIntakeRecord(id, false, formData);
+  let url: string | null = null;
+  // A refused or drifted draft records its own reason; the outreach page is where that shows.
+  if (opportunity.hasDraft) try { url = await buildOutlookDraft(opportunity.id); } catch { url = null; }
+  return { jobId: opportunity.id, url };
 }
 
 export async function updateJobCase(id: string, formData: FormData) {

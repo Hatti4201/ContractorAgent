@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { confirmIntake } from "@/app/(protected)/jobs/actions";
-import { IntakeStatus, type OutreachMode } from "@/app/generated/prisma/enums";
+import { confirmIntake, confirmIntakeWithDraft } from "@/app/(protected)/jobs/actions";
+import { EmploymentType, IntakeStatus, type OutreachMode } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview } from "@/services/intake-pipeline";
+import { employerCcSetting } from "@/services/employer";
 import { detectRecruiterProfile } from "@/services/intake-source";
 import { outlookConnected } from "@/services/outlook-auth";
-import { replyModes } from "@/services/outlook-graph";
+import { listOutlookSourceMessages, replyModes } from "@/services/outlook-graph";
+import { outlookAccessToken } from "@/services/outlook-auth";
 import { findDuplicateMatches, parseJobCase } from "@/services/job-case";
 
 function attachments(value: unknown) {
@@ -57,19 +59,31 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
     },
   });
   const duplicates = findDuplicateMatches(jobCase, intake.fingerprint, intake.receivedAt, candidates);
-  const confirm = confirmIntake.bind(null, intake.id, false, false);
-  const markDuplicate = confirmIntake.bind(null, intake.id, true, false);
-  const confirmAndDraft = confirmIntake.bind(null, intake.id, false, true);
+  const confirm = confirmIntake.bind(null, intake.id, false);
+  const markDuplicate = confirmIntake.bind(null, intake.id, true);
+  const confirmAndDraft = confirmIntakeWithDraft.bind(null, intake.id);
   // One click may run the rest of the chain only where nothing is left to decide: a first outreach
   // the validator passed, with a resume routed and Outlook connected. Anything else keeps its stop.
+  const replyRequired = Boolean(preview?.mode && replyModes.has(preview.mode as OutreachMode));
+  let threads: Awaited<ReturnType<typeof listOutlookSourceMessages>> = [];
+  if (replyRequired && jobCase.recruiterEmail && await outlookConnected()) {
+    try { threads = await listOutlookSourceMessages(jobCase.recruiterEmail, { accessToken: await outlookAccessToken() }); } catch { threads = []; }
+  }
   const straightThrough = Boolean(
     preview?.mode
-      && !replyModes.has(preview.mode as OutreachMode)
+      && (!replyRequired || threads.length > 0)
       && preview.validation?.status === "PASS"
       && preview.resumeId
       && await outlookConnected(),
   );
   const files = attachments(intake.attachmentMetadata);
+  // Only warnings that ask something of the user; the rest are already visible in the fields.
+  const openWarnings = jobCase.warnings.filter((warning) => warning.severity === "CONFLICT" || warning.severity === "NEEDS_REVIEW");
+  // The employer copy address never comes from the model; C2C only decides whether it starts ticked.
+  const employer = employerCcSetting();
+  const employerCopy = employer.address
+    ? { address: employer.address, defaultOn: jobCase.employmentType === EmploymentType.C2C }
+    : null;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -84,21 +98,24 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
 
       {files.length > 0 && <p className="mt-8 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><span className="font-medium">Attachments:</span> {files.join(", ")}</p>}
 
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold text-slate-950">Warnings</h2>
-        <ul className="mt-4 grid gap-3 md:grid-cols-2">
-          {jobCase.warnings.map((warning, index) => (
-            <li className={`rounded-xl border p-4 text-sm ${warning.severity === "CONFLICT" ? "border-red-300 bg-red-50" : warning.severity === "NEEDS_REVIEW" ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-white"}`} key={`${warning.field}-${index}`}>
-              <p className="font-semibold">{formatEnum(warning.severity)} · {formatEnum(warning.field)}</p>
-              <p className="mt-1 text-slate-700">{warning.message}</p>
-              {warning.evidence && <p className="mt-2 text-xs text-slate-500">Source: “{warning.evidence}”</p>}
-            </li>
-          ))}
-        </ul>
-      </section>
+      {openWarnings.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-xl font-semibold text-slate-950">Warnings</h2>
+          <ul className="mt-4 grid gap-3 md:grid-cols-2">
+            {openWarnings.map((warning, index) => (
+              <li className={`rounded-xl border p-4 text-sm ${warning.severity === "CONFLICT" ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50"}`} key={`${warning.field}-${index}`}>
+                <p className="font-semibold">{formatEnum(warning.severity)} · {formatEnum(warning.field)}</p>
+                <p className="mt-1 text-slate-700">{warning.message}</p>
+                {warning.evidence && <p className="mt-2 text-xs text-slate-500">Source: “{warning.evidence}”</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <h2 className="text-xl font-semibold text-slate-950">Other channels for this role</h2>
+      {duplicates.length > 0 && (
+      <details className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
+        <summary className="cursor-pointer text-lg font-semibold text-slate-950">Other channels for this role ({duplicates.length})</summary>
         <p className="mt-1 text-sm text-slate-600">One role reaches you through several vendors, which is normal. Check who is already working it and how far they got.</p>
         {duplicates.length ? (
           <ul className="mt-4 space-y-3">
@@ -114,11 +131,12 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
               </li>
             ))}
           </ul>
-        ) : <p className="mt-3 text-sm text-slate-600">No other opportunity in the CRM looks like this one.</p>}
-      </section>
+        ) : null}
+      </details>
+      )}
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} employerCopy={employerCopy} threads={replyRequired ? threads : null} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">

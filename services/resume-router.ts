@@ -32,21 +32,23 @@ export async function checkResumeFile(filePath: string) {
     const canonicalPath = resolved.canonicalPath;
     const extension = extname(canonicalPath).toLowerCase();
     const signatureMatches = signatures[extension];
-    if (!signatureMatches) return { usable: false, canonicalPath: null, issue: "Only PDF, DOCX, and DOC resumes are supported." };
+    if (!signatureMatches) return { usable: false, canonicalPath: null, issue: "Only PDF, DOCX, and DOC resumes are supported.", size: 0 };
 
     const handle = await open(canonicalPath, "r");
+    let size = 0;
     try {
       const header = Buffer.alloc(8);
       const { bytesRead } = await handle.read(header, 0, header.length, 0);
       if (!bytesRead || !signatureMatches(header)) {
-        return { usable: false, canonicalPath: null, issue: "The file contents do not match its extension." };
+        return { usable: false, canonicalPath: null, issue: "The file contents do not match its extension.", size: 0 };
       }
+      size = (await handle.stat()).size;
     } finally {
       await handle.close();
     }
-    return { usable: true, canonicalPath, issue: null };
+    return { usable: true, canonicalPath, issue: null, size };
   } catch {
-    return { usable: false, canonicalPath: null, issue: "The resume file is missing or unreadable." };
+    return { usable: false, canonicalPath: null, issue: "The resume file is missing or unreadable.", size: 0 };
   }
 }
 

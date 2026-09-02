@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 type Task = {
   id: string;
+  kind: string;
   status: "RUNNING" | "DONE" | "FAILED";
   label: string;
   href: string | null;
@@ -17,6 +18,12 @@ type Task = {
 const POLL_MS = 2000;
 // Covers the redirect and mount window, so a task that landed just before this tray existed still refreshes it.
 const GRACE_MS = 10_000;
+/** An open text field means the user is busy writing, and moving the page under them would be rude. */
+function typing() {
+  const active = document.activeElement;
+  return active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && active.type !== "submit");
+}
+
 const tone: Record<Task["status"], string> = {
   RUNNING: "border-slate-200 bg-white",
   DONE: "border-emerald-200 bg-emerald-50",
@@ -45,13 +52,22 @@ export function TaskTray() {
           // Work that finished before the first poll counts too: short tasks routinely beat it here,
           // which used to leave the page showing the state it was redirected with.
           let landed = false;
+          let review: string | null = null;
           for (const task of next) {
             const before = seen.current.get(task.id);
             const justFinished = task.finishedAt !== null && Date.parse(task.finishedAt) >= mountedAt.current - GRACE_MS;
-            if (task.status !== "RUNNING" && (before === "RUNNING" || (before === undefined && justFinished))) landed = true;
+            if (task.status !== "RUNNING" && (before === "RUNNING" || (before === undefined && justFinished))) {
+              landed = true;
+              // A prepared source is only useful on its review screen, so go there instead of
+              // making the user find the card -- unless they are mid-sentence in another paste.
+              if (task.kind === "INTAKE_PIPELINE" && task.status === "DONE" && task.href && !review && !typing()) {
+                review = task.href;
+              }
+            }
             seen.current.set(task.id, task.status);
           }
-          if (landed) router.refresh();
+          if (review) router.push(review);
+          else if (landed) router.refresh();
           setTasks(next);
         }
       } catch {

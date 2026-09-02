@@ -15,15 +15,17 @@ import { getPrisma } from "@/lib/prisma";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import {
+  SIMPLE_ATTACHMENT_LIMIT,
   createOutlookMessageDraft,
   inspectOutlookSentMessage,
   OutlookDraftCreationError,
   OutlookGraphError,
   removeOutlookDraftMessage,
+  safeOutlookLink,
   validateOutlookSourceMessage,
 } from "@/services/outlook-graph";
 import { checkResumeFile } from "@/services/resume-router";
-import { runTaskNow, startTask, TaskBusyError } from "@/services/tasks";
+import { runTaskNow, startTask, TaskBusyError, type TaskHandle } from "@/services/tasks";
 
 const lockedStates = new Set<OutlookDraftState>([OutlookDraftState.CREATING, OutlookDraftState.CREATED, OutlookDraftState.SENT]);
 const completedStates = new Set<OutlookDraftState>([OutlookDraftState.CREATED, OutlookDraftState.SENT]);
@@ -83,7 +85,12 @@ export async function selectOutlookReplySource(id: string, formData: FormData) {
   redirect(`/jobs/${id}/outreach`);
 }
 
-export async function createOutlookDraft(id: string) {
+/**
+ * Builds the draft and reports its link, or null with the reason recorded on the draft. Callers
+ * decide what to do with the link: the page navigates, the review screen hands it to a tab it
+ * opened inside the click, which is the only kind Outlook is allowed to close again after Send.
+ */
+export async function buildOutlookDraft(id: string) {
   await requireAuth();
   const draft = await preparedDraft(id);
   const issue = await approvalIssue(draft);
@@ -93,22 +100,26 @@ export async function createOutlookDraft(id: string) {
       data: { status: OutreachDraftStatus.NEEDS_REVIEW, outlookState: OutlookDraftState.NEEDS_REVIEW, outlookError: issue, approvedAt: null },
     });
     refresh(id);
-    redirect(`/jobs/${id}/outreach`);
+    return null;
   }
-  if (completedStates.has(draft.outlookState)) redirect(`/jobs/${id}/outreach`);
+  if (completedStates.has(draft.outlookState)) return safeOutlookLink(draft.outlookWebLink);
 
-  // The state is claimed synchronously so a second click cannot start a second draft, and only the
-  // Graph work, which uploads the resume, is handed to the background.
+  // A resume that fits one Graph request takes a second or two, so the click can wait for the link
+  // and land the user in the draft itself. A chunked upload still goes to the background.
+  const resume = await checkResumeFile(draft.attachmentResume.filePath);
+  const inline = Boolean(resume.size && resume.size < SIMPLE_ATTACHMENT_LIMIT);
+  let createdLink: string | null = null;
+
+  // The state is claimed synchronously so a second click cannot start a second draft.
   const claimed = await getPrisma().outreachDraft.updateMany({
     where: { id: draft.id, status: OutreachDraftStatus.APPROVED, outlookState: { in: [OutlookDraftState.NOT_CREATED, OutlookDraftState.FAILED, OutlookDraftState.NEEDS_REVIEW] }, outlookMessageId: null },
     data: { outlookState: OutlookDraftState.CREATING, outlookError: null },
   });
   if (claimed.count !== 1) throw new Error("Outlook draft creation is already running or needs manual review.");
 
+  const request = { kind: TaskKind.OUTLOOK_DRAFT, label: "Creating the Outlook draft with your resume", subjectId: id, href: `/jobs/${id}/outreach` };
   try {
-    await startTask(
-      { kind: TaskKind.OUTLOOK_DRAFT, label: "Creating the Outlook draft with your resume", subjectId: id, href: `/jobs/${id}/outreach` },
-      async (task) => {
+    const work = async (task: TaskHandle) => {
         let accessToken: string;
         try { accessToken = await outlookAccessToken(); } catch {
           await getPrisma().outreachDraft.update({ where: { id: draft.id }, data: { outlookState: OutlookDraftState.FAILED, outlookError: "Outlook connection is unavailable. Reconnect and retry." } });
@@ -143,6 +154,7 @@ export async function createOutlookDraft(id: string) {
               data: { opportunityId: id, type: ActivityType.OUTLOOK_DRAFT_CREATED, description: "Validated Outlook draft created with the selected Resume; user send is still required." },
             }),
           ]);
+          createdLink = safeOutlookLink(external.webLink);
         } catch (error) {
           if (external) {
             try { await removeOutlookDraftMessage(external.id, { accessToken }); } catch {
@@ -166,14 +178,20 @@ export async function createOutlookDraft(id: string) {
           });
           throw new Error(outlookError);
         }
-      },
-      after,
-    );
+    };
+    if (inline) await runTaskNow(request, work);
+    else await startTask(request, work, after);
   } catch (error) {
     if (!(error instanceof TaskBusyError)) throw error;
   }
   refresh(id);
-  redirect(`/jobs/${id}/outreach`);
+  return createdLink;
+}
+
+/** The outreach page button: same work, but it navigates rather than reporting back. */
+export async function createOutlookDraft(id: string) {
+  const link = await buildOutlookDraft(id);
+  redirect(link ?? `/jobs/${id}/outreach`);
 }
 
 export async function confirmOutlookSent(id: string) {

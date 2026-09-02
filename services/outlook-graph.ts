@@ -6,7 +6,7 @@ import { outreachBodyHtml } from "@/services/outreach-markup";
 import { checkResumeFile } from "@/services/resume-router";
 
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
-const SIMPLE_ATTACHMENT_LIMIT = 3 * 1024 * 1024;
+export const SIMPLE_ATTACHMENT_LIMIT = 3 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES = 150 * 1024 * 1024;
 const UPLOAD_CHUNK_BYTES = 12 * 320 * 1024;
 export const replyModes = new Set<OutreachMode>([OutreachMode.DIRECT_EMAIL_REPLY, OutreachMode.THREAD_FOLLOW_UP]);
@@ -39,6 +39,15 @@ export class OutlookGraphError extends Error {
   constructor(readonly status: number) {
     super(`Microsoft Graph request failed with status ${status}.`);
   }
+}
+
+/** A webLink is only followed when it really is an Outlook address over https. */
+export function safeOutlookLink(value: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && ["outlook.office.com", "outlook.office365.com", "outlook.live.com"].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`)) ? value : null;
+  } catch { return null; }
 }
 
 function object(value: unknown) {
