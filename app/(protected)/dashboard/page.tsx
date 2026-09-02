@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { discardIntake } from "@/app/(protected)/intake/actions";
+import { DiscardIntakeCross } from "@/components/delete-job-form";
 import { IntakeForm } from "@/components/intake-form";
 import {
   ApplicationStage,
@@ -184,6 +186,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      {query.error === "missing" && (
+        <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900" role="alert">
+          That source was already confirmed or discarded, so there was nothing left to remove.
+        </p>
+      )}
+
       {sentJobId && (
         <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
           Outlook confirmed the send, and the version you actually sent is archived. <Link className="underline" href={`/jobs/${sentJobId}/outreach`}>Open the archived email</Link>
@@ -194,13 +202,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <section className="mt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <h2 className="text-xl font-semibold text-slate-950">Waiting for your review ({queue.length})</h2>
-            <p className="text-sm text-slate-600">Oldest first. Discarding a source stays on its review page.</p>
+            <p className="text-sm text-slate-600">Oldest first. The ✕ on a card discards that source.</p>
           </div>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {queue.map((intake) => (
-              <li key={intake.id}>
+              <li className="group relative" key={intake.id}>
+                <DiscardIntakeCross action={discardIntake.bind(null, intake.id, "/dashboard")} title={intake.title} />
                 <Link className="flex h-full flex-col rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-emerald-600" href={`/intakes/${intake.id}/review`} title={intake.detail ?? undefined}>
-                  <span className="truncate text-sm font-semibold text-slate-950">{intake.title}</span>
+                  <span className="truncate pr-5 text-sm font-semibold text-slate-950">{intake.title}</span>
                   <span className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
                     <span className="truncate">{intake.recruiterName ?? "Recruiter unknown"}</span>
                     <span aria-hidden="true">·</span>

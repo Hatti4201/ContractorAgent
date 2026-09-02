@@ -18,7 +18,7 @@ export async function GET() {
     },
     orderBy: { startedAt: "desc" },
     take: 12,
-    select: { id: true, kind: true, status: true, label: true, href: true, progress: true, error: true, finishedAt: true },
+    select: { id: true, status: true, label: true, href: true, progress: true, error: true, finishedAt: true },
   });
   return Response.json({ tasks }, { headers: { "Cache-Control": "no-store" } });
 }

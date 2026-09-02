@@ -79,6 +79,9 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
   const files = attachments(intake.attachmentMetadata);
   // Only warnings that ask something of the user; the rest are already visible in the fields.
   const openWarnings = jobCase.warnings.filter((warning) => warning.severity === "CONFLICT" || warning.severity === "NEEDS_REVIEW");
+  // An INFO note can be the whole explanation -- "that address is the poster's own" -- so it stays
+  // one click away rather than being dropped.
+  const notes = jobCase.warnings.filter((warning) => !openWarnings.includes(warning));
   // The employer copy address never comes from the model; C2C only decides whether it starts ticked.
   const employer = employerCcSetting();
   const employerCopy = employer.address
@@ -111,6 +114,17 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
             ))}
           </ul>
         </section>
+      )}
+
+      {notes.length > 0 && (
+        <details className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-800">What the analysis also noticed ({notes.length})</summary>
+          <ul className="mt-3 space-y-2 text-sm text-slate-700">
+            {notes.map((warning, index) => (
+              <li key={`${warning.field}-${index}`}><span className="font-medium text-slate-950">{formatEnum(warning.field)}:</span> {warning.message}</li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {duplicates.length > 0 && (

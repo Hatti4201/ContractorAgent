@@ -89,7 +89,12 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
 
   // Drafting an email that is certain to be rewritten wastes a call, so the pipeline stops early
   // and hands the remaining decision back to the user.
-  if (!analysis.recruiterEmail) return savePreview(intakeId, stopped("No recruiter email was found, so no outreach email could be written. Add one, then generate the draft from the job.", resumeId));
+  if (!analysis.recruiterEmail) {
+    // The analyzer often knows exactly why -- an address that belongs to the poster, say -- and that
+    // reason is worth more than the bare fact that no recipient exists.
+    const reason = analysis.warnings.find((warning) => warning.field === "recruiterEmail")?.message;
+    return savePreview(intakeId, stopped(`No recruiter email was found, so no outreach email could be written.${reason ? ` ${reason}` : ""} Add one, then generate the draft from the job.`, resumeId));
+  }
   if (analysis.confidence < RESUME_CONFIDENCE_THRESHOLD) return savePreview(intakeId, stopped("Analysis confidence is below 70%. Review the facts first, then generate the draft from the job.", resumeId));
   if (!route.recommended) return savePreview(intakeId, stopped(route.issue ?? "No usable resume matched this role family.", resumeId));
 
