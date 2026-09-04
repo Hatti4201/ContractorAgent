@@ -58,10 +58,8 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
-
-      <section className="mt-8">
-        <h2 className="text-xl font-semibold text-slate-950">Or take one straight from your inbox</h2>
+      <section className="mt-8 scroll-mt-6" id="inbox">
+        <h2 className="text-xl font-semibold text-slate-950">Take one straight from your inbox</h2>
         <p className="mt-1 text-sm text-slate-600">Nothing is imported on its own. A mail picked here keeps its real sender and its thread, so the outreach replies to it instead of starting a new message.</p>
         {inboxFailed && <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Outlook could not be read just now. Reconnect and reload.</p>}
         {!inboxFailed && inbox.length === 0 && <p className="mt-4 text-sm text-slate-600"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> to list recent mail here.</p>}
@@ -82,6 +80,12 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
           </ul>
         )}
       </section>
+
+      <h2 className="mt-10 text-xl font-semibold text-slate-950">Or paste the text yourself</h2>
+      <p className="mt-1 text-sm text-slate-600">A pasted email loses its headers, so the outreach cannot tell it should reply. Picking the mail above keeps the thread.</p>
+      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
+
+
     </div>
   );
 }

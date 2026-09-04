@@ -1,4 +1,4 @@
-import { ConfirmAndDraftButton } from "@/components/confirm-and-draft-button";
+import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
 import type { JobSourceType, RoleFamily } from "@/app/generated/prisma/enums";
 import type { IntakePreview } from "@/services/intake-pipeline";
 import {
@@ -27,6 +27,7 @@ export function JobCaseReviewForm({
   straightThrough,
   employerCopy,
   threads,
+  threadRequired,
 }: {
   jobCase: JobCase;
   recruiterLinkedin: string | null;
@@ -35,13 +36,14 @@ export function JobCaseReviewForm({
   preview: IntakePreview | null;
   resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
   confirmAction: (formData: FormData) => void | Promise<void>;
-  confirmAndDraftAction: (formData: FormData) => Promise<{ jobId: string; url: string | null }>;
+  confirmAndDraftAction: (formData: FormData) => Promise<{ url: string | null; href?: string | null }>;
   duplicateAction: (formData: FormData) => void | Promise<void>;
   hasExactDuplicate: boolean;
   straightThrough: boolean;
   employerCopy: { address: string; defaultOn: boolean } | null;
   /** Null unless the mode replies into a thread; then one of these must be chosen. */
   threads: Array<{ id: string; subject: string; receivedDateTime: string }> | null;
+  threadRequired: boolean;
 }) {
   return (
     <form action={confirmAction} className="space-y-8">
@@ -68,11 +70,17 @@ export function JobCaseReviewForm({
           {threads && (
             <fieldset className="md:col-span-2">
               <legend className="text-sm font-medium text-slate-800">Reply into which message from this recruiter</legend>
+              {!threadRequired && (
+                <label className="mt-2 flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
+                  <input className="mt-1" defaultChecked name="replySourceMessageId" type="radio" value="" />
+                  <span className="font-medium text-slate-950">Start a new email instead</span>
+                </label>
+              )}
               {threads.length ? (
                 <div className="mt-2 space-y-2">
                   {threads.map((message) => (
                     <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm" key={message.id}>
-                      <input className="mt-1" defaultChecked={message.id === sourceMessageId} name="replySourceMessageId" required type="radio" value={message.id} />
+                      <input className="mt-1" defaultChecked={message.id === sourceMessageId} name="replySourceMessageId" required={threadRequired} type="radio" value={message.id} />
                       <span>
                         <span className="font-medium text-slate-950">{message.subject}</span>
                         <span className="mt-0.5 block text-xs text-slate-500">{message.receivedDateTime.slice(0, 16).replace("T", " ")} UTC</span>
@@ -190,7 +198,7 @@ export function JobCaseReviewForm({
 
       <div className="flex flex-wrap gap-3">
         {straightThrough && (
-          <ConfirmAndDraftButton action={confirmAndDraftAction}>Confirm and open the Outlook draft</ConfirmAndDraftButton>
+          <OpenInOutlookButton action={confirmAndDraftAction}>Confirm and open the Outlook draft</OpenInOutlookButton>
         )}
         <button className={straightThrough
           ? "rounded-lg border border-slate-400 bg-white px-5 py-3 font-medium text-slate-800 hover:border-slate-600"

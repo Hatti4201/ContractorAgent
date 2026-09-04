@@ -188,10 +188,9 @@ export async function buildOutlookDraft(id: string) {
   return createdLink;
 }
 
-/** The outreach page button: same work, but it navigates rather than reporting back. */
-export async function createOutlookDraft(id: string) {
-  const link = await buildOutlookDraft(id);
-  redirect(link ?? `/jobs/${id}/outreach`);
+/** The outreach page button. Its caller is already on the job, so only the link travels back. */
+export async function createOutlookDraftLink(id: string) {
+  return { url: await buildOutlookDraft(id) };
 }
 
 export async function confirmOutlookSent(id: string) {

@@ -8,29 +8,32 @@ import { useState, type MouseEvent } from "react";
  * the browser lets Outlook close again when the message is sent, which is what returns the user
  * here; a tab opened after an await is blocked, and a plain redirect leaves nothing to come back to.
  */
-export function ConfirmAndDraftButton({
+export function OpenInOutlookButton({
   action,
   children,
 }: {
-  action: (formData: FormData) => Promise<{ jobId: string; url: string | null }>;
+  action: (formData: FormData) => Promise<{ url: string | null; href?: string | null }>;
   children: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   async function run(event: MouseEvent<HTMLButtonElement>) {
+    // type="button" skips the browser's own check, so ask for it where there is a form to check:
+    // a reply still needs its thread. Standing alone, the button carries no fields of its own.
     const form = event.currentTarget.form;
-    // type="button" skips the browser's own check, so ask for it: a reply still needs its thread.
-    if (!form || !form.reportValidity()) return;
+    if (form && !form.reportValidity()) return;
     const tab = window.open("", "_blank");
     setBusy(true);
     try {
-      const { jobId, url } = await action(new FormData(form));
+      const { url, href } = await action(form ? new FormData(form) : new FormData());
       // replace, not assign: the blank placeholder leaves no history entry behind, so the tab holds
       // a single page -- the state a browser is willing to let Outlook close again after Send.
       if (url && tab) tab.location.replace(url);
       else tab?.close();
-      router.push(`/jobs/${jobId}/outreach`);
+      // The review screen sends the user on to the job; the job page is already where it belongs.
+      if (href) router.push(href);
+      else router.refresh();
     } catch {
       tab?.close();
       setBusy(false);

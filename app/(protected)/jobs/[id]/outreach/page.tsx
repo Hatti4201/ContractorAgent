@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { approveOutreachDraft, generateOutreachDraft, saveOutreachDraft, setOutreachCopy } from "@/app/(protected)/jobs/[id]/outreach/actions";
-import { confirmOutlookSent, createOutlookDraft, selectOutlookReplySource } from "@/app/(protected)/jobs/[id]/outlook/actions";
+import { confirmOutlookSent, createOutlookDraftLink, selectOutlookReplySource } from "@/app/(protected)/jobs/[id]/outlook/actions";
 import { OutlookDraftState, OutreachMode, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
+import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { employerCcSetting } from "@/services/employer";
@@ -64,7 +65,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
   const regenerate = generateOutreachDraft.bind(null, id);
   const approve = approveOutreachDraft.bind(null, id);
   const selectReplySource = selectOutlookReplySource.bind(null, id);
-  const createExternalDraft = createOutlookDraft.bind(null, id);
+  const createExternalDraft = createOutlookDraftLink.bind(null, id);
   const confirmSent = confirmOutlookSent.bind(null, id);
 
   return (
@@ -147,7 +148,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
         {draft.replySourceMessageId && replyRequired && <p className="mt-5 text-sm font-medium text-emerald-800">Original Outlook message selected and verified.</p>}
 
         {connected && effectiveApproved && !locked && (!replyRequired || draft.replySourceMessageId) && (
-          <form action={createExternalDraft} className="mt-5"><button className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800" type="submit">Create validated Outlook draft</button></form>
+          <div className="mt-5"><OpenInOutlookButton action={createExternalDraft}>Create the Outlook draft and open it</OpenInOutlookButton></div>
         )}
         {draft.outlookState === OutlookDraftState.CREATING && <p className="mt-5 text-sm text-slate-700">Draft creation is in progress. Refresh before retrying.</p>}
         {sentCheckAvailable && <div className="mt-5 flex flex-col items-start gap-3">{outlookLink && <a className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white" href={outlookLink} rel="noreferrer" target="_blank">Open Outlook draft</a>}<form action={confirmSent}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800" type="submit">I sent it — verify in Outlook</button></form><p className="text-xs text-slate-500">Press Send in Outlook first, then click this. Sent Items can lag a few seconds.</p></div>}

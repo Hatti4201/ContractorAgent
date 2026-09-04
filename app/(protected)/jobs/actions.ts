@@ -33,6 +33,10 @@ const outdatedOutreachValidation = {
   status: "NEEDS_REVIEW",
   issues: [{ field: "source", severity: "BLOCK", message: "Job or Resume data changed; validate the outreach draft again." }],
 } satisfies Prisma.InputJsonValue;
+const threadChosenValidation = {
+  status: "NEEDS_REVIEW",
+  issues: [{ field: "mode", severity: "NEEDS_REVIEW", message: "You chose a thread to reply into, so the email has to be written and validated as a reply." }],
+} satisfies Prisma.InputJsonValue;
 const editedOutreachValidation = {
   status: "NEEDS_REVIEW",
   issues: [{ field: "body", severity: "NEEDS_REVIEW", message: "You edited the email after it was validated; validate it again before approval." }],
@@ -358,19 +362,34 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
 
     const draft = readReviewedDraft(formData);
     if (draft && preview?.mode && selectedResumeId) {
-      const mode = enumValue(preview.mode, Object.values(OutreachMode), OutreachMode.FIRST_OUTREACH);
+      const analyzedMode = enumValue(preview.mode, Object.values(OutreachMode), OutreachMode.FIRST_OUTREACH);
       // A reply must land in a thread the recruiter really sent, so the posted id is confirmed
       // against Graph rather than believed. Failing that, the draft keeps none and says so later.
       let replySourceMessageId: string | null = null;
       const postedSource = text(formData, "replySourceMessageId", 20_000);
-      if (postedSource && replyModes.has(mode) && reviewed.recruiterEmail) {
+      if (postedSource && reviewed.recruiterEmail) {
         try {
           replySourceMessageId = await validateOutlookSourceMessage(postedSource, reviewed.recruiterEmail, { accessToken: await outlookAccessToken() });
         } catch { replySourceMessageId = null; }
       }
-      // The reviewed email carries the pipeline's validation only while the user left it untouched.
+      // Choosing a thread is what makes this a reply, even where the paste arrived without the
+      // headers that would have said so: the chosen message is confirmed to be from this recruiter,
+      // which is the evidence the copied text lost.
+      const mode = replySourceMessageId && !replyModes.has(analyzedMode) ? OutreachMode.DIRECT_EMAIL_REPLY : analyzedMode;
+      if (replySourceMessageId && mode !== analyzedMode) {
+        await database.jobIntake.update({
+          where: { id },
+          data: {
+            sourceType: JobSourceType.DIRECT_EMAIL,
+            // The recipient validator looks for the recruiter here, and the verified thread supplies it.
+            originalSender: source.originalSender?.includes(reviewed.recruiterEmail!) ? source.originalSender : reviewed.recruiterEmail,
+          },
+        });
+      }
+      // The reviewed email carries the pipeline's validation only while the user left it untouched,
+      // and only while it is still the kind of email the validator was looking at.
       const untouched = draft.subject === preview.subject && draft.body === preview.body && draft.toAddress === preview.toAddress;
-      const approved = untouched && preview.validation?.status === "PASS";
+      const approved = untouched && mode === analyzedMode && preview.validation?.status === "PASS";
       await database.outreachDraft.create({
         data: {
           opportunityId: created.id,
@@ -384,7 +403,9 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
           body: draft.body,
           attachmentResumeId: selectedResumeId,
           contextFingerprint: outreachContextFingerprint(await loadOutreachContext()),
-          validation: (untouched && preview.validation ? preview.validation : editedOutreachValidation) as unknown as Prisma.InputJsonValue,
+          validation: (mode !== analyzedMode
+            ? threadChosenValidation
+            : untouched && preview.validation ? preview.validation : editedOutreachValidation) as unknown as Prisma.InputJsonValue,
           status: approved ? OutreachDraftStatus.APPROVED : OutreachDraftStatus.NEEDS_REVIEW,
           approvedAt: approved ? new Date() : null,
         },
@@ -419,7 +440,7 @@ export async function confirmIntakeWithDraft(id: string, formData: FormData) {
   let url: string | null = null;
   // A refused or drifted draft records its own reason; the outreach page is where that shows.
   if (opportunity.hasDraft) try { url = await buildOutlookDraft(opportunity.id); } catch { url = null; }
-  return { jobId: opportunity.id, url };
+  return { url, href: `/jobs/${opportunity.id}/outreach` };
 }
 
 export async function updateJobCase(id: string, formData: FormData) {

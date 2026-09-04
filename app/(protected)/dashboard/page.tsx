@@ -230,7 +230,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </div>
           <Link className="text-sm font-medium text-emerald-700 underline" href="/intake">Sources waiting for review, or enter a job manually →</Link>
         </div>
-        <div className="mt-5"><IntakeForm autoFocus={false} hint={false} rows={5} /></div>
+        <Link className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:border-emerald-600" href="/intake#inbox">
+          <span>
+            <span className="font-medium text-emerald-950">The recruiter emailed you? Pick that mail from your inbox →</span>
+            <span className="mt-0.5 block text-sm text-emerald-900">Pasting an email loses its headers, so the outreach starts a new message instead of replying to theirs.</span>
+          </span>
+        </Link>
+        <p className="mt-5 text-sm font-medium text-slate-700">Or paste the text</p>
+        <div className="mt-2"><IntakeForm autoFocus={false} hint={false} rows={5} /></div>
       </section>
 
       <section aria-label="Time range" className="mt-8 flex flex-wrap gap-2">
