@@ -199,6 +199,22 @@ model JobIntake {
   @@map("job_intakes")
 }
 
+/** What the inbox scan decided about a message, so a dry run is reviewable and no mail is judged twice. */
+model IntakeScanDecision {
+  id               String   @id @default(cuid())
+  outlookMessageId String   @unique @map("outlook_message_id")
+  fromAddress      String   @map("from_address")
+  subject          String
+  receivedAt       DateTime @map("received_at")
+  imported         Boolean  @default(false)
+  confidence       Float
+  reason           String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("intake_scan_decisions")
+}
+
 model ApplicationTrack {
   id             String           @id @default(cuid())
   opportunityId  String           @unique @map("opportunity_id")

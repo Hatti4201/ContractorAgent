@@ -8,6 +8,7 @@ import { queuedIntakes } from "@/services/intake-queue";
 import { getPrisma } from "@/lib/prisma";
 import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { listOutlookInboxMessages } from "@/services/outlook-graph";
+import { intakeScanMode } from "@/services/intake-scan";
 
 export default async function IntakePage({ searchParams }: { searchParams: Promise<{ discarded?: string; error?: string }> }) {
   await requireAuth();
@@ -19,6 +20,12 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
   if (await outlookConnected()) {
     try { inbox = (await listOutlookInboxMessages({ accessToken: await outlookAccessToken() })).slice().reverse(); } catch { inboxFailed = true; }
   }
+  const scanMode = intakeScanMode();
+  const decisions = scanMode === "off" ? [] : await getPrisma().intakeScanDecision.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 15,
+    select: { id: true, fromAddress: true, subject: true, imported: true, confidence: true, reason: true, receivedAt: true },
+  });
   const imported = new Set((await getPrisma().jobIntake.findMany({
     where: { sourceMessageId: { in: inbox.map((message) => message.id) } },
     select: { sourceMessageId: true },
@@ -80,6 +87,33 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
           </ul>
         )}
       </section>
+
+      {scanMode !== "off" && (
+        <section className="mt-8">
+          <h2 className="text-xl font-semibold text-slate-950">What the scan decided</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            {scanMode === "dryrun"
+              ? "Dry run: the scan judges new mail and records it here, and imports nothing."
+              : "The scan turns a recruiter's new role into a pending source above; everything it judged is listed here."}
+          </p>
+          {decisions.length ? (
+            <ul className="mt-4 space-y-2">
+              {decisions.map((decision) => (
+                <li className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4" key={decision.id}>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-950">{decision.subject}</p>
+                    <p className="mt-1 truncate text-sm text-slate-600">{decision.fromAddress} · {formatDateTime(decision.receivedAt)} UTC</p>
+                    <p className="mt-1 text-xs text-slate-500">{decision.reason}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${decision.imported ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                    {decision.imported ? "Taken in" : "Passed over"} · {Math.round(decision.confidence * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="mt-4 text-sm text-slate-600">Nothing judged yet. The scan looks only at mail that matches no job you already track.</p>}
+        </section>
+      )}
 
       <h2 className="mt-10 text-xl font-semibold text-slate-950">Or paste the text yourself</h2>
       <p className="mt-1 text-sm text-slate-600">A pasted email loses its headers, so the outreach cannot tell it should reply. Picking the mail above keeps the thread.</p>

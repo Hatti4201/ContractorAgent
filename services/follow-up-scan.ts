@@ -11,6 +11,18 @@ import {
 } from "@/services/follow-up";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { listOutlookInboxMessages, type OutlookInboxMessage } from "@/services/outlook-graph";
+import {
+  classifyInboxMessage,
+  createIntakeFromMessage,
+  intakeScanMode,
+  MAX_CLASSIFIED_PER_SCAN,
+  MAX_IMPORTED_PER_SCAN,
+  recordScanDecision,
+  shouldImport,
+  worthClassifying,
+  type ScanMode,
+} from "@/services/intake-scan";
+import { runIntakePipeline } from "@/services/intake-pipeline";
 import type { TaskHandle } from "@/services/tasks";
 
 // ponytail: ten analyses per scan bounds one run; anything skipped has no row yet, so the next scan retries it.
@@ -86,6 +98,41 @@ export async function mailScanState() {
  * The watermark only advances past messages this run actually decided on, so hitting the per-run
  * analysis cap defers the remainder to the next scan instead of stepping over it.
  */
+/**
+ * A message that matches no opportunity may still be a recruiter offering a new role. FR-01 lets the
+ * scan turn one into a pending intake, and only that: the user still confirms before anything becomes
+ * an Opportunity, the mailbox is never modified, and every judgement is written down so a dry run can
+ * be read afterwards and no message is ever judged twice.
+ */
+async function considerAsNewIntake(message: OutlookInboxMessage, mode: ScanMode, task?: TaskHandle) {
+  if (!worthClassifying(message)) return { classified: false, imported: false };
+  const database = getPrisma();
+  if (await database.intakeScanDecision.count({ where: { outlookMessageId: message.id } })) {
+    return { classified: false, imported: false };
+  }
+
+  await task?.progress("Judging a message that matches no job yet");
+  const decision = await classifyInboxMessage(message);
+  const importing = shouldImport(decision, mode);
+  let imported = false;
+  if (importing) {
+    try {
+      const intake = await createIntakeFromMessage(message.id, await outlookAccessToken());
+      await runIntakePipeline(intake.id);
+      imported = true;
+    } catch {
+      // The mail stays untouched and the decision still records what was intended.
+      imported = false;
+    }
+  }
+  await recordScanDecision(message, {
+    ...decision,
+    imported,
+    reason: importing && !imported ? `${decision.reason} (import failed)` : mode === "dryrun" && decision.isOpportunity ? `${decision.reason} (dry run: not imported)` : decision.reason,
+  });
+  return { classified: true, imported };
+}
+
 export async function scanFollowUps(task?: TaskHandle) {
   const database = getPrisma();
   const state = await mailScanState();
@@ -108,6 +155,9 @@ export async function scanFollowUps(task?: TaskHandle) {
       select: { outlookMessageId: true },
     })).map((row) => row.outlookMessageId));
 
+    const scanMode = intakeScanMode();
+    let classified = 0;
+    let imported = 0;
     let analyzed = 0;
     let decidedThrough: Date | null = null;
     for (const message of messages) {
@@ -116,7 +166,14 @@ export async function scanFollowUps(task?: TaskHandle) {
       if (seen.has(message.id)) continue;
       // Matching is local, so a scan that finds nothing relevant costs no model call at all.
       const match = matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
-      if (!match.relevant) continue;
+      if (!match.relevant) {
+        if (scanMode !== "off" && classified < MAX_CLASSIFIED_PER_SCAN && imported < MAX_IMPORTED_PER_SCAN) {
+          const outcome = await considerAsNewIntake(message, scanMode, task);
+          if (outcome.classified) classified += 1;
+          if (outcome.imported) imported += 1;
+        }
+        continue;
+      }
       const opportunity = candidates.find((candidate) => candidate.id === match.opportunityId) ?? null;
       analyzed += 1;
       await task?.progress(`Analyzing message ${analyzed} of at most ${MAX_ANALYSES_PER_SCAN}`);
@@ -145,7 +202,7 @@ export async function scanFollowUps(task?: TaskHandle) {
         lastError: null,
       },
     });
-    return { scanned: messages.length, analyzed };
+    return { scanned: messages.length, analyzed, classified, imported };
   } catch (error) {
     // A scheduled scan runs unattended, so a repeated failure has to stay visible instead of silent.
     await database.mailScanState.update({
