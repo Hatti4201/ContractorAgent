@@ -152,7 +152,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       )}
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} employerCopy={employerCopy} threads={threads.length ? threads : null} threadRequired={replyRequired} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} sourceMessageId={intake.sourceMessageId} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} employerCopy={employerCopy} threads={threads.length ? threads : null} threadRequired={replyRequired} canWrite={!preview?.subject && Boolean(jobCase.recruiterEmail)} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} sourceMessageId={intake.sourceMessageId} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">

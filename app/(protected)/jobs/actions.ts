@@ -16,6 +16,7 @@ import {
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { buildOutlookDraft } from "@/app/(protected)/jobs/[id]/outlook/actions";
+import { startOutreachDraftGeneration } from "@/app/(protected)/jobs/[id]/outreach/actions";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { replyModes, validateOutlookSourceMessage } from "@/services/outlook-graph";
 import { requireAuth } from "@/lib/auth";
@@ -415,7 +416,13 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
         ...(approved ? [{ opportunityId: created.id, type: ActivityType.OUTREACH_DRAFT_APPROVED, description: "Outreach draft approved at intake confirmation." }] : []),
       ] });
     }
-    return { id: created.id, hasDraft: Boolean(draft && preview?.mode && selectedResumeId) };
+    return {
+      id: created.id,
+      hasDraft: Boolean(draft && preview?.mode && selectedResumeId),
+      // The pipeline stopped without an email, but the review screen has since supplied what it
+      // was missing: write it now rather than sending the user to the job page to ask again.
+      readyToWrite: Boolean(!draft && selectedResumeId && reviewed.roleFamily && reviewed.recruiterEmail),
+    };
   });
 
   revalidatePath("/dashboard");
@@ -426,7 +433,9 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
 
 export async function confirmIntake(id: string, markDuplicate: boolean, formData: FormData) {
   const opportunity = await confirmIntakeRecord(id, markDuplicate, formData);
-  redirect(opportunity.hasDraft ? `/jobs/${opportunity.id}/outreach` : `/jobs/${opportunity.id}`);
+  if (opportunity.readyToWrite) await startOutreachDraftGeneration(opportunity.id);
+  // The outreach page says the email is being written, and fills in when the task lands.
+  redirect(opportunity.hasDraft || opportunity.readyToWrite ? `/jobs/${opportunity.id}/outreach` : `/jobs/${opportunity.id}`);
 }
 
 /**

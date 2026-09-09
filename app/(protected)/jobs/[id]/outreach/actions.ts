@@ -157,9 +157,12 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
   ]);
 }
 
-export async function generateOutreachDraft(id: string) {
-  await requireAuth();
-  await requireMutableDraft(id);
+/**
+ * Queues the two model calls and returns at once. Confirming an intake that stopped short of a draft
+ * uses this too, so supplying the missing fact is the last thing the user does rather than the
+ * middle of a longer trip through the job page.
+ */
+export async function startOutreachDraftGeneration(id: string) {
   try {
     // Two OpenAI calls run here, so the page must not hold the user while they happen.
     await startTask(
@@ -179,6 +182,12 @@ export async function generateOutreachDraft(id: string) {
     if (!(error instanceof TaskBusyError)) throw error;
   }
   revalidatePath(`/jobs/${id}`);
+}
+
+export async function generateOutreachDraft(id: string) {
+  await requireAuth();
+  await requireMutableDraft(id);
+  await startOutreachDraftGeneration(id);
   redirect(`/jobs/${id}/outreach`);
 }
 

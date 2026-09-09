@@ -28,6 +28,7 @@ export function JobCaseReviewForm({
   employerCopy,
   threads,
   threadRequired,
+  canWrite,
 }: {
   jobCase: JobCase;
   recruiterLinkedin: string | null;
@@ -44,6 +45,7 @@ export function JobCaseReviewForm({
   /** Null unless the mode replies into a thread; then one of these must be chosen. */
   threads: Array<{ id: string; subject: string; receivedDateTime: string }> | null;
   threadRequired: boolean;
+  canWrite: boolean;
 }) {
   return (
     <form action={confirmAction} className="space-y-8">
@@ -203,7 +205,7 @@ export function JobCaseReviewForm({
         <button className={straightThrough
           ? "rounded-lg border border-slate-400 bg-white px-5 py-3 font-medium text-slate-800 hover:border-slate-600"
           : "rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800"} type="submit">
-          {preview?.subject ? "Confirm and create job with draft" : "Confirm and create opportunity"}
+          {preview?.subject ? "Confirm and create job with draft" : canWrite ? "Confirm and write the email" : "Confirm and create opportunity"}
         </button>
         {/* A second vendor on one role is a normal channel; only the same JD text twice is a duplicate. */}
         {hasExactDuplicate && (

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { approveOutreachDraft, generateOutreachDraft, saveOutreachDraft, setOutreachCopy } from "@/app/(protected)/jobs/[id]/outreach/actions";
 import { confirmOutlookSent, createOutlookDraftLink, selectOutlookReplySource } from "@/app/(protected)/jobs/[id]/outlook/actions";
 import { OutlookDraftState, OutreachMode, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
@@ -29,7 +29,12 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
     const writing = await getPrisma().task.count({
       where: { subjectId: id, kind: TaskKind.OUTREACH_REGENERATE, status: TaskStatus.RUNNING },
     });
-    if (!writing) notFound();
+    // Nothing running and nothing written means the attempt failed. The job page carries the retry
+    // and the tray carries the reason, so send the user there rather than to a missing page.
+    if (!writing) {
+      if (await getPrisma().opportunity.count({ where: { id } })) redirect(`/jobs/${id}`);
+      notFound();
+    }
     return (
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Outreach</p>
