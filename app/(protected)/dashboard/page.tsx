@@ -21,6 +21,7 @@ import {
 } from "@/services/dashboard-analytics";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 import { queuedIntakes } from "@/services/intake-queue";
+import { listUnsentDrafts } from "@/services/outlook-sent";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -32,6 +33,12 @@ type Filters = {
   employment: string;
   metric: DashboardMetricKey;
 };
+
+/** Only an https link Outlook itself gave us is ever offered to the browser. */
+function safeOutlookLink(value: string | null) {
+  if (!value) return null;
+  try { return new URL(value).protocol === "https:" ? value : null; } catch { return null; }
+}
 
 const rangeLabels: Record<TimeRange, string> = {
   today: "Today",
@@ -124,7 +131,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     applicationTrack: stage ? { is: { currentStage: stage } } : undefined,
   };
   const database = getPrisma();
-  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue] = await Promise.all([
+  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue, waitingToSend] = await Promise.all([
     database.opportunity.findMany({
       where,
       select: {
@@ -162,6 +169,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     }),
     database.followUpSuggestion.count({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.FAILED] } } }),
     queuedIntakes(database),
+    listUnsentDrafts(database),
   ]);
   const summary = summarizeDashboard(opportunities, filters.range);
   const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
@@ -196,6 +204,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
           Outlook confirmed the send, and the version you actually sent is archived. <Link className="underline" href={`/jobs/${sentJobId}/outreach`}>Open the archived email</Link>
         </p>
+      )}
+
+      {waitingToSend.length > 0 && (
+        <section className="mt-8">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className="text-xl font-semibold text-slate-950">Drafts waiting in Outlook ({waitingToSend.length})</h2>
+            <p className="text-sm text-slate-600">Each one leaves this list by itself once the scan sees it was sent.</p>
+          </div>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {waitingToSend.map((draft) => {
+              const link = safeOutlookLink(draft.outlookWebLink);
+              return (
+                <li className="rounded-lg border border-blue-200 bg-white px-3 py-2" key={draft.id}>
+                  <Link className="truncate text-sm font-semibold text-slate-950 underline" href={`/jobs/${draft.opportunityId}/outreach`}>{draft.opportunity.title}</Link>
+                  <p className="mt-0.5 truncate text-xs text-slate-600">
+                    {draft.opportunity.recruiter?.name ?? "Recruiter unknown"}
+                    {draft.outlookDraftCreatedAt ? ` · built ${formatDateTime(draft.outlookDraftCreatedAt)} UTC` : ""}
+                  </p>
+                  {link && <a className="mt-1 inline-block text-xs font-medium text-blue-700 underline" href={link} rel="noreferrer" target="_blank">Open in Outlook</a>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {queue.length > 0 && (

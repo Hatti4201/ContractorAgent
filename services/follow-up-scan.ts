@@ -23,6 +23,7 @@ import {
   type ScanMode,
 } from "@/services/intake-scan";
 import { runIntakePipeline } from "@/services/intake-pipeline";
+import { sweepSentDrafts } from "@/services/outlook-sent";
 import type { TaskHandle } from "@/services/tasks";
 
 // ponytail: ten analyses per scan bounds one run; anything skipped has no row yet, so the next scan retries it.
@@ -139,14 +140,19 @@ export async function scanFollowUps(task?: TaskHandle) {
   await database.mailScanState.update({ where: { id: SCAN_STATE_ID }, data: { lastRunAt: new Date() } });
 
   try {
+    await task?.progress("Checking which drafts have been sent");
+    // Deterministic and free of model calls: Graph is only asked whether each draft left the folder.
+    const accessToken = await outlookAccessToken();
+    const archived = await sweepSentDrafts(accessToken);
+
     await task?.progress("Reading new Outlook mail");
-    const messages = await listOutlookInboxMessages({ accessToken: await outlookAccessToken() }, state.watermark);
+    const messages = await listOutlookInboxMessages({ accessToken }, state.watermark);
     if (!messages.length) {
       await database.mailScanState.update({
         where: { id: SCAN_STATE_ID },
         data: { lastSuccessAt: new Date(), consecutiveFailures: 0, lastError: null },
       });
-      return { scanned: 0, analyzed: 0 };
+      return { scanned: 0, analyzed: 0, archived };
     }
 
     const candidates = await activeCandidates();
@@ -202,7 +208,7 @@ export async function scanFollowUps(task?: TaskHandle) {
         lastError: null,
       },
     });
-    return { scanned: messages.length, analyzed, classified, imported };
+    return { scanned: messages.length, analyzed, classified, imported, archived };
   } catch (error) {
     // A scheduled scan runs unattended, so a repeated failure has to stay visible instead of silent.
     await database.mailScanState.update({
