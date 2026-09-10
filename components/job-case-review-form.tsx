@@ -103,7 +103,6 @@ export function JobCaseReviewForm({
           <label className="text-sm font-medium text-slate-800 md:col-span-2">
             Body
             <textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={preview.body} maxLength={10_000} name="draftBody" rows={16} />
-            <span className="mt-1 block text-xs font-normal text-slate-500">Wrap a screening label in ** ** to bold it in Outlook. Editing here sends the email back for revalidation instead of approving it.</span>
           </label>
         </fieldset>
       )}
@@ -123,11 +122,9 @@ export function JobCaseReviewForm({
 
       <details className="rounded-2xl border border-slate-200 bg-white p-6">
         <summary className="cursor-pointer text-lg font-semibold text-slate-950">Source, facts and requirements</summary>
-        <p className="mt-1 text-sm text-slate-600">Analyzed from the pasted text. Open this only when something needs correcting.</p>
         <div className="mt-5 space-y-8">
       <fieldset className="grid gap-5 md:grid-cols-2">
         <legend className="px-2 text-lg font-semibold text-slate-950">Source</legend>
-        <p className="text-sm text-slate-600 md:col-span-2">Detected from the pasted text. Source type and sender decide which recipient the outreach validator will accept, so correct them here if the detection missed.</p>
         <label className="text-sm font-medium text-slate-800">
           Source type
           <select className={inputClass} defaultValue={source.sourceType} name="sourceType">
@@ -185,7 +182,7 @@ export function JobCaseReviewForm({
         <label className="text-sm font-medium text-slate-800">Name<input className={inputClass} defaultValue={jobCase.recruiterName ?? ""} maxLength={200} name="recruiterName" /></label>
         <label className="text-sm font-medium text-slate-800">Email<input className={inputClass} defaultValue={jobCase.recruiterEmail ?? ""} maxLength={320} name="recruiterEmail" type="email" /></label>
         <label className="text-sm font-medium text-slate-800">Phone<input className={inputClass} defaultValue={jobCase.recruiterPhone ?? ""} maxLength={80} name="recruiterPhone" type="tel" /></label>
-        <label className="text-sm font-medium text-slate-800">LinkedIn or profile URL<input className={inputClass} defaultValue={recruiterLinkedin ?? ""} maxLength={500} name="recruiterLinkedin" placeholder="https://www.linkedin.com/in/…" type="url" /><span className="mt-1 block text-xs font-normal text-slate-500">Filled in only when the pasted text contains a linkedin.com/in/ link, quoted as-is. Leaving it empty keeps whatever this recruiter already has.</span></label>
+        <label className="text-sm font-medium text-slate-800">LinkedIn or profile URL<input className={inputClass} defaultValue={recruiterLinkedin ?? ""} maxLength={500} name="recruiterLinkedin" placeholder="https://www.linkedin.com/in/…" type="url" /></label>
       </fieldset>
 
       <fieldset className="grid gap-5 md:grid-cols-2">
@@ -217,7 +214,6 @@ export function JobCaseReviewForm({
           </button>
         )}
       </div>
-      {straightThrough && <p className="text-xs leading-5 text-slate-500">The first button runs the rest in one go: the job is created, the validated email is approved, and the Outlook draft opens in a new tab with the resume attached — Outlook closes that tab itself once you send, and this one stays on the job. Editing the email above sends it back for revalidation instead, so use the second button then. Sending is still yours alone.</p>}
     </form>
   );
 }

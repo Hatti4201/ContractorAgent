@@ -36,7 +36,6 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
       <Link className="text-sm font-medium text-emerald-700 underline" href="/jobs">← All jobs</Link>
       <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Add job</h1>
-      <p className="mt-2 text-slate-600">Paste the source and everything else is prepared for one review. Unknown facts stay unknown, and nothing becomes an opportunity until you confirm. You can also <Link className="font-medium text-emerald-700 underline" href="/jobs/new">enter a job manually</Link>.</p>
 
       {discarded && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">Pasted source discarded.</p>}
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">That source is no longer waiting for review.</p>}
@@ -44,7 +43,6 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
       {queue.length > 0 && (
         <section className="mt-8">
           <h2 className="text-xl font-semibold text-slate-950">Waiting for your review</h2>
-          <p className="mt-1 text-sm text-slate-600">Analyzed sources that have not become opportunities yet. They stay here until you confirm or discard them.</p>
           <ul className="mt-5 space-y-3">
             {queue.map((intake) => (
               <li className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" key={intake.id}>
@@ -67,7 +65,6 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
 
       <section className="mt-8 scroll-mt-6" id="inbox">
         <h2 className="text-xl font-semibold text-slate-950">Take one straight from your inbox</h2>
-        <p className="mt-1 text-sm text-slate-600">Nothing is imported on its own. A mail picked here keeps its real sender and its thread, so the outreach replies to it instead of starting a new message.</p>
         {inboxFailed && <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Outlook could not be read just now. Reconnect and reload.</p>}
         {!inboxFailed && inbox.length === 0 && <p className="mt-4 text-sm text-slate-600"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> to list recent mail here.</p>}
         {inbox.length > 0 && (
@@ -111,12 +108,11 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
                 </li>
               ))}
             </ul>
-          ) : <p className="mt-4 text-sm text-slate-600">Nothing judged yet. The scan looks only at mail that matches no job you already track.</p>}
+          ) : <p className="mt-4 text-sm text-slate-600">Nothing judged yet.</p>}
         </section>
       )}
 
       <h2 className="mt-10 text-xl font-semibold text-slate-950">Or paste the text yourself</h2>
-      <p className="mt-1 text-sm text-slate-600">A pasted email loses its headers, so the outreach cannot tell it should reply. Picking the mail above keeps the thread.</p>
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
 
 

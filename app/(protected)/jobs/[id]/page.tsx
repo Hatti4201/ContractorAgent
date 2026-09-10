@@ -101,7 +101,6 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-950">Confirmed JobCase</h2>
-                <p className="mt-1 text-sm text-slate-600">AI-extracted facts reviewed and confirmed by the user.</p>
               </div>
               <div className="flex items-center gap-3">
                 {editingCase ? (
@@ -140,14 +139,12 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               </div>
             </dl>
 
-            {editingCase && <p className="mt-5 text-xs leading-5 text-slate-500">Title, client, location, role family and recruiter are edited under Edit job. Analysis confidence and the model&apos;s evidence stay as reported. Saving records a correction and sends any unsent outreach draft back for review.</p>}
           </form>
         </section>
       )}
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="resume-router">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div><h2 className="text-xl font-semibold text-slate-950">Resume router</h2><p className="mt-1 text-sm text-slate-600">Deterministic registry selection; no AI-generated file paths.</p></div>
           <Link className="text-sm font-medium text-emerald-700 underline" href={`/resumes?from=/jobs/${job.id}`}>Manage registry</Link>
         </div>
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-3">
@@ -196,7 +193,6 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
       </section>
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="outreach-draft">
-        <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-slate-950">Outreach email</h2><p className="mt-1 text-sm text-slate-600">Outlook draft creation is approval-gated; sending always remains manual.</p></div>{job.outreachDraft && <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{formatEnum(job.outreachDraft.status)} · Outlook {formatEnum(job.outreachDraft.outlookState)}</span>}</div>
         {outreachErrorMessage && <p className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{outreachErrorMessage}</p>}
         {job.outreachDraft ? (
           <Link className="mt-5 inline-flex rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href={`/jobs/${job.id}/outreach`}>Review outreach draft</Link>
@@ -208,7 +204,6 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
             <ul className="mt-2 list-disc space-y-1 pl-5">{outreachBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
           </div>
         )}
-        <p className="mt-3 text-xs text-slate-500">Generation sends confirmed facts and the private approved context to the configured OpenAI API with response storage disabled.</p>
       </section>
 
       <section className="mt-8 scroll-mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6" id="attention-actions">

@@ -163,7 +163,7 @@ export default async function RecruiterPage({
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-950">Merge or remove</h2>
-        <p className="mt-1 text-sm text-slate-600">Merging moves every linked job to the other recruiter, fills only their empty contact fields, keeps anything it cannot carry in their notes, and records a correction on each moved job. It cannot be undone.</p>
+        <p className="mt-1 text-sm text-slate-600">Jobs move over, empty fields are filled, conflicts go to notes. It cannot be undone.</p>
         {others.length ? (
           <form action={mergeRecruiter.bind(null, recruiter.id)} className="mt-5 flex flex-wrap items-end gap-3">
             <label className="text-sm font-medium text-slate-800">

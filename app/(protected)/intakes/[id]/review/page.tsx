@@ -29,7 +29,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Preparing this job</h1>
-        <p className="mt-3 text-slate-600">Analysis, resume routing, drafting and validation are running in the background. This page fills in when they finish; the corner tray tracks progress and you can leave.</p>
+        <p className="mt-3 text-slate-600">This page fills in when it finishes.</p>
         <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href="/jobs">Back to jobs</Link>
       </div>
     );
@@ -132,7 +132,6 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       {duplicates.length > 0 && (
       <details className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
         <summary className="cursor-pointer text-lg font-semibold text-slate-950">Other channels for this role ({duplicates.length})</summary>
-        <p className="mt-1 text-sm text-slate-600">One role reaches you through several vendors, which is normal. Check who is already working it and how far they got.</p>
         {duplicates.length ? (
           <ul className="mt-4 space-y-3">
             {duplicates.map((match) => (
