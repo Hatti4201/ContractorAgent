@@ -3,8 +3,10 @@ import { createRecruiter } from "@/app/(protected)/recruiters/actions";
 import { requireAuth } from "@/lib/auth";
 import { formatDate } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { phoneDigits, isPhoneQuery } from "@/services/job-search";
 
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
+const searchClass = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 const errors: Record<string, string> = {
   missing: "That recruiter no longer exists.",
   fields: "A name is required and the email must be a valid address.",
@@ -12,9 +14,10 @@ const errors: Record<string, string> = {
   "email-taken": "Another recruiter already uses that email address.",
 };
 
-export default async function RecruitersPage({ searchParams }: { searchParams: Promise<{ error?: string; deleted?: string }> }) {
+export default async function RecruitersPage({ searchParams }: { searchParams: Promise<{ error?: string; deleted?: string; q?: string }> }) {
   await requireAuth();
-  const { error, deleted } = await searchParams;
+  const { error, deleted, q } = await searchParams;
+  const term = (typeof q === "string" ? q : "").trim().slice(0, 200);
   // ponytail: a single user tracks tens of recruiters, so the latest touch is computed here instead of in SQL.
   const recruiters = await getPrisma().recruiter.findMany({
     include: {
@@ -23,8 +26,18 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
     },
     orderBy: { name: "asc" },
   });
+  // A number is matched on digits alone, the way it is matched on the jobs page: a caller id and a
+  // stored "+1 (555) 123-4567" have to meet somewhere.
+  const digits = isPhoneQuery(term) ? phoneDigits(term) : "";
+  const needle = term.toLowerCase();
+  const found = !term ? recruiters : recruiters.filter((recruiter) =>
+    (digits && phoneDigits(recruiter.phone).includes(digits))
+    || recruiter.name.toLowerCase().includes(needle)
+    || (recruiter.email?.toLowerCase().includes(needle) ?? false)
+    || (recruiter.phone?.toLowerCase().includes(needle) ?? false)
+    || (recruiter.vendor?.name.toLowerCase().includes(needle) ?? false));
   // Newest activity leads; a recruiter with no linked job has nothing to date, so those sit last by name.
-  const rows = recruiters
+  const rows = found
     .map((recruiter) => ({
       ...recruiter,
       lastTouch: recruiter.opportunities.reduce<Date | null>(
@@ -41,7 +54,15 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
     <div className="mx-auto max-w-6xl px-6 py-12">
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Recruiters</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Recruiters</h1>
-      <p className="mt-3 max-w-3xl text-slate-600">Every recruiter reached through an opportunity, most recently active first. Contact details stay in the private database.</p>
+
+      <form action="/recruiters" className="mt-6 flex flex-wrap items-center gap-3">
+        <label className="min-w-64 flex-1">
+          <span className="sr-only">Search recruiters</span>
+          <input autoFocus className={searchClass} defaultValue={term} maxLength={200} name="q" placeholder="Name, phone, email or vendor" type="search" />
+        </label>
+        <button className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" type="submit">Search</button>
+        {term && <Link className="text-sm font-medium text-emerald-700 underline" href="/recruiters">Clear</Link>}
+      </form>
 
       {deleted && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">Recruiter deleted.</p>}
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{errors[error] ?? "Recruiter update failed."}</p>}
@@ -64,6 +85,7 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
                     <td className="px-5 py-4">
                       <Link className="font-semibold text-slate-950 underline" href={`/recruiters/${recruiter.id}`}>{recruiter.name}</Link>
                       <span className="mt-1 block break-all text-slate-600">{recruiter.email ?? "No email"}</span>
+                      {recruiter.phone && <span className="mt-1 block text-slate-600">{recruiter.phone}</span>}
                     </td>
                     <td className="px-5 py-4 text-slate-700">{recruiter.vendor?.name ?? "Not set"}</td>
                     <td className="px-5 py-4 font-medium text-emerald-800">{recruiter.opportunities.length}</td>
@@ -75,7 +97,8 @@ export default async function RecruitersPage({ searchParams }: { searchParams: P
           </div>
         ) : (
           <div className="p-10 text-center">
-            <p className="text-slate-600">No recruiter has been recorded yet. Add one below, or confirm a job that names one.</p>
+            <p className="text-slate-600">{term ? `Nothing matches “${term}”.` : "No recruiter has been recorded yet."}</p>
+            {term && <Link className="mt-3 inline-block font-medium text-emerald-700 underline" href="/recruiters">Show every recruiter</Link>}
           </div>
         )}
       </div>
