@@ -200,7 +200,10 @@ export function JobCaseReviewForm({
 
       <div className="flex flex-wrap gap-3">
         {straightThrough && (
-          <OpenInOutlookButton action={confirmAndDraftAction}>Confirm and open the Outlook draft</OpenInOutlookButton>
+          <>
+            <OpenInOutlookButton action={confirmAndDraftAction}>Confirm and open the Outlook draft</OpenInOutlookButton>
+            <OpenInOutlookButton action={confirmAndDraftAction} open={false} tone="secondary">Confirm and build it for later</OpenInOutlookButton>
+          </>
         )}
         <button className={straightThrough
           ? "rounded-lg border border-slate-400 bg-white px-5 py-3 font-medium text-slate-800 hover:border-slate-600"

@@ -11,9 +11,14 @@ import { useState, type MouseEvent } from "react";
 export function OpenInOutlookButton({
   action,
   children,
+  open = true,
+  tone = "primary",
 }: {
   action: (formData: FormData) => Promise<{ url: string | null; href?: string | null }>;
   children: string;
+  /** False builds the draft and leaves it in Outlook, for a batch the user opens later in one trip. */
+  open?: boolean;
+  tone?: "primary" | "secondary";
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -23,7 +28,7 @@ export function OpenInOutlookButton({
     // a reply still needs its thread. Standing alone, the button carries no fields of its own.
     const form = event.currentTarget.form;
     if (form && !form.reportValidity()) return;
-    const tab = window.open("", "_blank");
+    const tab = open ? window.open("", "_blank") : null;
     setBusy(true);
     try {
       const { url, href } = await action(form ? new FormData(form) : new FormData());
@@ -43,7 +48,7 @@ export function OpenInOutlookButton({
 
   return (
     <button
-      className="rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
+      className={`rounded-lg px-5 py-3 font-medium disabled:cursor-wait disabled:opacity-60 ${tone === "primary" ? "bg-emerald-700 text-white hover:bg-emerald-800" : "border border-slate-400 bg-white text-slate-800 hover:border-slate-600"}`}
       disabled={busy}
       onClick={run}
       type="button"

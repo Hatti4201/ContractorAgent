@@ -153,7 +153,10 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
         {draft.replySourceMessageId && replyRequired && <p className="mt-5 text-sm font-medium text-emerald-800">Original Outlook message selected and verified.</p>}
 
         {connected && effectiveApproved && !locked && (!replyRequired || draft.replySourceMessageId) && (
-          <div className="mt-5"><OpenInOutlookButton action={createExternalDraft}>Create the Outlook draft and open it</OpenInOutlookButton></div>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <OpenInOutlookButton action={createExternalDraft}>Create the Outlook draft and open it</OpenInOutlookButton>
+            <OpenInOutlookButton action={createExternalDraft} open={false} tone="secondary">Create it and stay here</OpenInOutlookButton>
+          </div>
         )}
         {draft.outlookState === OutlookDraftState.CREATING && <p className="mt-5 text-sm text-slate-700">Draft creation is in progress. Refresh before retrying.</p>}
         {sentCheckAvailable && <div className="mt-5 flex flex-col items-start gap-3">{outlookLink && <a className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white" href={outlookLink} rel="noreferrer" target="_blank">Open Outlook draft</a>}<form action={confirmSent}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800" type="submit">I sent it — verify in Outlook</button></form><p className="text-xs text-slate-500">Press Send in Outlook first, then click this. Sent Items can lag a few seconds.</p></div>}
