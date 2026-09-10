@@ -434,8 +434,8 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
 export async function confirmIntake(id: string, markDuplicate: boolean, formData: FormData) {
   const opportunity = await confirmIntakeRecord(id, markDuplicate, formData);
   if (opportunity.readyToWrite) await startOutreachDraftGeneration(opportunity.id);
-  // The outreach page says the email is being written, and fills in when the task lands.
-  redirect(opportunity.hasDraft || opportunity.readyToWrite ? `/jobs/${opportunity.id}/outreach` : `/jobs/${opportunity.id}`);
+  // Nothing here is worth watching a spinner for: the dashboard pipeline shows the email arriving.
+  redirect(opportunity.hasDraft || opportunity.readyToWrite ? "/dashboard" : `/jobs/${opportunity.id}`);
 }
 
 /**

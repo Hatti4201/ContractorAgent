@@ -1,5 +1,5 @@
 import type { Prisma } from "@/app/generated/prisma/client";
-import { ActivityType, ApplicationStage, OutlookDraftState } from "@/app/generated/prisma/enums";
+import { ActivityType, ApplicationStage, OutlookDraftState, OutreachDraftStatus, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 import { inspectOutlookSentMessage, replyModes } from "@/services/outlook-graph";
 
@@ -54,9 +54,10 @@ export async function archiveIfSent(draft: UnsentDraft, accessToken: string, dat
   if (!result.sent) return { sent: false as const };
 
   const { differences } = result;
+  const unchecked = result.attachmentChecked ? "" : " The resume file is no longer on disk, so the attachment could not be re-checked.";
   const note = differences.length
-    ? `Archived the version you sent from Outlook, which differs from the approved draft (${differences.join(", ")}).`
-    : null;
+    ? `Archived the version you sent from Outlook, which differs from the approved draft (${differences.join(", ")}).${unchecked}`
+    : unchecked.trim() || null;
   await database.$transaction(async (transaction) => {
     await transaction.outreachDraft.update({
       where: { id: draft.id },
@@ -96,4 +97,31 @@ export async function sweepSentDrafts(accessToken: string, database = getPrisma(
     }
   }
   return archived;
+}
+
+/** Written but not yet in Outlook: the step between confirming a job and building its draft. */
+export async function listDraftsAwaitingOutlook(database = getPrisma()) {
+  const drafts = await database.outreachDraft.findMany({
+    where: { outlookMessageId: null, outlookState: { not: OutlookDraftState.CREATING } },
+    select: {
+      id: true,
+      opportunityId: true,
+      status: true,
+      updatedAt: true,
+      opportunity: { select: { title: true, recruiter: { select: { name: true } } } },
+    },
+    orderBy: { updatedAt: "asc" },
+  });
+  // A job whose email is still being written has no row worth showing yet, so the task speaks for it.
+  const writing = new Set((await database.task.findMany({
+    where: { kind: TaskKind.OUTREACH_REGENERATE, status: TaskStatus.RUNNING },
+    select: { subjectId: true },
+  })).flatMap((task) => (task.subjectId ? [task.subjectId] : [])));
+
+  return drafts.map((draft) => ({
+    ...draft,
+    state: writing.has(draft.opportunityId)
+      ? "WRITING" as const
+      : draft.status === OutreachDraftStatus.APPROVED ? "READY" as const : "REVIEW" as const,
+  }));
 }

@@ -23,7 +23,7 @@ import {
   type ScanMode,
 } from "@/services/intake-scan";
 import { runIntakePipeline } from "@/services/intake-pipeline";
-import { sweepSentDrafts } from "@/services/outlook-sent";
+import { sweepSentDrafts } from "@/services/outreach-pipeline";
 import type { TaskHandle } from "@/services/tasks";
 
 // ponytail: ten analyses per scan bounds one run; anything skipped has no row yet, so the next scan retries it.

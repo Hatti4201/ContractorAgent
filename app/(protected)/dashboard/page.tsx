@@ -21,7 +21,8 @@ import {
 } from "@/services/dashboard-analytics";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 import { queuedIntakes } from "@/services/intake-queue";
-import { listUnsentDrafts } from "@/services/outlook-sent";
+import { checkSentDraftsNow } from "@/app/(protected)/dashboard/actions";
+import { listDraftsAwaitingOutlook, listUnsentDrafts } from "@/services/outreach-pipeline";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -131,7 +132,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     applicationTrack: stage ? { is: { currentStage: stage } } : undefined,
   };
   const database = getPrisma();
-  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue, waitingToSend] = await Promise.all([
+  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue, waitingToSend, beingPrepared] = await Promise.all([
     database.opportunity.findMany({
       where,
       select: {
@@ -170,6 +171,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     database.followUpSuggestion.count({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.FAILED] } } }),
     queuedIntakes(database),
     listUnsentDrafts(database),
+    listDraftsAwaitingOutlook(database),
   ]);
   const summary = summarizeDashboard(opportunities, filters.range);
   const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
@@ -206,11 +208,35 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </p>
       )}
 
+      {beingPrepared.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-xl font-semibold text-slate-950">Emails being prepared ({beingPrepared.length})</h2>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {beingPrepared.map((draft) => (
+              <li className="rounded-lg border border-slate-200 bg-white px-3 py-2" key={draft.id}>
+                <Link className="truncate text-sm font-semibold text-slate-950 underline" href={`/jobs/${draft.opportunityId}/outreach`}>{draft.opportunity.title}</Link>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className="truncate">{draft.opportunity.recruiter?.name ?? "Recruiter unknown"}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${draft.state === "READY" ? "bg-emerald-50 text-emerald-800" : draft.state === "WRITING" ? "bg-slate-100 text-slate-700" : "bg-amber-50 text-amber-900"}`}>
+                    {draft.state === "READY" ? "Ready for Outlook" : draft.state === "WRITING" ? "Writing" : "Needs review"}
+                  </span>
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {waitingToSend.length > 0 && (
         <section className="mt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <h2 className="text-xl font-semibold text-slate-950">Drafts waiting in Outlook ({waitingToSend.length})</h2>
-            <p className="text-sm text-slate-600">Each one leaves this list by itself once the scan sees it was sent.</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <form action={checkSentDraftsNow}>
+                <button className="rounded-lg border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:border-slate-600" type="submit">Check now</button>
+              </form>
+            </div>
           </div>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {waitingToSend.map((draft) => {
@@ -234,7 +260,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <section className="mt-8">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <h2 className="text-xl font-semibold text-slate-950">Waiting for your review ({queue.length})</h2>
-            <p className="text-sm text-slate-600">Oldest first. The ✕ on a card discards that source.</p>
           </div>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {queue.map((intake) => (
@@ -258,18 +283,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold text-slate-950">Add a job</h2>
-            <p className="mt-1 text-sm text-slate-600">Paste the job post, LinkedIn message, recruiter email or forwarded JD. Analysis, resume routing and the draft all run in the background.</p>
           </div>
           <Link className="text-sm font-medium text-emerald-700 underline" href="/intake">Sources waiting for review, or enter a job manually →</Link>
         </div>
         <Link className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:border-emerald-600" href="/intake#inbox">
           <span>
             <span className="font-medium text-emerald-950">The recruiter emailed you? Pick that mail from your inbox →</span>
-            <span className="mt-0.5 block text-sm text-emerald-900">Pasting an email loses its headers, so the outreach starts a new message instead of replying to theirs.</span>
           </span>
         </Link>
         <p className="mt-5 text-sm font-medium text-slate-700">Or paste the text</p>
-        <div className="mt-2"><IntakeForm autoFocus={false} hint={false} rows={5} /></div>
+        <div className="mt-2"><IntakeForm autoFocus={false} rows={5} /></div>
       </section>
 
       <section aria-label="Time range" className="mt-8 flex flex-wrap gap-2">
@@ -341,7 +364,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Link>
         ))}
       </section>
-      <p className="mt-3 text-xs text-slate-500">Unique opportunities in the selected UTC window; Total uses created date.</p>
 
       <section className="mt-10">
         <h2 className="text-xl font-semibold text-slate-950">Conversion rate</h2>
@@ -358,7 +380,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <section className="mt-10">
         <h2 className="text-xl font-semibold text-slate-950">Pipeline</h2>
-        <p className="mt-1 text-sm text-slate-600">Current stage for jobs created or active in the selected UTC window.</p>
         <div className="mt-4 grid gap-4 lg:grid-cols-5">
           {summary.pipeline.map((column) => (
             <article className="rounded-2xl border border-slate-200 bg-slate-100 p-3" key={column.key}>

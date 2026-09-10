@@ -200,6 +200,14 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     const compared = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
     assert.ok(compared.sent);
     assert.deepEqual(compared.differences, ["subject"], "A subject we did choose is still compared.");
+    assert.equal(compared.attachmentChecked, true);
+
+    // A resume that has since been replaced leaves the attachment unknown, and a send already made
+    // is still a fact worth archiving, so the check reports it rather than refusing to look.
+    const withoutResume = await inspectOutlookSentMessage("draft-2", { ...replied, resumePath: join(directory, "gone.pdf") }, { accessToken: "fictional-access-token", fetcher });
+    assert.ok(withoutResume.sent);
+    assert.equal(withoutResume.attachmentChecked, false);
+    assert.deepEqual(withoutResume.differences, [], "An unverifiable attachment is not a difference.");
 
     // Outlook reports the MIME-encoded size on sent mail, so only the content hash may decide.
     sizeOnlyMismatch = true;

@@ -332,6 +332,8 @@ export type SentMessageArchive = {
   body: string;
   toAddress: string;
   differences: string[];
+  /** False when the resume file has since gone, which leaves the attachment unknown, not wrong. */
+  attachmentChecked: boolean;
 };
 
 /** A size mismatch alone proves nothing: Outlook reports the MIME-encoded size on sent mail. */
@@ -351,10 +353,11 @@ async function sentAttachmentMatches(messageIdValue: string, fileName: string, c
  * Differences are described, never used to reject the message.
  */
 export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string | null; resumePath: string }, options: FetchOptions): Promise<SentMessageArchive | { sent: false; sentAt: null }> {
+  // A message that already left the mailbox is a fact worth recording even when the resume behind it
+  // has since been replaced or renamed: the attachment then goes unchecked rather than blocking.
   const checked = await checkResumeFile(expected.resumePath);
-  if (!checked.usable || !checked.canonicalPath) throw new Error(checked.issue ?? "Selected Resume is unavailable.");
-  const content = await readFile(checked.canonicalPath);
-  const fileName = basename(checked.canonicalPath);
+  const content = checked.usable && checked.canonicalPath ? await readFile(checked.canonicalPath) : null;
+  const fileName = checked.canonicalPath ? basename(checked.canonicalPath) : null;
   const message = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,isDraft,sentDateTime,toRecipients,subject,body,hasAttachments`, {
     method: "GET",
     // Plain text keeps the archived copy readable; the reply history Outlook appends is part of what was sent.
@@ -370,12 +373,14 @@ export async function inspectOutlookSentMessage(messageIdValue: string, expected
   const subject = typeof message.subject === "string" ? message.subject.slice(0, 300) : "";
   const bodyValue = message.body && typeof message.body === "object" ? object(message.body).content : null;
   const body = typeof bodyValue === "string" ? bodyValue.slice(0, 100_000) : "";
-  const attachmentMatches = message.hasAttachments === true && await sentAttachmentMatches(messageIdValue, fileName, content, options);
+  const attachmentChecked = content !== null && fileName !== null;
+  const attachmentMatches = !attachmentChecked
+    || (message.hasAttachments === true && await sentAttachmentMatches(messageIdValue, fileName, content, options));
 
   const differences: string[] = [];
   if (recipients.length !== 1 || recipients[0]!.toLowerCase() !== expected.toAddress.toLowerCase()) differences.push("recipient");
   // A reply carries Outlook's subject, not one of ours, so there is nothing to compare it against.
   if (expected.subject !== null && subject !== expected.subject) differences.push("subject");
   if (!attachmentMatches) differences.push("attachment");
-  return { sent: true as const, sentAt, subject, body, toAddress: recipients.join(", ").slice(0, 1_000), differences };
+  return { sent: true as const, sentAt, subject, body, toAddress: recipients.join(", ").slice(0, 1_000), differences, attachmentChecked };
 }
