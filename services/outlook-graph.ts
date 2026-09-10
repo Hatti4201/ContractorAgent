@@ -166,9 +166,15 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
       if (!input.replySourceMessageId) throw new Error("Select the original Outlook message before creating a reply draft.");
       const sourceMessageId = await validateOutlookSourceMessage(input.replySourceMessageId, input.toAddress, options);
       created = messageId(await graphRequest(`/me/messages/${encodeURIComponent(sourceMessageId)}/createReply`, { method: "POST" }, options, [200, 201]));
+      // createReply already made this a reply the recruiter will recognise: the subject carries RE:
+      // and the body is prefilled with the quoted original. Overwriting either turns it back into a
+      // stranger's new mail, so the subject is left alone and the written text goes above the quote.
+      const prepared = object(await graphRequest(`/me/messages/${encodeURIComponent(created.id)}?$select=body`, { method: "GET" }, options, [200]));
+      const preparedBody = prepared.body && typeof prepared.body === "object" ? object(prepared.body).content : null;
+      const quoted = typeof preparedBody === "string" ? preparedBody : "";
       await graphRequest(`/me/messages/${encodeURIComponent(created.id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ subject: input.subject, body: { contentType: "HTML", content: outreachBodyHtml(input.body) }, ...recipientFields(input) }),
+        body: JSON.stringify({ body: { contentType: "HTML", content: `${outreachBodyHtml(input.body)}${quoted}` }, ...recipientFields(input) }),
       }, options, [200]);
     } else {
       created = messageId(await graphRequest("/me/messages", {
@@ -184,7 +190,11 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
     const attachments = await attachmentMetadata(created.id, options);
     const verificationIssues: string[] = [];
     if (message.isDraft !== true) verificationIssues.push("Outlook did not keep the item as a draft.");
-    if (message.subject !== input.subject) verificationIssues.push("Subject verification failed: Outlook changed or omitted the subject.");
+    const replying = replyModes.has(input.mode);
+    // A reply keeps Outlook's own "RE: ..." subject, so only a new message is checked against ours.
+    if (replying ? typeof message.subject !== "string" || !message.subject : message.subject !== input.subject) {
+      verificationIssues.push("Subject verification failed: Outlook changed or omitted the subject.");
+    }
     if (recipients.length !== 1) verificationIssues.push(`Recipient verification failed: expected exactly 1 recipient, Outlook returned ${recipients.length}.`);
     if (typeof actualRecipient !== "string") verificationIssues.push("Recipient verification failed: Outlook returned no readable recipient address.");
     else if (actualRecipient.toLowerCase() !== input.toAddress.toLowerCase()) verificationIssues.push("Recipient verification failed: Outlook recipient differs from the confirmed recipient.");
@@ -215,7 +225,14 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
       }
     }
     if (verificationIssues.length) throw new Error(verificationIssues.join(" "));
-    return { id: created.id, webLink: typeof message.webLink === "string" ? message.webLink : created.webLink, attachmentName: fileName, attachmentSize: content.length, verificationWarning };
+    return {
+      id: created.id,
+      webLink: typeof message.webLink === "string" ? message.webLink : created.webLink,
+      subject: typeof message.subject === "string" ? message.subject : input.subject,
+      attachmentName: fileName,
+      attachmentSize: content.length,
+      verificationWarning,
+    };
   } catch (error) {
     if (!created) throw new OutlookDraftCreationError(error instanceof Error ? error.message : "Outlook draft creation failed.");
     try {
@@ -333,7 +350,7 @@ async function sentAttachmentMatches(messageIdValue: string, fileName: string, c
  * Reports what Outlook actually sent, so the user's own edits can be archived as the record of truth.
  * Differences are described, never used to reject the message.
  */
-export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string; resumePath: string }, options: FetchOptions): Promise<SentMessageArchive | { sent: false; sentAt: null }> {
+export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string | null; resumePath: string }, options: FetchOptions): Promise<SentMessageArchive | { sent: false; sentAt: null }> {
   const checked = await checkResumeFile(expected.resumePath);
   if (!checked.usable || !checked.canonicalPath) throw new Error(checked.issue ?? "Selected Resume is unavailable.");
   const content = await readFile(checked.canonicalPath);
@@ -357,7 +374,8 @@ export async function inspectOutlookSentMessage(messageIdValue: string, expected
 
   const differences: string[] = [];
   if (recipients.length !== 1 || recipients[0]!.toLowerCase() !== expected.toAddress.toLowerCase()) differences.push("recipient");
-  if (subject !== expected.subject) differences.push("subject");
+  // A reply carries Outlook's subject, not one of ours, so there is nothing to compare it against.
+  if (expected.subject !== null && subject !== expected.subject) differences.push("subject");
   if (!attachmentMatches) differences.push("attachment");
   return { sent: true as const, sentAt, subject, body, toAddress: recipients.join(", ").slice(0, 1_000), differences };
 }

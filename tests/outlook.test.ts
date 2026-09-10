@@ -80,6 +80,7 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     let sentBodyText = "Rate: $80/hr W2 <not markup>";
     let sent = false;
     let sourceAddress = "recruiter@example.invalid";
+    const quotedHistory = "<hr><p>From: recruiter@example.invalid<br>Original message body.</p>";
 
     const fetcher = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input);
@@ -100,13 +101,17 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
           currentSubject = String(body.subject);
           currentRecipient = String((((body.toRecipients as Array<{ emailAddress: { address: string } }>)[0]).emailAddress.address));
         }
+        if (url.endsWith("/createReply")) currentSubject = "RE: Fictional source";
         return Response.json({ id: `draft-${draftNumber}`, webLink: "https://outlook.office.com/mail/deeplink/compose" }, { status: 201 });
+      }
+      if (method === "GET" && url.includes("?$select=body")) {
+        return Response.json({ body: { contentType: "HTML", content: quotedHistory } });
       }
       if (method === "GET" && url.includes("?$select=id,subject,receivedDateTime,from,isDraft")) {
         return Response.json({ id: "source-message-1", subject: "Fictional source", receivedDateTime: "2026-08-22T00:00:00.000Z", from: { emailAddress: { address: sourceAddress } }, isDraft: false });
       }
       if (method === "PATCH") {
-        currentSubject = String(body?.subject);
+        if (body?.subject !== undefined) currentSubject = String(body.subject);
         currentRecipient = String((((body?.toRecipients as Array<{ emailAddress: { address: string } }>)[0]).emailAddress.address));
         return Response.json({ id: `draft-${draftNumber}` }, { status: 200 });
       }
@@ -151,8 +156,16 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
       resumePath,
     };
     await createOutlookMessageDraft({ ...common, mode: OutreachMode.FIRST_OUTREACH, replySourceMessageId: null }, { accessToken: "fictional-access-token", fetcher });
-    await createOutlookMessageDraft({ ...common, mode: OutreachMode.DIRECT_EMAIL_REPLY, replySourceMessageId: "source-message-1" }, { accessToken: "fictional-access-token", fetcher });
+    const reply = await createOutlookMessageDraft({ ...common, mode: OutreachMode.DIRECT_EMAIL_REPLY, replySourceMessageId: "source-message-1" }, { accessToken: "fictional-access-token", fetcher });
     assert.ok(calls.some((call) => call.url.endsWith("/source-message-1/createReply")));
+    // A reply has to keep looking like one: Outlook's RE: subject stays, and the quoted original
+    // stays under the written text instead of being replaced by it.
+    assert.equal(reply.subject, "RE: Fictional source");
+    const replyPatch = calls.findLast((call) => call.method === "PATCH");
+    assert.equal((replyPatch?.body as { subject?: unknown })?.subject, undefined, "A reply's subject is never overwritten.");
+    const replyBody = String((replyPatch?.body as { body: { content: string } }).body.content);
+    assert.ok(replyBody.endsWith(quotedHistory), "The quoted original must survive under the new text.");
+    assert.ok(replyBody.startsWith("<strong>Rate:</strong>"), "The written text goes above the quote.");
     assert.ok(!calls.some((call) => call.url.endsWith("/send")));
 
     // Both the new draft and the reply draft must carry escaped HTML, so bold survives and markup cannot.
@@ -163,8 +176,11 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     assert.equal(bodies.length, 2);
     for (const value of bodies) {
       assert.equal(value.contentType, "HTML");
-      assert.equal(value.content, "<strong>Rate:</strong> $80/hr W2 &lt;not markup&gt;");
+      // The escaping is the same either way; only the reply carries the quoted original after it.
+      assert.ok(value.content?.startsWith("<strong>Rate:</strong> $80/hr W2 &lt;not markup&gt;"));
     }
+    assert.equal(bodies[0]?.content, "<strong>Rate:</strong> $80/hr W2 &lt;not markup&gt;", "A new message quotes nothing.");
+    assert.equal(bodies[1]?.content, `<strong>Rate:</strong> $80/hr W2 &lt;not markup&gt;${quotedHistory}`);
     // An empty cc list is still sent, so a reply draft cannot inherit a copy nobody approved.
     const sentCc = calls.flatMap((call) => {
       const value = (call.body as { ccRecipients?: unknown[] } | null)?.ccRecipients;
@@ -174,13 +190,20 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     assert.ok(sentCc.every((value) => value.length === 0), "No copy was approved, so none may be set.");
 
     sent = true;
-    const result = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
+    // draft-2 is the reply, so its subject belongs to the thread and the caller offers none to compare.
+    const replied = { ...common, subject: null };
+    const result = await inspectOutlookSentMessage("draft-2", replied, { accessToken: "fictional-access-token", fetcher });
     assert.ok(result.sent);
     assert.deepEqual(result.differences, []);
+    assert.equal(result.subject, "RE: Fictional source", "The archived copy still records what was really sent.");
+
+    const compared = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
+    assert.ok(compared.sent);
+    assert.deepEqual(compared.differences, ["subject"], "A subject we did choose is still compared.");
 
     // Outlook reports the MIME-encoded size on sent mail, so only the content hash may decide.
     sizeOnlyMismatch = true;
-    const resized = await inspectOutlookSentMessage("draft-2", common, { accessToken: "fictional-access-token", fetcher });
+    const resized = await inspectOutlookSentMessage("draft-2", replied, { accessToken: "fictional-access-token", fetcher });
     assert.ok(resized.sent);
     assert.deepEqual(resized.differences, [], "A size-only difference must not be reported as a changed attachment.");
     sizeOnlyMismatch = false;

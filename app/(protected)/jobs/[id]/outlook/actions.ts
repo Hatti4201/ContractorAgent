@@ -21,6 +21,7 @@ import {
   OutlookDraftCreationError,
   OutlookGraphError,
   removeOutlookDraftMessage,
+  replyModes,
   safeOutlookLink,
   validateOutlookSourceMessage,
 } from "@/services/outlook-graph";
@@ -213,7 +214,8 @@ export async function confirmOutlookSent(id: string) {
         try {
           result = await inspectOutlookSentMessage(messageId, {
             toAddress: draft.toAddress,
-            subject: draft.subject,
+            // A reply's subject belongs to the thread, so there is nothing of ours to compare.
+            subject: replyModes.has(draft.mode) ? null : draft.subject,
             resumePath: draft.attachmentResume.filePath,
           }, { accessToken: await outlookAccessToken() });
         } catch (error) {
