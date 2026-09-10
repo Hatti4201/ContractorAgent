@@ -29,7 +29,6 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Preparing this job</h1>
-        <p className="mt-3 text-slate-600">This page fills in when it finishes.</p>
         <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href="/jobs">Back to jobs</Link>
       </div>
     );

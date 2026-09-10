@@ -32,7 +32,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       <form action="/jobs" className="mt-8 flex flex-wrap items-center gap-3">
         <label className="min-w-64 flex-1 text-sm font-medium text-slate-800">
           <span className="sr-only">Search jobs</span>
-          <input autoFocus className={inputClass} defaultValue={term} maxLength={200} name="q" placeholder="Phone number, recruiter, client, or any words from the JD or the email" type="search" />
+          <input autoFocus className={inputClass} defaultValue={term} maxLength={200} name="q" placeholder="Phone, recruiter, client, JD…" type="search" />
         </label>
         <button className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" type="submit">Search</button>
         {term && <Link className="text-sm font-medium text-emerald-700 underline" href="/jobs">Clear</Link>}

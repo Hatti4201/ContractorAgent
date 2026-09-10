@@ -39,7 +39,6 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       <div className="mx-auto max-w-3xl px-6 py-16 text-center">
         <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Outreach</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Writing your email</h1>
-        <p className="mt-3 text-slate-600">The draft is being written and validated in the background. This page fills in when it finishes; the corner tray tracks progress and you can leave.</p>
         <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href={`/jobs/${id}`}>Back to the job</Link>
       </div>
     );
@@ -101,14 +100,13 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
         <label className="block text-sm font-medium text-slate-800">Subject <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} defaultValue={draft.subject} maxLength={300} name="subject" readOnly={locked} required /></label>
         <label className="block text-sm font-medium text-slate-800">Body <span aria-hidden="true" className="text-red-700">*</span><textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={draft.body} maxLength={10_000} name="body" readOnly={locked} required rows={18} /></label>
         {!locked && <button className="rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Save and validate</button>}
-        {locked && <p className="text-sm font-medium text-slate-600">Content is locked because an Outlook draft now represents this approved revision.</p>}
       </form>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">Copy my employer</h2>
         <p className="mt-1 text-xs text-slate-500">Suggested for a C2C engagement. The address comes from your private configuration, never from the model, and this draft is currently {draft.ccAddress ? `copying ${draft.ccAddress}` : "copying nobody"}.</p>
         {employerCopy.issue && <p className="mt-2 text-xs font-medium text-red-800">{employerCopy.issue}</p>}
-        {!employerCopy.address && !employerCopy.issue && <p className="mt-2 text-xs font-medium text-amber-800">No employer address is configured, so no copy can be added.</p>}
+        {!employerCopy.address && !employerCopy.issue && <p className="mt-2 text-xs font-medium text-amber-800">No employer address</p>}
         {!locked && employerCopy.address && (
           <form action={setOutreachCopy.bind(null, draft.opportunityId)} className="mt-3 flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
@@ -118,7 +116,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
             <button className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-500" type="submit">Apply</button>
           </form>
         )}
-        {locked && <p className="mt-2 text-xs text-slate-600">Locked: the Outlook draft already exists. Change the copy in Outlook itself.</p>}
+        {locked && <p className="mt-2 text-xs text-slate-600">Locked</p>}
       </section>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -146,7 +144,6 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
             {sourceCandidates.length ? <ul className="mt-4 space-y-3">{sourceCandidates.map((message) => <li className="rounded-xl border border-slate-200 p-4" key={message.id}><p className="font-medium text-slate-950">{message.subject}</p><p className="mt-1 text-xs text-slate-500">{formatDateTime(new Date(message.receivedDateTime))} UTC</p><form action={selectReplySource} className="mt-3"><input name="sourceMessageId" type="hidden" value={message.id} /><button className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-medium" type="submit">Use this message</button></form></li>)}</ul> : <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{sourceLookupFailed ? "Reconnect Outlook and try again." : "No recent Inbox message from the confirmed Recruiter was found."}</p>}
           </div>
         )}
-        {draft.replySourceMessageId && replyRequired && <p className="mt-5 text-sm font-medium text-emerald-800">Original Outlook message selected and verified.</p>}
 
         {connected && effectiveApproved && !locked && (!replyRequired || draft.replySourceMessageId) && (
           <div className="mt-5 flex flex-wrap gap-3">
@@ -154,10 +151,10 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
             <OpenInOutlookButton action={createExternalDraft} open={false} tone="secondary">Create it and stay here</OpenInOutlookButton>
           </div>
         )}
-        {draft.outlookState === OutlookDraftState.CREATING && <p className="mt-5 text-sm text-slate-700">Draft creation is in progress. Refresh before retrying.</p>}
+        {draft.outlookState === OutlookDraftState.CREATING && <p className="mt-5 text-sm text-slate-700">Creating…</p>}
         {sentCheckAvailable && <div className="mt-5 flex flex-col items-start gap-3">{outlookLink && <a className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white" href={outlookLink} rel="noreferrer" target="_blank">Open Outlook draft</a>}<form action={confirmSent}><button className="rounded-lg border border-slate-400 bg-white px-4 py-2.5 font-medium text-slate-800" type="submit">I sent it — verify in Outlook</button></form><p className="text-xs text-slate-500">Press Send in Outlook first, then click this. Sent Items can lag a few seconds.</p></div>}
         {draft.outlookState === OutlookDraftState.SENT && <>
-          <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Outlook confirmed the message was sent; CRM outreach tracking is updated.</p>
+          <p className="mt-5 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Sent</p>
           {draft.sentBody !== null && <details className="mt-4 rounded-xl border border-slate-200 p-4"><summary className="cursor-pointer text-sm font-semibold text-slate-800">Archived sent version</summary><dl className="mt-3 space-y-2 text-sm text-slate-700"><div><dt className="font-medium text-slate-950">To</dt><dd>{draft.sentToAddress}</dd></div><div><dt className="font-medium text-slate-950">Subject</dt><dd>{draft.sentSubject}</dd></div><div><dt className="font-medium text-slate-950">Body</dt><dd className="whitespace-pre-wrap">{draft.sentBody}</dd></div></dl></details>}
         </>}
       </section>

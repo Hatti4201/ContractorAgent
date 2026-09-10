@@ -288,10 +288,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
         <Link className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:border-emerald-600" href="/intake#inbox">
           <span>
-            <span className="font-medium text-emerald-950">The recruiter emailed you? Pick that mail from your inbox →</span>
+            <span className="font-medium text-emerald-950">From your inbox →</span>
           </span>
         </Link>
-        <p className="mt-5 text-sm font-medium text-slate-700">Or paste the text</p>
         <div className="mt-2"><IntakeForm autoFocus={false} rows={5} /></div>
       </section>
 

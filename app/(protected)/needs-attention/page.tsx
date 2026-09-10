@@ -33,11 +33,10 @@ function proposedText(value: string | null, hasBusinessChange: boolean) {
   return hasBusinessChange ? value ?? "Clear field" : "No change";
 }
 
-export default async function NeedsAttentionPage({ searchParams }: { searchParams: Promise<{ mail?: string }> }) {
+export default async function NeedsAttentionPage() {
   await requireAuth();
   const database = getPrisma();
-  const [{ mail }, opportunities, suggestions, connected, scanState] = await Promise.all([
-    searchParams,
+  const [opportunities, suggestions, connected, scanState] = await Promise.all([
     database.opportunity.findMany({
       select: {
         id: true,
@@ -97,15 +96,12 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
           {" "}Reconnect Outlook or check the AI configuration, then scan again.
         </p>
       )}
-      {mail === "started" && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Scanning Outlook in the background. Watch the corner tray; suggestions appear here as they are analyzed, and you can leave this page.</p>}
 
       <section className="mt-8" aria-labelledby="email-suggestions">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold text-slate-950" id="email-suggestions">Recruiter email suggestions</h2>
-            <p className="mt-1 text-sm text-slate-600">AI suggestions do not update any business field until you confirm.</p>
           </div>
-          <p className="text-xs text-slate-500">Only recent known-recruiter or strong job-subject matches are analyzed.</p>
         </div>
 
         {suggestions.length ? (
@@ -177,7 +173,7 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
               );
             })}
           </ol>
-        ) : <p className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">No pending recruiter email suggestions. Scan Outlook when you want to check recent mail.</p>}
+        ) : <p className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">No pending suggestions</p>}
       </section>
 
       <section className="mt-10" aria-labelledby="scheduled-follow-ups">
@@ -200,10 +196,8 @@ export default async function NeedsAttentionPage({ searchParams }: { searchParam
               </li>
             ))}
           </ol>
-        ) : <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-8"><h3 className="text-xl font-semibold text-emerald-950">Nothing is due today.</h3><p className="mt-2 text-sm text-emerald-900">Future follow-up dates will appear here when they become due.</p></section>}
+        ) : <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-8"><h3 className="text-xl font-semibold text-emerald-950">Nothing is due today.</h3></section>}
       </section>
-
-      <p className="mt-6 text-xs text-slate-500">Default reminders: Outreach 3 days · RTR 2 days · Client submission 5 days · Interview 1 day.</p>
     </div>
   );
 }

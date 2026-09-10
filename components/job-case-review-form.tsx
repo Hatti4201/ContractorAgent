@@ -71,7 +71,7 @@ export function JobCaseReviewForm({
           <label className="text-sm font-medium text-slate-800">To<input className={inputClass} defaultValue={preview.toAddress ?? ""} maxLength={320} name="draftToAddress" type="email" /></label>
           {threads && (
             <fieldset className="md:col-span-2">
-              <legend className="text-sm font-medium text-slate-800">Reply into which message from this recruiter</legend>
+              <legend className="text-sm font-medium text-slate-800">Reply into</legend>
               {!threadRequired && (
                 <label className="mt-2 flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
                   <input className="mt-1" defaultChecked name="replySourceMessageId" type="radio" value="" />
@@ -137,7 +137,7 @@ export function JobCaseReviewForm({
         </label>
         <label className="text-sm font-medium text-slate-800 md:col-span-2">
           Who sent this to you
-          <input className={inputClass} defaultValue={source.originalSender ?? ""} maxLength={500} name="originalSender" placeholder="Leave blank when unknown" />
+          <input className={inputClass} defaultValue={source.originalSender ?? ""} maxLength={500} name="originalSender" />
         </label>
       </fieldset>
 

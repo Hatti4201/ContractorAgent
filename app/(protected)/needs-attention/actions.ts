@@ -36,7 +36,7 @@ export async function syncOutlookFollowUps() {
     if (!(error instanceof TaskBusyError)) throw error;
   }
   refresh();
-  redirect("/needs-attention?mail=started");
+  redirect("/needs-attention");
 }
 
 export async function retryFollowUpSuggestion(id: string) {

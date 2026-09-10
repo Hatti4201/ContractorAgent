@@ -157,7 +157,7 @@ export default async function RecruiterPage({
                 </tbody>
               </table>
             </div>
-          ) : <p className="p-10 text-center text-slate-600">No opportunity is linked to this recruiter.</p>}
+          ) : <p className="p-10 text-center text-slate-600">No linked jobs</p>}
         </div>
       </section>
 

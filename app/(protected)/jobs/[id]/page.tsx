@@ -171,7 +171,6 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         <details className="mt-6" open={resumeRoute.needsReview || !selectedResumeReady}>
           <summary className="cursor-pointer font-semibold text-slate-950">Change resume</summary>
           <div className="mt-3">
-            {!job.roleFamily && <p className="mt-1 text-sm text-slate-600">No role family was confirmed for this job. Choosing a resume here sets the job to that resume&apos;s family and records the correction.</p>}
             {resumeRoute.candidates.length ? (
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
                 {resumeRoute.candidates.map((resume) => (
@@ -229,7 +228,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
               </form>
             </div>
           </>
-        ) : <p className="mt-2 text-sm text-slate-700">Nothing needs attention now. Add a next action or follow-up date below when needed.</p>}
+        ) : null}
       </section>
 
       <div className="mt-10 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.65fr)]">
