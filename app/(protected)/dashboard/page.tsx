@@ -21,7 +21,7 @@ import {
 } from "@/services/dashboard-analytics";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 import { queuedIntakes } from "@/services/intake-queue";
-import { checkSentDraftsNow } from "@/app/(protected)/dashboard/actions";
+import { checkSentDraftsNow, scanMailNow } from "@/app/(protected)/dashboard/actions";
 import { listDraftsAwaitingOutlook, listUnsentDrafts } from "@/services/outreach-pipeline";
 
 type Search = Record<string, string | string[] | undefined>;
@@ -190,6 +190,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-medium text-amber-950 hover:border-amber-500" href="/needs-attention">
             Needs attention ({attentionCount})
           </Link>
+          <form action={scanMailNow}>
+            <button className="rounded-lg border border-blue-300 bg-white px-4 py-2.5 font-medium text-blue-800 hover:border-blue-600" type="submit">Scan mail</button>
+          </form>
           <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/intake">
             Add job
           </Link>
@@ -246,7 +249,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                   <Link className="truncate text-sm font-semibold text-slate-950 underline" href={`/jobs/${draft.opportunityId}/outreach`}>{draft.opportunity.title}</Link>
                   <p className="mt-0.5 truncate text-xs text-slate-600">
                     {draft.opportunity.recruiter?.name ?? "Recruiter unknown"}
-                    {draft.outlookDraftCreatedAt ? ` · built ${formatDateTime(draft.outlookDraftCreatedAt)} UTC` : ""}
+                    {draft.outlookDraftCreatedAt ? ` · built ${formatDateTime(draft.outlookDraftCreatedAt)}` : ""}
                   </p>
                   {link && <a className="mt-1 inline-block text-xs font-medium text-blue-700 underline" href={link} rel="noreferrer" target="_blank">Open in Outlook</a>}
                 </li>
@@ -413,7 +416,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     <Link className="font-semibold text-slate-950 underline" href={`/jobs/${item.jobId}`}>{item.title}</Link>
                     <span className="mt-1 block text-sm text-slate-500">{item.client ?? "Client not set"} · {formatEnum(item.type)}</span>
                   </span>
-                  <time className="text-sm text-slate-500" dateTime={item.occurredAt.toISOString()}>{formatDateTime(item.occurredAt)} UTC</time>
+                  <time className="text-sm text-slate-500" dateTime={item.occurredAt.toISOString()}>{formatDateTime(item.occurredAt)}</time>
                 </li>
               ))}
             </ul>

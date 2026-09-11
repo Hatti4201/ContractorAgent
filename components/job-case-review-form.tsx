@@ -85,7 +85,7 @@ export function JobCaseReviewForm({
                       <input className="mt-1" defaultChecked={message.id === sourceMessageId} name="replySourceMessageId" required={threadRequired} type="radio" value={message.id} />
                       <span>
                         <span className="font-medium text-slate-950">{message.subject}</span>
-                        <span className="mt-0.5 block text-xs text-slate-500">{message.receivedDateTime.slice(0, 16).replace("T", " ")} UTC</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">{message.receivedDateTime.slice(0, 16).replace("T", " ")}</span>
                       </span>
                     </label>
                   ))}
@@ -132,7 +132,7 @@ export function JobCaseReviewForm({
           </select>
         </label>
         <label className="text-sm font-medium text-slate-800">
-          Received at (UTC)
+          Received at
           <input className={inputClass} defaultValue={source.receivedAt.toISOString().slice(0, 16)} name="receivedAt" type="datetime-local" />
         </label>
         <label className="text-sm font-medium text-slate-800 md:col-span-2">

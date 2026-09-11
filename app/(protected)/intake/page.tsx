@@ -49,7 +49,7 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link className="font-semibold text-slate-950 underline" href={`/intakes/${intake.id}/review`}>{intake.title}</Link>
-                    <p className="mt-1 text-sm text-slate-600">{formatEnum(intake.sourceType)} · {formatDateTime(intake.createdAt)} UTC</p>
+                    <p className="mt-1 text-sm text-slate-600">{formatEnum(intake.sourceType)} · {formatDateTime(intake.createdAt)}</p>
                     {intake.detail && <p className="mt-2 text-sm text-amber-900">{intake.detail}</p>}
                   </div>
                   <div className="flex items-center gap-3">
@@ -73,7 +73,7 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
               <li className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4" key={message.id}>
                 <div className="min-w-0">
                   <p className="truncate font-medium text-slate-950">{message.subject}</p>
-                  <p className="mt-1 truncate text-sm text-slate-600">{message.fromAddress} · {formatDateTime(message.receivedAt)} UTC</p>
+                  <p className="mt-1 truncate text-sm text-slate-600">{message.fromAddress} · {formatDateTime(message.receivedAt)}</p>
                   <p className="mt-1 line-clamp-2 text-xs text-slate-500">{message.preview}</p>
                 </div>
                 {imported.has(message.id)
@@ -99,7 +99,7 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
                 <li className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4" key={decision.id}>
                   <div className="min-w-0">
                     <p className="truncate font-medium text-slate-950">{decision.subject}</p>
-                    <p className="mt-1 truncate text-sm text-slate-600">{decision.fromAddress} · {formatDateTime(decision.receivedAt)} UTC</p>
+                    <p className="mt-1 truncate text-sm text-slate-600">{decision.fromAddress} · {formatDateTime(decision.receivedAt)}</p>
                     <p className="mt-1 text-xs text-slate-500">{decision.reason}</p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${decision.imported ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>

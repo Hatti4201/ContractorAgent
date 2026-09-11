@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { outlookAccessToken } from "@/services/outlook-auth";
+import { scanFollowUps } from "@/services/follow-up-scan";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
 import { startTask, TaskBusyError } from "@/services/tasks";
 
@@ -27,4 +28,23 @@ export async function checkSentDraftsNow() {
     if (!(error instanceof TaskBusyError)) throw error;
   }
   revalidatePath("/dashboard");
+}
+
+/**
+ * The same scan the timer runs, on demand: sent drafts, new recruiter mail, and the follow-up it
+ * maintains. The tray reports it, because ten model calls can run in sequence here.
+ */
+export async function scanMailNow() {
+  await requireAuth();
+  try {
+    await startTask(
+      { kind: TaskKind.FOLLOW_UP_SCAN, label: "Scanning Outlook for recruiter follow-ups", subjectId: "follow-up-scan", href: "/dashboard" },
+      (task) => scanFollowUps(task).then(() => undefined),
+      after,
+    );
+  } catch (error) {
+    if (!(error instanceof TaskBusyError)) throw error;
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
 }
