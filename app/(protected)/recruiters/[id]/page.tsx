@@ -196,7 +196,7 @@ export default async function RecruiterPage({
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{formatEnum(suggestion.status)}</span>
                 </div>
                 <p className="mt-1 text-slate-600">
-                  {formatDateTime(suggestion.receivedAt)} UTC
+                  {formatDateTime(suggestion.receivedAt)}
                   {suggestion.event ? ` · ${formatEnum(suggestion.event)}` : ""}
                   {suggestion.opportunityId ? "" : " · Not linked to a job"}
                 </p>

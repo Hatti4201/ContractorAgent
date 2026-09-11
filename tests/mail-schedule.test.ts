@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { displayTimeZone, formatDateTime } from "../lib/job-values";
 import { isWithinScanWindow, scanWindowFromEnv, shouldScanNow } from "@/services/mail-schedule";
 
 const window = scanWindowFromEnv({ APP_TIME_ZONE: "America/Los_Angeles" });
@@ -35,4 +36,14 @@ test("scanning waits a full interval and resumes after a gap instead of bursting
   );
   assert.equal(shouldScanNow(saturday, null, window), false, "Outside the window nothing runs.");
   assert.equal(shouldScanNow(mondayInside, null, { ...window, enabled: false }), false);
+});
+
+test("timestamps are read in the user's own zone, and a bad zone falls back rather than throwing", () => {
+  const sent = new Date("2026-09-11T21:32:00.000Z");
+  // 21:32 UTC is the early afternoon in California; showing it as 9:32 PM reads as the wrong day part.
+  assert.match(formatDateTime(sent, "America/Los_Angeles"), /2:32\u202fPM|2:32 PM/);
+  assert.match(formatDateTime(sent, "UTC"), /9:32\u202fPM|9:32 PM/);
+  assert.equal(displayTimeZone("America/Los_Angeles"), "America/Los_Angeles");
+  assert.equal(displayTimeZone("UT-8"), "UTC", "An invalid zone must not throw on every screen.");
+  assert.equal(displayTimeZone(""), "UTC");
 });

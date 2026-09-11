@@ -30,17 +30,24 @@ export function formatEnum(value: string) {
     .join(" ");
 }
 
-export function formatDate(value: Date | null) {
-  if (!value) return "Not set";
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "UTC" }).format(value);
+/** Everything on screen is read in the user's own day, the same zone the scan window runs on. */
+export function displayTimeZone(value = process.env.APP_TIME_ZONE) {
+  const zone = value?.trim() || "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone }).format();
+    return zone;
+  } catch {
+    return "UTC";
+  }
 }
 
-export function formatDateTime(value: Date) {
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(value);
+export function formatDate(value: Date | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: displayTimeZone() }).format(value);
+}
+
+export function formatDateTime(value: Date, timeZone = displayTimeZone()) {
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone }).format(value);
 }
 
 export function dateInputValue(value: Date | null) {

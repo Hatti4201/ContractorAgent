@@ -83,7 +83,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
       <section className="mt-8 grid gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-sm shadow-sm sm:grid-cols-4">
         <div><p className="font-medium text-slate-500">Mode</p><p className="mt-1 font-semibold text-slate-950">{formatEnum(draft.mode)}</p></div>
         <div><p className="font-medium text-slate-500">Revision</p><p className="mt-1 font-semibold text-slate-950">{draft.revision}</p></div>
-        <div><p className="font-medium text-slate-500">Validated</p><p className="mt-1 font-semibold text-slate-950">{formatDateTime(draft.updatedAt)} UTC</p></div>
+        <div><p className="font-medium text-slate-500">Validated</p><p className="mt-1 font-semibold text-slate-950">{formatDateTime(draft.updatedAt)}</p></div>
         <div><p className="font-medium text-slate-500">Attachment</p><p className="mt-1 font-semibold text-slate-950">{draft.attachmentResume.name} · {draft.attachmentResume.version}</p></div>
       </section>
 
@@ -141,7 +141,7 @@ export default async function OutreachDraftPage({ params }: { params: Promise<{ 
         {connected && effectiveApproved && replyRequired && !draft.replySourceMessageId && !locked && (
           <div className="mt-5">
             <h3 className="font-semibold text-slate-950">Select the original Recruiter message</h3>
-            {sourceCandidates.length ? <ul className="mt-4 space-y-3">{sourceCandidates.map((message) => <li className="rounded-xl border border-slate-200 p-4" key={message.id}><p className="font-medium text-slate-950">{message.subject}</p><p className="mt-1 text-xs text-slate-500">{formatDateTime(new Date(message.receivedDateTime))} UTC</p><form action={selectReplySource} className="mt-3"><input name="sourceMessageId" type="hidden" value={message.id} /><button className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-medium" type="submit">Use this message</button></form></li>)}</ul> : <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{sourceLookupFailed ? "Reconnect Outlook and try again." : "No recent Inbox message from the confirmed Recruiter was found."}</p>}
+            {sourceCandidates.length ? <ul className="mt-4 space-y-3">{sourceCandidates.map((message) => <li className="rounded-xl border border-slate-200 p-4" key={message.id}><p className="font-medium text-slate-950">{message.subject}</p><p className="mt-1 text-xs text-slate-500">{formatDateTime(new Date(message.receivedDateTime))}</p><form action={selectReplySource} className="mt-3"><input name="sourceMessageId" type="hidden" value={message.id} /><button className="rounded-lg border border-slate-400 bg-white px-3 py-2 text-sm font-medium" type="submit">Use this message</button></form></li>)}</ul> : <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{sourceLookupFailed ? "Reconnect Outlook and try again." : "No recent Inbox message from the confirmed Recruiter was found."}</p>}
           </div>
         )}
 
