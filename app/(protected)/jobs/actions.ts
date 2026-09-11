@@ -276,27 +276,6 @@ export async function completeAttention(id: string) {
   redirect(`/jobs/${id}#attention-actions`);
 }
 
-export async function rescheduleAttention(id: string, formData: FormData) {
-  await requireAuth();
-  const nextFollowUpAt = dateValue(formData.get("nextFollowUpAt"));
-  if (!nextFollowUpAt) throw new Error("Next follow-up date is required.");
-  const nextAction = text(formData, "nextAction", 500);
-  const rescheduledAt = new Date();
-  await getPrisma().$transaction([
-    getPrisma().applicationTrack.update({
-      where: { opportunityId: id },
-      data: { attentionClearedAt: rescheduledAt, nextAction, nextFollowUpAt },
-    }),
-    getPrisma().activity.create({
-      data: { opportunityId: id, type: ActivityType.NOTE, description: "Follow-up rescheduled.", occurredAt: rescheduledAt },
-    }),
-  ]);
-  revalidatePath("/dashboard");
-  revalidatePath("/needs-attention");
-  revalidatePath("/jobs");
-  revalidatePath(`/jobs/${id}`);
-  redirect(`/jobs/${id}#attention-actions`);
-}
 
 async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData: FormData) {
   await requireAuth();

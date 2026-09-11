@@ -92,7 +92,7 @@ export default async function NeedsAttentionPage() {
       {scanState.consecutiveFailures > 0 && (
         <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900" role="alert">
           The Outlook scan has failed {scanState.consecutiveFailures} time{scanState.consecutiveFailures === 1 ? "" : "s"} in a row: {scanState.lastError ?? "reason unknown"}
-          {scanState.lastSuccessAt ? ` Last successful scan: ${formatDateTime(scanState.lastSuccessAt)} UTC.` : " No scan has ever succeeded."}
+          {scanState.lastSuccessAt ? ` Last successful scan: ${formatDateTime(scanState.lastSuccessAt)}.` : " No scan has ever succeeded."}
           {" "}Reconnect Outlook or check the AI configuration, then scan again.
         </p>
       )}
@@ -114,13 +114,14 @@ export default async function NeedsAttentionPage() {
                 <li className={`rounded-2xl border bg-white p-6 shadow-sm ${suggestion.status === FollowUpStatus.FAILED ? "border-red-200" : lowConfidence || !suggestion.opportunity ? "border-amber-300" : "border-slate-200"}`} key={suggestion.id}>
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm font-semibold text-slate-500">{suggestion.fromAddress} · {formatDateTime(suggestion.receivedAt)} UTC</p>
+                      <p className="text-sm font-semibold text-slate-500">{suggestion.fromAddress} · {formatDateTime(suggestion.receivedAt)}</p>
                       <h3 className="mt-1 text-lg font-semibold text-slate-950">{suggestion.subject}</h3>
                       <p className="mt-2 text-sm text-slate-700">{suggestion.opportunity ? <>Matched to <Link className="font-medium text-emerald-700 underline" href={`/jobs/${suggestion.opportunity.id}`}>{suggestion.opportunity.title}</Link></> : "No opportunity confidently matched."}</p>
                     </div>
                     <div className="text-right">
                       <p className={`rounded-full px-3 py-1 text-sm font-semibold ${suggestion.status === FollowUpStatus.FAILED ? "bg-red-100 text-red-900" : lowConfidence ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{suggestion.status === FollowUpStatus.FAILED ? "Analysis failed" : `${Math.round((suggestion.confidence ?? 0) * 100)}% confidence`}</p>
                       {suggestion.event && <p className="mt-2 text-xs font-medium text-slate-600">{formatEnum(suggestion.event)}</p>}
+                      {suggestion.followUpAppliedAt && <p className="mt-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">Follow-up applied</p>}
                     </div>
                   </div>
 

@@ -355,6 +355,8 @@ model FollowUpSuggestion {
   error                  String?
   retryCount             Int               @default(0) @map("retry_count")
   analyzedAt             DateTime?         @map("analyzed_at")
+  /** When the scan applied the follow-up fields on its own; the Stage part still waits for the user. */
+  followUpAppliedAt      DateTime?         @map("follow_up_applied_at")
   decidedAt              DateTime?         @map("decided_at")
   opportunity            Opportunity?      @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
   createdAt              DateTime          @default(now()) @map("created_at")
