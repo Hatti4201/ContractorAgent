@@ -16,7 +16,9 @@ export function intakeScanMode(value = process.env.MAIL_INTAKE_SCAN): ScanMode {
 }
 
 const automatedLocalPart = /^(?:no-?reply|do-?not-?reply|notifications?|notify|mailer-daemon|postmaster|bounces?|alerts?|newsletter|updates?|digest|noreply-\w+|messages-noreply|jobs-listings|inmail-hit-reply)$/i;
-const automatedDomain = /(?:^|\.)(?:linkedin\.com|indeed\.com|ziprecruiter\.com|glassdoor\.com|dice\.com|monster\.com|google\.com|calendar\.google\.com|atlassian\.net|slack\.com|github\.com)$/i;
+// Dice is deliberately absent: it relays a real recruiter's private mail, and the alerts it also
+// sends come from no-reply addresses the local-part rule already catches.
+const automatedDomain = /(?:^|\.)(?:linkedin\.com|indeed\.com|ziprecruiter\.com|glassdoor\.com|monster\.com|google\.com|calendar\.google\.com|atlassian\.net|slack\.com|github\.com)$/i;
 
 /** A machine sent this, so no recruiter is waiting on the other end of it. */
 export function automatedSender(address: string) {

@@ -21,6 +21,10 @@ test("machines and mail with no job vocabulary never reach the model", () => {
   assert.ok(automatedSender("messages-noreply@linkedin.com"));
   assert.ok(automatedSender("someone@jobs.linkedin.com"), "A notification domain counts whatever the local part is.");
   assert.ok(!automatedSender("recruiter@example.invalid"));
+  // Dice forwards a real recruiter's mail under its own domain, so the domain alone proves nothing;
+  // the alerts it also sends still lose on their no-reply local part.
+  assert.ok(!automatedSender("shobit@dice.com"));
+  assert.ok(automatedSender("no-reply@dice.com"));
 
   const recruiter = { fromAddress: "recruiter@example.invalid", subject: "Java contract role", preview: "W2 position, remote." };
   assert.ok(worthClassifying(recruiter));
