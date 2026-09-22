@@ -162,12 +162,42 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
  * uses this too, so supplying the missing fact is the last thing the user does rather than the
  * middle of a longer trip through the job page.
  */
+/**
+ * A job can reach this point with a resume chosen but no family confirmed -- the analyzer would not
+ * guess one and the review screen let it through. Choosing the resume is the user stating the family,
+ * which is what selectResume already means, so adopt it rather than stopping with a blocker they
+ * cannot act on. A real conflict, two families that disagree, still blocks.
+ */
+async function adoptRoleFamilyFromResume(id: string) {
+  const job = await getPrisma().opportunity.findUnique({
+    where: { id },
+    select: { roleFamily: true, jobCase: true, selectedResume: { select: { roleFamily: true, name: true, version: true } } },
+  });
+  if (!job || job.roleFamily || !job.selectedResume) return;
+  const roleFamily = job.selectedResume.roleFamily;
+  const syncedJobCase = job.jobCase ? { ...parseJobCase(job.jobCase), roleFamily } : null;
+  await getPrisma().$transaction([
+    getPrisma().opportunity.update({
+      where: { id },
+      data: { roleFamily, ...(syncedJobCase ? { jobCase: syncedJobCase as unknown as Prisma.InputJsonValue } : {}) },
+    }),
+    getPrisma().activity.create({
+      data: {
+        opportunityId: id,
+        type: ActivityType.CORRECTION,
+        description: `Role family set to ${roleFamily} from the chosen resume ${job.selectedResume.name} ${job.selectedResume.version} (was unset).`,
+      },
+    }),
+  ]);
+}
+
 export async function startOutreachDraftGeneration(id: string) {
   try {
     // Two OpenAI calls run here, so the page must not hold the user while they happen.
     await startTask(
       { kind: TaskKind.OUTREACH_REGENERATE, label: "Writing and validating the outreach email", subjectId: id, href: `/jobs/${id}/outreach` },
       async (task) => {
+        await adoptRoleFamilyFromResume(id);
         const input = await outreachInput(id);
         const blockers = await outreachBlockingIssues(input);
         if (blockers.length) throw new Error(blockers[0]!.message);

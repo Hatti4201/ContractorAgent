@@ -147,6 +147,22 @@ test("every role family generates strict non-stored previews and validator block
     );
     assert.equal(ordinaryQuestion.status, "PASS", "A question that names no status must still pass.");
 
+    // The two attachment problems must not wear the same message: one is a fact nobody supplied,
+    // the other is two families that disagree, and only the second is a conflict.
+    const noFamily = await validateOutreachContent(
+      { ...manualModeInput, jobCase: { ...manualModeInput.jobCase, roleFamily: null } },
+      { subject: "Fictional", body: "Fictional body" },
+      { fetcher: async () => { throw new Error("AI must not run when a local check already failed."); } },
+    );
+    assert.ok(noFamily.issues.some((issue) => /no confirmed Role Family/.test(issue.message)));
+
+    const wrongFamily = await validateOutreachContent(
+      { ...manualModeInput, resume: { ...manualModeInput.resume, roleFamily: RoleFamily.REACT } },
+      { subject: "Fictional", body: "Fictional body" },
+      { fetcher: async () => { throw new Error("AI must not run when a local check already failed."); } },
+    );
+    assert.ok(wrongFamily.issues.some((issue) => /REACT.*confirmed as JAVA_BACKEND/.test(issue.message)));
+
     const blocked: OutreachInput = {
       mode: OutreachMode.FORWARDED_JD_OUTREACH,
       toAddress: "recruiter@example.invalid",

@@ -238,7 +238,9 @@ function localValidationIssues(input: OutreachInput, content?: OutreachContent) 
   const recipient = input.toAddress.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || input.toAddress.includes("\n") || input.toAddress.includes("\r")) add("toAddress", "Recipient must be one valid confirmed email address.");
   if (!input.jobCase.recruiterEmail || recipient !== input.jobCase.recruiterEmail.toLowerCase()) add("toAddress", "Recipient does not match the confirmed JobCase recruiter email.");
-  if (!input.jobCase.roleFamily || input.resume.roleFamily !== input.jobCase.roleFamily) add("attachment", "Selected Resume does not match the confirmed Role Family.");
+  // Two different problems wore one message: a family nobody confirmed, and a real conflict.
+  if (!input.jobCase.roleFamily) add("attachment", "This job has no confirmed Role Family; choosing the resume sets it.");
+  else if (input.resume.roleFamily !== input.jobCase.roleFamily) add("attachment", `Selected Resume is ${input.resume.roleFamily}, but this job is confirmed as ${input.jobCase.roleFamily}.`);
   if (!input.resume.active) add("attachment", "Selected Resume is inactive.");
   const recipientPattern = new RegExp(`(^|[^a-z0-9._%+@-])${recipient.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9._%+@-])`, "i");
   if (input.mode === OutreachMode.DIRECT_EMAIL_REPLY && !recipientPattern.test(input.source.originalSender ?? "")) {
