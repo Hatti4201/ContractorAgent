@@ -12,6 +12,7 @@ import { outlookConnected } from "@/services/outlook-auth";
 import { listOutlookSourceMessages, replyModes } from "@/services/outlook-graph";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { findDuplicateMatches, parseJobCase } from "@/services/job-case";
+import { activeRoleFamilies } from "@/services/role-family";
 
 function attachments(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -41,6 +42,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
     select: { id: true, name: true, version: true, roleFamily: true },
     orderBy: [{ roleFamily: "asc" }, { name: "asc" }],
   });
+  const roleFamilies = await activeRoleFamilies(database);
   const candidates = await database.opportunity.findMany({
     select: {
       id: true,
@@ -150,7 +152,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       )}
 
       <div className="mt-8">
-        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} employerCopy={employerCopy} threads={threads.length ? threads : null} threadRequired={replyRequired} canWrite={!preview?.subject && Boolean(jobCase.recruiterEmail)} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} sourceMessageId={intake.sourceMessageId} resumes={resumes} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
+        <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} employerCopy={employerCopy} threads={threads.length ? threads : null} threadRequired={replyRequired} canWrite={!preview?.subject && Boolean(jobCase.recruiterEmail)} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} sourceMessageId={intake.sourceMessageId} resumes={resumes} roleFamilies={roleFamilies} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">

@@ -6,11 +6,11 @@ import {
   ApplicationStage,
   EmploymentType,
   FollowUpStatus,
-  RoleFamily,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
-import { applicationStages, employmentTypes, formatDateTime, formatEnum, intakeStates, roleFamilies } from "@/lib/job-values";
+import { applicationStages, employmentTypes, formatDateTime, formatEnum, intakeStates } from "@/lib/job-values";
+import { allRoleFamilies } from "@/services/role-family";
 import { getPrisma } from "@/lib/prisma";
 import {
   dashboardMetrics,
@@ -121,7 +121,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     employment: value(query, "employment"),
     metric: validValue(value(query, "metric"), dashboardMetrics.map((item) => item.key)) ?? "total",
   };
-  const roleFamily = validValue(filters.role, Object.values(RoleFamily));
+  // Every family, not just the active ones: deactivating one must not hide the jobs already filed under it.
+  const roleFamilies = await allRoleFamilies();
+  const roleFamily = validValue(filters.role, roleFamilies.map((family) => family.code));
   const stage = validValue(filters.stage, Object.values(ApplicationStage));
   const employmentType = validValue(filters.employment, Object.values(EmploymentType));
   const where: Prisma.OpportunityWhereInput = {
@@ -316,7 +318,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           Role
           <select className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2" defaultValue={filters.role} name="role">
             <option value="">All roles</option>
-            {roleFamilies.map((item) => <option key={item} value={item}>{formatEnum(item)}</option>)}
+            {roleFamilies.map((family) => <option key={family.code} value={family.code}>{family.label}</option>)}
           </select>
         </label>
         <label className="text-sm font-medium text-slate-700">

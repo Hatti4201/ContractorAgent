@@ -2,9 +2,9 @@ import {
   applicationStages,
   employmentTypes,
   formatEnum,
-  roleFamilies,
   workArrangements,
 } from "@/lib/job-values";
+import type { RoleFamilyOption } from "@/services/role-family";
 
 type JobFormValues = {
   title?: string;
@@ -30,10 +30,12 @@ const inputClass =
 export function JobForm({
   action,
   initial = {},
+  roleFamilies,
   submitLabel,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   initial?: JobFormValues;
+  roleFamilies: RoleFamilyOption[];
   submitLabel: string;
 }) {
   return (
@@ -62,7 +64,7 @@ export function JobForm({
           Role family
           <select className={inputClass} defaultValue={initial.roleFamily ?? ""} name="roleFamily">
             <option value="">Not set</option>
-            {roleFamilies.map((value) => <option key={value} value={value}>{formatEnum(value)}</option>)}
+            {roleFamilies.map((family) => <option key={family.code} value={family.code}>{family.label}</option>)}
           </select>
         </label>
         <label className="text-sm font-medium text-slate-800">

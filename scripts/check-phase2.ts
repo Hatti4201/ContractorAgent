@@ -1,6 +1,6 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
-import { ActivityType, ApplicationStage, RoleFamily } from "@/app/generated/prisma/enums";
+import { ActivityType, ApplicationStage } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
 import { summarizeDashboard } from "@/services/dashboard-analytics";
 
@@ -12,7 +12,7 @@ async function main() {
       const created = await database.opportunity.create({
         data: {
           title: "Sample Analytics Role",
-          roleFamily: RoleFamily.JAVA_BACKEND,
+          roleFamilyOption: { connect: { code: "JAVA_BACKEND" } },
           vendor: { create: { name: "Example Analytics Vendor" } },
           recruiter: { create: { name: "Sample Analytics Recruiter" } },
           applicationTrack: { create: { currentStage: ApplicationStage.SUBMITTED_TO_CLIENT } },
@@ -26,7 +26,7 @@ async function main() {
         },
       });
       const rows = await database.opportunity.findMany({
-        where: { roleFamily: RoleFamily.JAVA_BACKEND, vendorId: created.vendorId! },
+        where: { roleFamily: "JAVA_BACKEND", vendorId: created.vendorId! },
         select: {
           id: true,
           title: true,

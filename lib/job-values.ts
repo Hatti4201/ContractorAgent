@@ -3,7 +3,6 @@ import {
   ApplicationStage,
   EmploymentType,
   JobSourceType,
-  RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 
@@ -11,7 +10,6 @@ export const activityTypes = Object.values(ActivityType);
 export const applicationStages = Object.values(ApplicationStage);
 export const employmentTypes = Object.values(EmploymentType);
 export const jobSourceTypes = Object.values(JobSourceType);
-export const roleFamilies = Object.values(RoleFamily);
 export const workArrangements = Object.values(WorkArrangement);
 
 export const intakeStates: Record<string, { label: string; tone: string }> = {

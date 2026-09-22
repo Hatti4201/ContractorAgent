@@ -63,16 +63,6 @@ enum WorkArrangement {
   ONSITE
 }
 
-enum RoleFamily {
-  JAVA_BACKEND
-  JAVA_FULLSTACK
-  JAVA_AI
-  REACT
-  REACT_FULLSTACK
-  REACT_AI
-  PYTHON_AI
-}
-
 enum JobSourceType {
   LINKEDIN_POST
   LINKEDIN_DM
@@ -143,12 +133,30 @@ enum FollowUpEvent {
   NO_ACTION
 }
 
+/// The role families the user maintains. Codes are the values stored on jobs and resumes, so a
+/// rename cascades and a family still in use cannot be deleted -- both enforced by the database.
+model RoleFamily {
+  code          String        @id
+  label         String
+  /// One line telling the analyzer how to tell this family from the others.
+  description   String
+  active        Boolean       @default(true)
+  sortOrder     Int           @default(0) @map("sort_order")
+  opportunities Opportunity[]
+  resumes       Resume[]
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@map("role_families")
+}
+
 model Opportunity {
   id               String            @id @default(cuid())
   title            String
   client           String?
   location         String?
-  roleFamily       RoleFamily?       @map("role_family")
+  roleFamily       String?           @map("role_family")
+  roleFamilyOption RoleFamily?       @relation(fields: [roleFamily], references: [code], onDelete: Restrict, onUpdate: Cascade)
   employmentType   EmploymentType    @default(UNKNOWN) @map("employment_type")
   workArrangement  WorkArrangement   @default(UNKNOWN) @map("work_arrangement")
   rawJd            String?           @map("raw_jd")
@@ -278,7 +286,8 @@ model Vendor {
 model Resume {
   id         String     @id @default(cuid())
   name       String
-  roleFamily RoleFamily @map("role_family")
+  roleFamily String     @map("role_family")
+  roleFamilyOption RoleFamily @relation(fields: [roleFamily], references: [code], onDelete: Restrict, onUpdate: Cascade)
   filePath   String     @map("file_path")
   version    String
   active     Boolean    @default(true)

@@ -2,7 +2,6 @@ import {
   ActivityType,
   JobSourceType,
   OutreachMode,
-  RoleFamily,
 } from "@/app/generated/prisma/enums";
 import type { JobCase } from "@/services/job-case";
 import { checkResumeFile } from "@/services/resume-router";
@@ -26,7 +25,7 @@ export type OutreachInput = {
     id: string;
     name: string;
     version: string;
-    roleFamily: RoleFamily;
+    roleFamily: string;
     filePath: string;
     active: boolean;
   };

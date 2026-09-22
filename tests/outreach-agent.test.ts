@@ -8,7 +8,6 @@ import {
   EmploymentType,
   JobSourceType,
   OutreachMode,
-  RoleFamily,
   WorkArrangement,
 } from "../app/generated/prisma/enums";
 import type { JobCase } from "../services/job-case";
@@ -19,7 +18,10 @@ import {
   type OutreachInput,
 } from "../services/outreach-agent";
 
-function jobCase(roleFamily: RoleFamily): JobCase {
+// Fixtures cover representative families; the live set is rows the user maintains.
+const sampleRoleFamilies = ["JAVA_BACKEND", "JAVA_FULLSTACK", "JAVA_AI", "REACT", "REACT_FULLSTACK", "REACT_AI", "PYTHON_AI"] as const;
+
+function jobCase(roleFamily: string): JobCase {
   return {
     title: `Fictional ${roleFamily} Engineer`,
     client: "Example Client",
@@ -60,7 +62,7 @@ test("every role family generates strict non-stored previews and validator block
       return new Response(JSON.stringify({ output_text: JSON.stringify(output) }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as typeof fetch;
 
-    for (const roleFamily of Object.values(RoleFamily)) {
+    for (const roleFamily of sampleRoleFamilies) {
       const input: OutreachInput = {
         mode: OutreachMode.FIRST_OUTREACH,
         toAddress: "recruiter@example.invalid",
@@ -77,7 +79,7 @@ test("every role family generates strict non-stored previews and validator block
     }
 
     // Derived from the enum, so adding a role family never leaves this number behind.
-    assert.equal(requests.length, Object.values(RoleFamily).length * 2, "Each family costs one generation and one validation.");
+    assert.equal(requests.length, sampleRoleFamilies.length * 2, "Each family costs one generation and one validation.");
     for (const request of requests) {
       assert.equal(request.store, false);
       assert.equal(request.model, "test-model");
@@ -96,8 +98,8 @@ test("every role family generates strict non-stored previews and validator block
       mode: OutreachMode.FIRST_OUTREACH,
       toAddress: "recruiter@example.invalid",
       recruiterName: "Example Recruiter",
-      jobCase: jobCase(RoleFamily.JAVA_BACKEND),
-      resume: { id: "manual-mode", name: "Fictional Java Resume", version: "v1", roleFamily: RoleFamily.JAVA_BACKEND, filePath: resumePath, active: true },
+      jobCase: jobCase("JAVA_BACKEND"),
+      resume: { id: "manual-mode", name: "Fictional Java Resume", version: "v1", roleFamily: "JAVA_BACKEND", filePath: resumePath, active: true },
       source: { sourceType: JobSourceType.DIRECT_EMAIL, originalSender: "recruiter@example.invalid", rawText: "Fictional direct email." },
       activityTypes: [],
       activitySummary: [],
@@ -157,7 +159,7 @@ test("every role family generates strict non-stored previews and validator block
     assert.ok(noFamily.issues.some((issue) => /no confirmed Role Family/.test(issue.message)));
 
     const wrongFamily = await validateOutreachContent(
-      { ...manualModeInput, resume: { ...manualModeInput.resume, roleFamily: RoleFamily.REACT } },
+      { ...manualModeInput, resume: { ...manualModeInput.resume, roleFamily: "REACT" } },
       { subject: "Fictional", body: "Fictional body" },
       { fetcher: async () => { throw new Error("AI must not run when a local check already failed."); } },
     );
@@ -167,8 +169,8 @@ test("every role family generates strict non-stored previews and validator block
       mode: OutreachMode.FORWARDED_JD_OUTREACH,
       toAddress: "recruiter@example.invalid",
       recruiterName: "Example Recruiter",
-      jobCase: jobCase(RoleFamily.JAVA_BACKEND),
-      resume: { id: "wrong", name: "Wrong Resume", version: "v1", roleFamily: RoleFamily.REACT, filePath: resumePath, active: true },
+      jobCase: jobCase("JAVA_BACKEND"),
+      resume: { id: "wrong", name: "Wrong Resume", version: "v1", roleFamily: "REACT", filePath: resumePath, active: true },
       source: { sourceType: JobSourceType.FORWARDED_JD, originalSender: "forwarder@example.invalid", rawText: "No recruiter address here." },
       activityTypes: [],
       activitySummary: [],
@@ -179,7 +181,7 @@ test("every role family generates strict non-stored previews and validator block
     assert.ok(report.issues.some((issue) => issue.field === "attachment"));
     assert.ok(report.issues.some((issue) => issue.field === "toAddress"));
 
-    blocked.resume.roleFamily = RoleFamily.JAVA_BACKEND;
+    blocked.resume.roleFamily = "JAVA_BACKEND";
     blocked.source.rawText = "Contact recruiter@example.invalid.evil instead.";
     const falsePositive = await validateOutreachContent(blocked, { subject: "Fictional", body: "Fictional body" }, { fetcher: async () => { throw new Error("AI must not run when recipient matching is unsafe."); } });
     assert.ok(falsePositive.issues.some((issue) => issue.field === "toAddress"));

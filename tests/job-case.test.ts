@@ -4,7 +4,6 @@ import {
   ApplicationStage,
   EmploymentType,
   JobSourceType,
-  RoleFamily,
   WorkArrangement,
 } from "../app/generated/prisma/enums";
 import { analyzeJobText } from "../services/job-analyzer";
@@ -46,20 +45,20 @@ function sample(overrides: Partial<JobCase> = {}): JobCase {
 
 test("representative intake outputs stay strict and preserve unknown facts", () => {
   const samples = [
-    sample({ title: "Sample React Engineer", roleFamily: RoleFamily.REACT, requiredSkills: ["React", "TypeScript"] }),
+    sample({ title: "Sample React Engineer", roleFamily: "REACT", requiredSkills: ["React", "TypeScript"] }),
     sample({
       title: "Sample Java Engineer",
       recruiterName: "Example Recruiter",
       recruiterEmail: "recruiter@example.invalid",
       employmentType: EmploymentType.W2,
-      roleFamily: RoleFamily.JAVA_BACKEND,
+      roleFamily: "JAVA_BACKEND",
     }),
     sample({
       title: "Sample Full Stack Engineer",
       recruiterName: "Forwarded Contact",
       recruiterEmail: "contact@example.invalid",
       workArrangement: WorkArrangement.REMOTE,
-      roleFamily: RoleFamily.REACT_FULLSTACK,
+      roleFamily: "REACT_FULLSTACK",
     }),
   ];
 
@@ -138,7 +137,7 @@ test("duplicate detection uses fingerprint and confirmed CRM facts", () => {
 
 test("analyzer requests strict non-stored output and validates the response", async () => {
   const requests: Record<string, unknown>[] = [];
-  const fixture = sample({ title: "Sample API Role", roleFamily: RoleFamily.JAVA_FULLSTACK });
+  const fixture = sample({ title: "Sample API Role", roleFamily: "JAVA_FULLSTACK" });
   const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
     return new Response(JSON.stringify({
@@ -147,10 +146,15 @@ test("analyzer requests strict non-stored output and validates the response", as
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
 
+  const roleFamilies = [
+    { code: "SAMPLE_ONE", label: "Sample One", description: "The first fictional family." },
+    { code: "SAMPLE_TWO", label: "Sample Two", description: "The second fictional family." },
+  ];
   const result = await analyzeJobText({
     sourceType: JobSourceType.PLAIN_TEXT,
     originalSender: null,
     rawText: "Fictional sample role.",
+    roleFamilies,
   }, { apiKey: "test-key", model: "test-model", fetcher });
 
   const requestBody = requests[0]!;
@@ -158,6 +162,12 @@ test("analyzer requests strict non-stored output and validates the response", as
   assert.equal(requestBody.store, false);
   assert.equal(requestBody.model, "test-model");
   assert.equal((requestBody.text as { format?: { strict?: boolean } }).format?.strict, true);
+
+  // The families are rows now, so strict mode only helps if the schema and the prompt carry the set
+  // that was actually supplied -- a stale hard-coded list would let the model name a dead family.
+  const schema = (requestBody.text as { format: { schema: { properties: { roleFamily: { anyOf: Array<{ enum?: string[] }> } } } } }).format.schema;
+  assert.deepEqual(schema.properties.roleFamily.anyOf[0]!.enum, ["SAMPLE_ONE", "SAMPLE_TWO"]);
+  assert.match(requestBody.instructions as string, /SAMPLE_ONE: The first fictional family\./);
 });
 
 test("correcting a JobCase edits only facts and reports exactly what changed", () => {
@@ -165,7 +175,7 @@ test("correcting a JobCase edits only facts and reports exactly what changed", (
     title: "Java Engineer", client: null, vendor: null, recruiterName: "Pat", recruiterEmail: "pat@example.invalid",
     recruiterPhone: null, location: "Remote", workArrangement: WorkArrangement.REMOTE, employmentType: EmploymentType.W2,
     rate: "$65/hour", yearsRequired: "5+ years", requiredSkills: ["Java", "React"], visaRequirement: null,
-    localRequirement: null, relocationRequirement: null, clearanceRequirement: null, roleFamily: RoleFamily.JAVA_BACKEND,
+    localRequirement: null, relocationRequirement: null, clearanceRequirement: null, roleFamily: "JAVA_BACKEND",
     confidence: 0.98,
     warnings: [{ field: "rate", severity: "NEEDS_REVIEW", message: "Rate needs review.", evidence: null }],
     evidence: [{ field: "rate", quote: "$65/hour" }],

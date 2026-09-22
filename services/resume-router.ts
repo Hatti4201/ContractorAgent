@@ -1,6 +1,5 @@
 import { open } from "node:fs/promises";
 import { extname } from "node:path";
-import { RoleFamily } from "@/app/generated/prisma/enums";
 import { resolvePrivateFile } from "@/services/private-file";
 
 export const RESUME_CONFIDENCE_THRESHOLD = 0.7;
@@ -8,7 +7,7 @@ export const RESUME_CONFIDENCE_THRESHOLD = 0.7;
 export type ResumeRecord = {
   id: string;
   name: string;
-  roleFamily: RoleFamily;
+  roleFamily: string;
   filePath: string;
   version: string;
   active: boolean;
@@ -53,7 +52,7 @@ export async function checkResumeFile(filePath: string) {
 }
 
 export async function buildResumeRoute(
-  roleFamily: RoleFamily | null,
+  roleFamily: string | null,
   confidence: number,
   resumes: ResumeRecord[],
 ) {

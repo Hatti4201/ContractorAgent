@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { EmploymentType, JobSourceType, OutreachMode, RoleFamily, WorkArrangement } from "@/app/generated/prisma/enums";
+import { EmploymentType, JobSourceType, OutreachMode, WorkArrangement } from "@/app/generated/prisma/enums";
 import type { JobCase } from "@/services/job-case";
 import { generateOutreachContent, validateOutreachContent, type OutreachInput } from "@/services/outreach-agent";
 
-const skills: Record<RoleFamily, string[]> = {
+// Fixtures cover representative families; the live set is rows the user maintains.
+const sampleRoleFamilies = ["JAVA_BACKEND", "JAVA_FULLSTACK", "JAVA_AI", "REACT", "REACT_FULLSTACK", "REACT_AI", "PYTHON_AI"] as const;
+
+const skills: Record<string, string[]> = {
   JAVA_BACKEND: ["Java", "Spring Boot"],
   JAVA_FULLSTACK: ["Java", "Angular"],
   PYTHON_AI: ["Python", "LLM"],
@@ -18,7 +21,7 @@ const skills: Record<RoleFamily, string[]> = {
   REACT_AI: ["React", "TypeScript", "LLM APIs"],
 };
 
-const titles: Record<RoleFamily, string> = {
+const titles: Record<string, string> = {
   JAVA_BACKEND: "Senior Java Backend Engineer",
   JAVA_FULLSTACK: "Java Full Stack Engineer",
   PYTHON_AI: "Python AI Engineer",
@@ -28,7 +31,7 @@ const titles: Record<RoleFamily, string> = {
   REACT_AI: "React AI Application Engineer",
 };
 
-function sample(roleFamily: RoleFamily): JobCase {
+function sample(roleFamily: string): JobCase {
   return {
     title: titles[roleFamily], client: "Example Client", vendor: null,
     recruiterName: "Example Recruiter", recruiterEmail: "recruiter@example.invalid", recruiterPhone: null,
@@ -46,7 +49,7 @@ async function main() {
   try {
     const filePath = join(directory, "fictional-resume.pdf");
     await writeFile(filePath, "%PDF-1.7\nfictional Phase 6 fixture");
-    for (const roleFamily of Object.values(RoleFamily)) {
+    for (const roleFamily of sampleRoleFamilies) {
       const input: OutreachInput = {
         mode: OutreachMode.FIRST_OUTREACH,
         toAddress: "recruiter@example.invalid",
@@ -76,8 +79,8 @@ async function main() {
       mode: OutreachMode.FIRST_OUTREACH,
       toAddress: "recruiter@example.invalid",
       recruiterName: "Example Recruiter",
-      jobCase: { ...sample(RoleFamily.JAVA_BACKEND), employmentType },
-      resume: { id: "employer-check", name: "Fictional Employer Resume", version: "sample-v1", roleFamily: RoleFamily.JAVA_BACKEND, filePath, active: true },
+      jobCase: { ...sample("JAVA_BACKEND"), employmentType },
+      resume: { id: "employer-check", name: "Fictional Employer Resume", version: "sample-v1", roleFamily: "JAVA_BACKEND", filePath, active: true },
       source: { sourceType: JobSourceType.PLAIN_TEXT, originalSender: null, rawText: "Fictional role source." },
       activityTypes: [], activitySummary: [],
       approvedContext: employerContext,

@@ -1,13 +1,13 @@
 import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
-import type { JobSourceType, RoleFamily } from "@/app/generated/prisma/enums";
+import type { JobSourceType } from "@/app/generated/prisma/enums";
 import type { IntakePreview } from "@/services/intake-pipeline";
 import {
   employmentTypes,
   formatEnum,
   jobSourceTypes,
-  roleFamilies,
   workArrangements,
 } from "@/lib/job-values";
+import type { RoleFamilyOption } from "@/services/role-family";
 import type { JobCase } from "@/services/job-case";
 
 const inputClass =
@@ -20,6 +20,7 @@ export function JobCaseReviewForm({
   source,
   preview,
   resumes,
+  roleFamilies,
   confirmAction,
   confirmAndDraftAction,
   duplicateAction,
@@ -35,7 +36,8 @@ export function JobCaseReviewForm({
   sourceMessageId: string | null;
   source: { sourceType: JobSourceType; originalSender: string | null; receivedAt: Date };
   preview: IntakePreview | null;
-  resumes: Array<{ id: string; name: string; version: string; roleFamily: RoleFamily }>;
+  resumes: Array<{ id: string; name: string; version: string; roleFamily: string }>;
+  roleFamilies: RoleFamilyOption[];
   confirmAction: (formData: FormData) => void | Promise<void>;
   confirmAndDraftAction: (formData: FormData) => Promise<{ url: string | null; href?: string | null }>;
   duplicateAction: (formData: FormData) => void | Promise<void>;
@@ -168,7 +170,7 @@ export function JobCaseReviewForm({
           Role family
           <select className={inputClass} defaultValue={jobCase.roleFamily ?? ""} name="roleFamily">
             <option value="">Unknown</option>
-            {roleFamilies.map((value) => <option key={value} value={value}>{formatEnum(value)}</option>)}
+            {roleFamilies.map((family) => <option key={family.code} value={family.code}>{family.label}</option>)}
           </select>
         </label>
         <label className="text-sm font-medium text-slate-800 md:col-span-2">

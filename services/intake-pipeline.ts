@@ -3,6 +3,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
 import { analyzeJobText } from "@/services/job-analyzer";
+import { activeRoleFamilies } from "@/services/role-family";
 import { loadOutreachContext } from "@/services/outreach-context";
 import {
   determineOutreachMode,
@@ -73,6 +74,7 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
         sourceType: intake.sourceType,
         rawText: intake.rawText,
         originalSender: intake.originalSender,
+        roleFamilies: await activeRoleFamilies(),
       }));
   await getPrisma().jobIntake.update({
     where: { id: intakeId },

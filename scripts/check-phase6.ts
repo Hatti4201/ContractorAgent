@@ -6,7 +6,6 @@ import {
   ApplicationStage,
   OutreachDraftStatus,
   OutreachMode,
-  RoleFamily,
 } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
 
@@ -16,13 +15,13 @@ async function main() {
   try {
     await getPrisma().$transaction(async (database) => {
       const resume = await database.resume.create({
-        data: { name: "Fictional Outreach Resume", roleFamily: RoleFamily.PYTHON_AI, filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: false },
+        data: { name: "Fictional Outreach Resume", roleFamily: "PYTHON_AI", filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: false },
       });
-      const jobCase = { title: "Fictional Python AI Engineer", roleFamily: RoleFamily.PYTHON_AI, recruiterEmail: "recruiter@example.invalid", confidence: 0.95 };
+      const jobCase = { title: "Fictional Python AI Engineer", roleFamily: "PYTHON_AI", recruiterEmail: "recruiter@example.invalid", confidence: 0.95 };
       const opportunity = await database.opportunity.create({
         data: {
           title: "Fictional Python AI Engineer",
-          roleFamily: RoleFamily.PYTHON_AI,
+          roleFamily: "PYTHON_AI",
           selectedResumeId: resume.id,
           jobCase: jobCase as Prisma.InputJsonValue,
           applicationTrack: { create: { currentStage: ApplicationStage.DISCOVERED } },

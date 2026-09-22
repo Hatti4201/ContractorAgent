@@ -6,7 +6,6 @@ import {
   EmploymentType,
   IntakeStatus,
   JobSourceType,
-  RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
@@ -32,7 +31,7 @@ const analysis: JobCase = {
   localRequirement: null,
   relocationRequirement: null,
   clearanceRequirement: null,
-  roleFamily: RoleFamily.JAVA_BACKEND,
+  roleFamily: "JAVA_BACKEND",
   confidence: 0.9,
   warnings: [],
   evidence: [],

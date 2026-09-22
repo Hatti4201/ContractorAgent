@@ -2,9 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { RoleFamily } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
+import { activeRoleFamilies, readRoleFamilyCode } from "@/services/role-family";
 import { checkResumeFile } from "@/services/resume-router";
 
 // Only an internal job path is honoured, so a submitted value can never redirect off the application.
@@ -26,7 +26,8 @@ export async function registerResume(formData: FormData) {
   const submittedPath = text(formData, "filePath", 4096);
   const submittedRole = formData.get("roleFamily");
   const query = back ? `&from=${encodeURIComponent(back)}` : "";
-  if (!name || !version || !submittedPath || typeof submittedRole !== "string" || !Object.values(RoleFamily).includes(submittedRole as RoleFamily)) {
+  const allowed = (await activeRoleFamilies()).map((family: { code: string }) => family.code);
+  if (!name || !version || !submittedPath || typeof submittedRole !== "string" || !allowed.includes(submittedRole)) {
     redirect(`/resumes?error=fields${query}`);
   }
 
@@ -37,9 +38,9 @@ export async function registerResume(formData: FormData) {
 
   const active = formData.get("active") === "on";
   await database.$transaction(async (transaction) => {
-    if (active) await transaction.resume.updateMany({ where: { roleFamily: submittedRole as RoleFamily, active: true }, data: { active: false } });
+    if (active) await transaction.resume.updateMany({ where: { roleFamily: submittedRole, active: true }, data: { active: false } });
     await transaction.resume.create({
-      data: { name, version, filePath: file.canonicalPath, roleFamily: submittedRole as RoleFamily, active },
+      data: { name, version, filePath: file.canonicalPath, roleFamily: submittedRole, active },
     });
   });
 
@@ -49,6 +50,43 @@ export async function registerResume(formData: FormData) {
     revalidatePath(back);
     redirect(`${back}#resume-router`);
   }
+  redirect("/resumes?saved=1");
+}
+
+/**
+ * Adding a family is ordinary work now, not an amendment. The code is the foreign key every job and
+ * resume stores, so it is fixed at creation; the label and description stay editable.
+ */
+export async function createRoleFamily(formData: FormData) {
+  await requireAuth();
+  const label = text(formData, "label", 100);
+  const description = text(formData, "description", 500);
+  let code: string;
+  try {
+    code = readRoleFamilyCode(formData.get("code"));
+  } catch {
+    redirect("/resumes?error=family-code");
+  }
+  if (!label || !description) redirect("/resumes?error=family-fields");
+
+  const database = getPrisma();
+  if (await database.roleFamily.findUnique({ where: { code } })) redirect("/resumes?error=family-duplicate");
+  const last = await database.roleFamily.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+  await database.roleFamily.create({
+    data: { code, label, description, sortOrder: (last?.sortOrder ?? 0) + 10 },
+  });
+
+  revalidatePath("/resumes");
+  revalidatePath("/dashboard");
+  redirect("/resumes?saved=1");
+}
+
+/** Deactivating hides a family from every picker; the records already filed under it keep it. */
+export async function setRoleFamilyActive(code: string, active: boolean) {
+  await requireAuth();
+  await getPrisma().roleFamily.update({ where: { code }, data: { active } });
+  revalidatePath("/resumes");
+  revalidatePath("/dashboard");
   redirect("/resumes?saved=1");
 }
 

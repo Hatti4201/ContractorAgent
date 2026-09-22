@@ -11,6 +11,7 @@ import { getPrisma } from "@/lib/prisma";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 import { parseJobCase, type JobCase } from "@/services/job-case";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
+import { activeRoleFamilies } from "@/services/role-family";
 
 const cellInputClass =
   "w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
@@ -45,6 +46,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
   const attention = buildAttentionItems([job], new Date(), configuredTimeZone())[0];
   let confirmedCase: JobCase | null = null;
   if (job.jobCase) confirmedCase = parseJobCase(job.jobCase);
+  const roleFamilies = await activeRoleFamilies();
   const roleConfidence = confirmedCase?.confidence ?? (job.roleFamily ? 1 : 0);
   const resumeRoute = await buildResumeRoute(job.roleFamily, roleConfidence, resumes);
   const selectedFile = job.selectedResume ? await checkResumeFile(job.selectedResume.filePath) : null;
@@ -226,6 +228,7 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           <div className="mt-4">
             <JobForm
               action={update}
+              roleFamilies={roleFamilies}
               initial={{
                 title: job.title,
                 client: job.client,

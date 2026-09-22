@@ -1,6 +1,6 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
-import { ActivityType, ApplicationStage, RoleFamily } from "@/app/generated/prisma/enums";
+import { ActivityType, ApplicationStage } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
 
 class RollbackCheck extends Error {}
@@ -11,7 +11,7 @@ async function main() {
       const resume = await database.resume.create({
         data: {
           name: "Fictional Java Resume",
-          roleFamily: RoleFamily.JAVA_BACKEND,
+          roleFamily: "JAVA_BACKEND",
           filePath: "/private/example.invalid/fictional-java-resume.pdf",
           version: "sample-v1",
           // Stays disabled so the check never collides with a real registered resume for this family.
@@ -21,7 +21,7 @@ async function main() {
       const opportunity = await database.opportunity.create({
         data: {
           title: "Fictional Java Backend Engineer",
-          roleFamily: RoleFamily.JAVA_BACKEND,
+          roleFamily: "JAVA_BACKEND",
           selectedResumeId: resume.id,
           applicationTrack: { create: { currentStage: ApplicationStage.DISCOVERED } },
           activities: { create: { type: ActivityType.RESUME_SELECTED, description: "Fictional routing check." } },

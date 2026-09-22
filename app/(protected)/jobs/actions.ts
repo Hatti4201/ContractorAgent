@@ -11,7 +11,6 @@ import {
   OutlookDraftState,
   OutreachDraftStatus,
   OutreachMode,
-  RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
@@ -23,6 +22,7 @@ import { requireAuth } from "@/lib/auth";
 import { dateTimeValue, dateValue } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
+import { activeRoleFamilies } from "@/services/role-family";
 import { profileUrl, resolveContacts } from "@/services/contacts";
 import { employerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
@@ -74,7 +74,7 @@ function optionalEnumValue<T extends string>(value: FormDataEntryValue | null, a
   return typeof value === "string" && allowed.includes(value as T) ? (value as T) : null;
 }
 
-function readJob(formData: FormData) {
+function readJob(formData: FormData, roleFamilies: readonly string[]) {
   const recruiterEmail = text(formData, "recruiterEmail", 320);
   const recruiterName = text(formData, "recruiterName", 200);
   const recruiterPhone = text(formData, "recruiterPhone", 80);
@@ -85,7 +85,7 @@ function readJob(formData: FormData) {
     title: text(formData, "title", 200, true)!,
     client: text(formData, "client", 200),
     location: text(formData, "location", 200),
-    roleFamily: optionalEnumValue(formData.get("roleFamily"), Object.values(RoleFamily)),
+    roleFamily: optionalEnumValue(formData.get("roleFamily"), roleFamilies),
     employmentType: enumValue(formData.get("employmentType"), Object.values(EmploymentType), EmploymentType.UNKNOWN),
     workArrangement: enumValue(formData.get("workArrangement"), Object.values(WorkArrangement), WorkArrangement.UNKNOWN),
     rawJd: text(formData, "rawJd", 50000),
@@ -100,7 +100,12 @@ function readJob(formData: FormData) {
   };
 }
 
-async function automaticResumeId(database: Prisma.TransactionClient, roleFamily: RoleFamily | null, confidence: number) {
+/** The codes a form may submit right now; old records keep whatever they already carry. */
+async function familyCodes() {
+  return (await activeRoleFamilies()).map((family) => family.code);
+}
+
+async function automaticResumeId(database: Prisma.TransactionClient, roleFamily: string | null, confidence: number) {
   if (!roleFamily) return null;
   const route = await buildResumeRoute(roleFamily, confidence, await database.resume.findMany({ where: { roleFamily, active: true } }));
   return route.recommended?.id ?? null;
@@ -108,7 +113,7 @@ async function automaticResumeId(database: Prisma.TransactionClient, roleFamily:
 
 export async function createJob(formData: FormData) {
   await requireAuth();
-  const data = readJob(formData);
+  const data = readJob(formData, await familyCodes());
 
   const opportunity = await getPrisma().$transaction(async (database) => {
     const contacts = await resolveContacts(database, data);
@@ -157,7 +162,7 @@ export async function createJob(formData: FormData) {
 
 export async function updateJob(id: string, formData: FormData) {
   await requireAuth();
-  const data = readJob(formData);
+  const data = readJob(formData, await familyCodes());
 
   await getPrisma().$transaction(async (database) => {
     const existing = await database.opportunity.findUnique({
@@ -283,7 +288,7 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
     const intake = await database.jobIntake.findUnique({ where: { id } });
     if (!intake || intake.status !== IntakeStatus.PENDING) throw new Error("Intake is not available for confirmation.");
     if (!intake.analysis) throw new Error("The analysis is still running. Confirm once it finishes.");
-    const reviewed = readReviewedJobCase(formData, parseJobCase(intake.analysis));
+    const reviewed = readReviewedJobCase(formData, parseJobCase(intake.analysis), await familyCodes());
     if ((reviewed.recruiterEmail || reviewed.recruiterPhone) && !reviewed.recruiterName) {
       throw new Error("Recruiter name is required with contact details.");
     }

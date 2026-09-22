@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import {
   ApplicationStage,
   EmploymentType,
-  RoleFamily,
   WorkArrangement,
 } from "@/app/generated/prisma/enums";
 
@@ -26,7 +25,7 @@ export type JobCase = {
   localRequirement: string | null;
   relocationRequirement: string | null;
   clearanceRequirement: string | null;
-  roleFamily: RoleFamily | null;
+  roleFamily: string | null;
   confidence: number;
   warnings: Array<{ field: string; severity: WarningSeverity; message: string; evidence: string | null }>;
   evidence: Array<{ field: string; quote: string }>;
@@ -35,7 +34,18 @@ export type JobCase = {
 const nullableString = () => ({ anyOf: [{ type: "string" }, { type: "null" }] });
 const nullableEnum = (values: readonly string[]) => ({ anyOf: [{ type: "string", enum: values }, { type: "null" }] });
 
-export const jobCaseJsonSchema = {
+export const jobCaseKeys = [
+  "title", "client", "vendor", "recruiterName", "recruiterEmail", "recruiterPhone",
+  "location", "workArrangement", "employmentType", "rate", "yearsRequired", "requiredSkills",
+  "visaRequirement", "localRequirement", "relocationRequirement", "clearanceRequirement",
+  "roleFamily", "confidence", "warnings", "evidence",
+] as const;
+
+/**
+ * Built per call rather than once: the families are rows the user maintains, and strict mode is what
+ * keeps the model from inventing one that does not exist.
+ */
+export const jobCaseJsonSchema = (roleFamilies: readonly string[]) => ({
   type: "object",
   additionalProperties: false,
   properties: {
@@ -55,7 +65,7 @@ export const jobCaseJsonSchema = {
     localRequirement: nullableString(),
     relocationRequirement: nullableString(),
     clearanceRequirement: nullableString(),
-    roleFamily: nullableEnum(Object.values(RoleFamily)),
+    roleFamily: nullableEnum(roleFamilies),
     confidence: { type: "number" },
     warnings: {
       type: "array",
@@ -84,13 +94,8 @@ export const jobCaseJsonSchema = {
       },
     },
   },
-  required: [
-    "title", "client", "vendor", "recruiterName", "recruiterEmail", "recruiterPhone",
-    "location", "workArrangement", "employmentType", "rate", "yearsRequired", "requiredSkills",
-    "visaRequirement", "localRequirement", "relocationRequirement", "clearanceRequirement",
-    "roleFamily", "confidence", "warnings", "evidence",
-  ],
-} as const;
+  required: jobCaseKeys,
+}) as const;
 
 function record(value: unknown, name: string) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${name} must be an object.`);
@@ -120,10 +125,6 @@ function enumValue<T extends string>(value: unknown, allowed: readonly T[], name
   return value as T;
 }
 
-function optionalEnum<T extends string>(value: unknown, allowed: readonly T[], name: string) {
-  return value === null ? null : enumValue(value, allowed, name);
-}
-
 function textList(value: unknown, maximum: number, itemMaximum: number, name: string) {
   if (!Array.isArray(value) || value.length > maximum) throw new Error(`${name} is invalid.`);
   return [...new Set(value.map((item, index) => requiredText(item, itemMaximum, `${name}[${index}]`)))];
@@ -131,7 +132,7 @@ function textList(value: unknown, maximum: number, itemMaximum: number, name: st
 
 export function parseJobCase(value: unknown): JobCase {
   const input = record(value, "JobCase");
-  const keys = jobCaseJsonSchema.required;
+  const keys = jobCaseKeys;
   exactKeys(input, keys, "JobCase");
   const warnings = Array.isArray(input.warnings) ? input.warnings : null;
   const evidence = Array.isArray(input.evidence) ? input.evidence : null;
@@ -154,7 +155,7 @@ export function parseJobCase(value: unknown): JobCase {
     localRequirement: optionalText(input.localRequirement, 500, "localRequirement"),
     relocationRequirement: optionalText(input.relocationRequirement, 500, "relocationRequirement"),
     clearanceRequirement: optionalText(input.clearanceRequirement, 500, "clearanceRequirement"),
-    roleFamily: optionalEnum(input.roleFamily, Object.values(RoleFamily), "roleFamily"),
+    roleFamily: optionalText(input.roleFamily, 40, "roleFamily"),
     confidence: typeof input.confidence === "number" && Number.isFinite(input.confidence) && input.confidence >= 0 && input.confidence <= 1
       ? input.confidence
       : (() => { throw new Error("confidence is invalid."); })(),
@@ -347,7 +348,7 @@ export function jobCaseFactChanges(before: JobCase, after: JobCase) {
   return changed;
 }
 
-export function readReviewedJobCase(formData: FormData, original: JobCase): JobCase & { title: string } {
+export function readReviewedJobCase(formData: FormData, original: JobCase, roleFamilies: readonly string[]): JobCase & { title: string } {
   const recruiterEmail = formText(formData, "recruiterEmail", 320);
   if (recruiterEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recruiterEmail)) throw new Error("Recruiter email is invalid.");
   const selected = <T extends string>(name: keyof JobCase, allowed: readonly T[], fallback: T) => {
@@ -367,6 +368,6 @@ export function readReviewedJobCase(formData: FormData, original: JobCase): JobC
     location: formText(formData, "location", 200),
     workArrangement: selected("workArrangement", Object.values(WorkArrangement), WorkArrangement.UNKNOWN),
     employmentType: selected("employmentType", Object.values(EmploymentType), EmploymentType.UNKNOWN),
-    roleFamily: typeof roleValue === "string" && Object.values(RoleFamily).includes(roleValue as RoleFamily) ? roleValue as RoleFamily : null,
+    roleFamily: typeof roleValue === "string" && roleFamilies.includes(roleValue) ? roleValue : null,
   };
 }

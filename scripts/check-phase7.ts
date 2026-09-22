@@ -6,7 +6,6 @@ import {
   OutlookDraftState,
   OutreachDraftStatus,
   OutreachMode,
-  RoleFamily,
 } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
 
@@ -15,8 +14,8 @@ class RollbackCheck extends Error {}
 async function main() {
   try {
     await getPrisma().$transaction(async (database) => {
-      const resume = await database.resume.create({ data: { name: "Fictional Phase 7 Resume", roleFamily: RoleFamily.JAVA_BACKEND, filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: false } });
-      const opportunity = await database.opportunity.create({ data: { title: "Fictional Phase 7 Role", roleFamily: RoleFamily.JAVA_BACKEND } });
+      const resume = await database.resume.create({ data: { name: "Fictional Phase 7 Resume", roleFamily: "JAVA_BACKEND", filePath: "/private/example.invalid/fictional.pdf", version: "sample-v1", active: false } });
+      const opportunity = await database.opportunity.create({ data: { title: "Fictional Phase 7 Role", roleFamily: "JAVA_BACKEND" } });
       const draft = await database.outreachDraft.create({ data: {
         opportunityId: opportunity.id,
         mode: OutreachMode.FIRST_OUTREACH,

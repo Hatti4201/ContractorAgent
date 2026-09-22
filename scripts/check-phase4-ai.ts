@@ -3,22 +3,27 @@ import "dotenv/config";
 import assert from "node:assert/strict";
 import { JobSourceType } from "@/app/generated/prisma/enums";
 import { analyzeJobText } from "@/services/job-analyzer";
+import { activeRoleFamilies } from "@/services/role-family";
 
 async function main() {
+  const roleFamilies = await activeRoleFamilies();
   const linkedin = await analyzeJobText({
     sourceType: JobSourceType.LINKEDIN_POST,
     originalSender: null,
     rawText: "Sample React Engineer contract. Remote. Required skills: React and TypeScript.",
+    roleFamilies,
   });
   const direct = await analyzeJobText({
     sourceType: JobSourceType.DIRECT_EMAIL,
     originalSender: "recruiter@example.invalid",
     rawText: "I am Example Recruiter. Sample Java Backend Engineer for Example Client. W2. Required: Java and Spring Boot.",
+    roleFamilies,
   });
   const forwarded = await analyzeJobText({
     sourceType: JobSourceType.FORWARDED_JD,
     originalSender: "forwarder@example.invalid",
     rawText: "Forwarded JD: Sample Full Stack Engineer. Recruiter contact: contact@example.invalid. Required: React and Node.js.",
+    roleFamilies,
   });
 
   // A stated engagement must survive extraction: leaving it UNKNOWN silently disables the C2C rules
@@ -27,11 +32,13 @@ async function main() {
     sourceType: JobSourceType.PLAIN_TEXT,
     originalSender: null,
     rawText: "Sample Front-end Engineer, 12 month contract, Corp to Corp only. Remote. Required: React and TypeScript.",
+    roleFamilies,
   });
   const bothOffered = await analyzeJobText({
     sourceType: JobSourceType.PLAIN_TEXT,
     originalSender: null,
     rawText: "Sample Data Engineer. Open to W2 or C2C. Onsite in Example City. Required: Python and SQL.",
+    roleFamilies,
   });
 
   assert.equal(corpToCorp.employmentType, "C2C", "A Corp to Corp intake must not come back UNKNOWN.");
