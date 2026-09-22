@@ -315,16 +315,25 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
       ? chosenResumeId
       : await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
 
+    // The analyzer will not guess a family, but picking a resume states one: the registry entry is
+    // where the family comes from, the same thing selectResume means by it. Adopting it here creates
+    // the job consistent, instead of one that reaches outreach with a resume and no family and blocks
+    // the draft on a fact the user already supplied.
+    const adoptedRoleFamily = !reviewed.roleFamily && selectedResumeId
+      ? (await database.resume.findUnique({ where: { id: selectedResumeId }, select: { roleFamily: true } }))?.roleFamily ?? null
+      : null;
+    const roleFamily = reviewed.roleFamily ?? adoptedRoleFamily;
+
     const created = await database.opportunity.create({
       data: {
         title: reviewed.title,
         client: reviewed.client,
         location: reviewed.location,
-        roleFamily: reviewed.roleFamily,
+        roleFamily,
         employmentType: reviewed.employmentType,
         workArrangement: reviewed.workArrangement,
         rawJd: intake.rawText,
-        jobCase: reviewed as unknown as Prisma.InputJsonValue,
+        jobCase: { ...reviewed, roleFamily } as unknown as Prisma.InputJsonValue,
         jdFingerprint: intake.fingerprint,
         selectedResumeId,
         ...contacts,
@@ -334,6 +343,8 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
             { type: ActivityType.JOB_CREATED, description: "Opportunity created from confirmed AI intake." },
             { type: ActivityType.JD_RECEIVED, description: `JD confirmed from ${source.sourceType}.` },
             ...(selectedResumeId ? [{ type: ActivityType.RESUME_SELECTED, description: "Resume selected by deterministic role-family mapping." }] : []),
+            // Setting a confirmed fact from something other than the review form stays explainable.
+            ...(adoptedRoleFamily ? [{ type: ActivityType.CORRECTION, description: `Role family set to ${adoptedRoleFamily} from the chosen resume (was unset).` }] : []),
           ],
         },
       },
@@ -400,7 +411,7 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
       hasDraft: Boolean(draft && preview?.mode && selectedResumeId),
       // The pipeline stopped without an email, but the review screen has since supplied what it
       // was missing: write it now rather than sending the user to the job page to ask again.
-      readyToWrite: Boolean(!draft && selectedResumeId && reviewed.roleFamily && reviewed.recruiterEmail),
+      readyToWrite: Boolean(!draft && selectedResumeId && roleFamily && reviewed.recruiterEmail),
     };
   });
 
