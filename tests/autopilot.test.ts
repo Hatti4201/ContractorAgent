@@ -12,6 +12,7 @@ import {
   autopilotApplies,
   autopilotDuplicateHold,
   autopilotMode,
+  autopilotRoute,
   sendQuota,
 } from "../services/autopilot";
 import type { DuplicateMatch, JobCase } from "../services/job-case";
@@ -48,13 +49,31 @@ function match(overrides: Partial<DuplicateMatch>): DuplicateMatch {
   };
 }
 
-test("the autopilot stays off unless set to draft, and only rides mailbox intakes", () => {
+test("the autopilot stays off unless set to a mode, and then rides every intake", () => {
   assert.equal(autopilotMode(undefined), "off");
   assert.equal(autopilotMode("on"), "off", "Anything unrecognised must mean off.");
   assert.equal(autopilotMode(" DRAFT "), "draft");
-  assert.ok(autopilotApplies({ sourceMessageId: "AAMk-fictional" }, "draft"));
-  assert.ok(!autopilotApplies({ sourceMessageId: null }, "draft"), "Pasted text has someone at the keyboard already.");
-  assert.ok(!autopilotApplies({ sourceMessageId: "AAMk-fictional" }, "off"));
+  assert.ok(autopilotApplies("draft"));
+  assert.ok(!autopilotApplies("off"));
+});
+
+test("the autopilot answers the way the job reached you", () => {
+  const recruiter = "recruiter@example.invalid";
+  const scanned = { sourceType: JobSourceType.DIRECT_EMAIL, sourceMessageId: "AAMk-fictional", originalSender: recruiter };
+  assert.deepEqual(autopilotRoute(scanned, recruiter), { mode: OutreachMode.DIRECT_EMAIL_REPLY, thread: "source" });
+  assert.deepEqual(autopilotRoute({ ...scanned, sourceMessageId: null, originalSender: `Example Recruiter <${recruiter}>` }, recruiter),
+    { mode: OutreachMode.DIRECT_EMAIL_REPLY, thread: "lookup" }, "A pasted email from the recruiter looks for their thread.");
+  assert.deepEqual(autopilotRoute({ ...scanned, originalSender: "friend@example.invalid" }, recruiter),
+    { mode: OutreachMode.FORWARDED_JD_OUTREACH, thread: null }, "A friend's forward in the inbox writes to the recruiter, not back to the friend.");
+  assert.deepEqual(autopilotRoute({ ...scanned, originalSender: "relay@dice.com" }, recruiter), { mode: OutreachMode.FORWARDED_JD_OUTREACH, thread: null });
+  assert.deepEqual(autopilotRoute({ ...scanned, originalSender: `a${recruiter}` }, recruiter).mode, OutreachMode.FORWARDED_JD_OUTREACH,
+    "A longer address that merely contains the recruiter's is someone else.");
+  assert.deepEqual(autopilotRoute({ sourceType: JobSourceType.FORWARDED_JD, sourceMessageId: null, originalSender: "friend@example.invalid" }, recruiter),
+    { mode: OutreachMode.FORWARDED_JD_OUTREACH, thread: null });
+  assert.deepEqual(autopilotRoute({ sourceType: JobSourceType.LINKEDIN_POST, sourceMessageId: null, originalSender: null }, recruiter),
+    { mode: OutreachMode.FIRST_OUTREACH, thread: null });
+  assert.deepEqual(autopilotRoute({ sourceType: JobSourceType.PLAIN_TEXT, sourceMessageId: null, originalSender: null }, recruiter),
+    { mode: OutreachMode.FIRST_OUTREACH, thread: null });
 });
 
 test("a loose fit goes through, a blocking fact does not", () => {
@@ -129,7 +148,7 @@ test("shadow and send ride the same autopilot as draft", () => {
   assert.equal(autopilotMode("shadow"), "shadow");
   assert.equal(autopilotMode(" Send "), "send");
   assert.equal(autopilotMode("sendnow"), "off");
-  for (const mode of ["draft", "shadow", "send"] as const) assert.ok(autopilotApplies({ sourceMessageId: "AAMk-fictional" }, mode));
+  for (const mode of ["draft", "shadow", "send"] as const) assert.ok(autopilotApplies(mode));
 });
 
 test("only shadow and send plan anything, and both wait out the delay", () => {

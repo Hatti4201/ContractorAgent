@@ -110,6 +110,9 @@ export async function autoConfirmIntake(intakeId: string, analysis: JobCase, pre
   }
   const { title } = analysis;
   const mode = preview.mode as OutreachMode;
+  // A reply needs the thread it answers; the pipeline only chooses reply mode when it found one.
+  const replySourceMessageId = replyModes.has(mode) ? preview.replySourceMessageId : null;
+  if (replyModes.has(mode) && !replySourceMessageId) throw new AutopilotHold("There is no Outlook thread to reply into.");
   const email = { toAddress: preview.toAddress, subject: preview.subject, body: preview.body };
   const resumeId = preview.resumeId;
   const validation = preview.validation!;
@@ -142,8 +145,8 @@ export async function autoConfirmIntake(intakeId: string, analysis: JobCase, pre
       data: {
         opportunityId: created.id,
         mode,
-        // The scanned message is the thread to answer; Outlook checks it really came from the recipient.
-        replySourceMessageId: replyModes.has(mode) ? intake.sourceMessageId : null,
+        // Outlook checks again at draft time that this message really came from the recipient.
+        replySourceMessageId,
         ...email,
         // Same default the review screen starts from: C2C copies the employer, from local config only.
         ccAddress: analysis.employmentType === EmploymentType.C2C ? employerCcSetting().address : null,
