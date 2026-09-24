@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { analyzeInboxMessage, discardIntake } from "@/app/(protected)/intake/actions";
 import { DiscardIntakeForm } from "@/components/delete-job-form";
+import { BookmarkletInstall } from "@/components/bookmarklet-install";
 import { IntakeForm } from "@/components/intake-form";
-import { requireAuth } from "@/lib/auth";
+import { bookmarkletKey, requireAuth } from "@/lib/auth";
 import { formatDateTime, formatEnum, intakeStates } from "@/lib/job-values";
 import { queuedIntakes } from "@/services/intake-queue";
 import { getPrisma } from "@/lib/prisma";
@@ -114,6 +115,12 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
 
       <h2 className="mt-10 text-xl font-semibold text-slate-950">Or paste the text yourself</h2>
       <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
+
+      <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6" id="linkedin">
+        <summary className="cursor-pointer text-lg font-semibold text-slate-950">From LinkedIn: the → Agent bookmarklet</summary>
+        <p className="mt-2 text-sm text-slate-600">Select a post&apos;s text in Safari and click the bookmark; the post goes into the job pool and the autopilot takes it from there.</p>
+        <BookmarkletInstall captureKey={bookmarkletKey()} />
+      </details>
 
 
     </div>
