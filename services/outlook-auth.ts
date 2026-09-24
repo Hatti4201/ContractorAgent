@@ -11,13 +11,14 @@ import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "@/services/o
 const CONNECTION_ID = "primary";
 export const OUTLOOK_SCOPES = ["Mail.ReadWrite"];
 /**
- * Asked for only while AUTOPILOT=send, and only through its own token, so a mailbox connected without
+ * Asked for only while AUTOPILOT=send or DAILY_DIGEST=on, and only through its own token, so a mailbox connected without
  * it keeps reading and drafting exactly as before; only the automatic send reports the missing grant.
  */
 export const OUTLOOK_SEND_SCOPES = ["Mail.Send"];
 
 function consentScopes() {
-  return process.env.AUTOPILOT?.trim().toLowerCase() === "send" ? [...OUTLOOK_SCOPES, ...OUTLOOK_SEND_SCOPES] : OUTLOOK_SCOPES;
+  const sending = process.env.AUTOPILOT?.trim().toLowerCase() === "send" || process.env.DAILY_DIGEST?.trim().toLowerCase() === "on";
+  return sending ? [...OUTLOOK_SCOPES, ...OUTLOOK_SEND_SCOPES] : OUTLOOK_SCOPES;
 }
 
 function environment() {
@@ -113,7 +114,14 @@ export async function outlookAccessToken() {
 }
 
 export async function outlookSendToken() {
-  return silentToken(OUTLOOK_SEND_SCOPES, "Outlook has not granted Mail.Send. Add it to the app registration, then reconnect Outlook with AUTOPILOT=send.");
+  return silentToken(OUTLOOK_SEND_SCOPES, "Outlook has not granted Mail.Send. Add it to the app registration, then reconnect Outlook with AUTOPILOT=send or DAILY_DIGEST=on.");
+}
+
+/** The connected mailbox's own address, which is where the digest goes unless DIGEST_TO says otherwise. */
+export async function outlookAccountAddress() {
+  const accounts = await client(true).application.getTokenCache().getAllAccounts();
+  const address = accounts.length === 1 ? accounts[0]!.username : "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) ? address : null;
 }
 
 export async function disconnectOutlookConnection() {

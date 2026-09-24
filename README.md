@@ -16,7 +16,7 @@ Resume files and outreach rules stay local because they contain personal informa
 
 ## Phase 7 boundary
 
-Phase 7 uses Microsoft delegated OAuth with `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. `Mail.Send` is requested only while `AUTOPILOT=send` (see Automatic sending); in every other mode the user sends from Outlook. After a send, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
+Phase 7 uses Microsoft delegated OAuth with `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. `Mail.Send` is requested only while `AUTOPILOT=send` or `DAILY_DIGEST=on` (see Automatic sending and Daily digest); in every other mode the user sends from Outlook. After a send, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
 
 Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra and grant delegated `Mail.ReadWrite`; add delegated `Mail.Send` only to use automatic sending. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
 
@@ -85,9 +85,24 @@ confirmed is reported, not repeated, so nothing goes twice. Sends run on the sch
 tick, so they need `MAIL_SCAN_ENABLED`; outside the scan window only a send that fell due in the last
 hour goes, and anything older waits for the next window rather than reaching a recruiter at night.
 
-To enable it, add delegated `Mail.Send` to the app registration in Microsoft Entra, set `AUTOPILOT=send`,
-restart, then disconnect and reconnect Outlook so the new permission is granted. Without the grant,
+To enable it, add delegated `Mail.Send` to the app registration in Microsoft Entra, set `AUTOPILOT=send`
+(or `DAILY_DIGEST=on`), restart, then disconnect and reconnect Outlook so the new permission is granted. Without the grant,
 reading and drafting keep working and only the sends fail, each with that reason.
+
+## Daily digest
+
+With `DAILY_DIGEST=on` the app emails you once per scan day, at `DIGEST_HOUR` (by default when the scan
+window closes): what the autopilot sent, what it did not send and why, jobs waiting for your input with
+their hold reasons, drafts waiting in Outlook for you, recruiter replies to review, and a warning when the
+scan keeps failing. Every item links back into the app (`APP_URL`, or the origin of the Outlook callback).
+A day with nothing to report sends nothing. **Email digest now** on the dashboard's Autopilot panel sends
+one on demand.
+
+It goes to the connected mailbox unless `DIGEST_TO` names another address, and needs delegated
+`Mail.Send` like automatic sending does (add it in Entra, then reconnect Outlook). It is not kept in Sent
+Items, and the scan skips any message whose subject starts with `[Contractor Agent]`, so the digest is
+never read as recruiter mail. A failed attempt is shown on the panel with its reason and is not retried
+until the next day.
 
 ## Employer copy
 

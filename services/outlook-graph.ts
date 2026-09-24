@@ -160,6 +160,20 @@ export async function outlookDraftStatus(messageIdValue: string, options: FetchO
   }
 }
 
+/**
+ * Mails a new message the app wrote itself, such as the digest to its own user. Not kept in Sent
+ * Items, where the sent-draft sweep would otherwise have one more message to look at. Needs Mail.Send.
+ */
+export async function sendOutlookMail(input: { to: string; subject: string; html: string }, options: FetchOptions) {
+  await graphRequest("/me/sendMail", {
+    method: "POST",
+    body: JSON.stringify({
+      message: { subject: input.subject, body: { contentType: "HTML", content: input.html }, toRecipients: recipient(input.to) },
+      saveToSentItems: false,
+    }),
+  }, options, [202]);
+}
+
 /** Sends an existing draft as it stands in Outlook. Needs Mail.Send; Graph answers 202 when accepted. */
 export async function sendOutlookDraft(messageIdValue: string, options: FetchOptions) {
   await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/send`, { method: "POST" }, options, [202]);

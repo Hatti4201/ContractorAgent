@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { cancelScheduledSend, pauseAutoSend } from "@/app/(protected)/dashboard/actions";
+import { cancelScheduledSend, pauseAutoSend, sendDigestNow } from "@/app/(protected)/dashboard/actions";
 import { formatDateTime } from "@/lib/job-values";
 import { autopilotOverview } from "@/services/auto-send";
+import { digestSettings } from "@/services/digest";
+import { lastDigestStatus } from "@/services/digest-send";
 
 const outcomes: Record<string, { label: string; tone: string }> = {
   SENT: { label: "Sent", tone: "bg-emerald-50 text-emerald-800" },
@@ -11,9 +13,10 @@ const outcomes: Record<string, { label: string; tone: string }> = {
 
 /** What the autopilot is about to send, what it sent, and in shadow mode what it would have sent. */
 export async function AutopilotPanel() {
-  const overview = await autopilotOverview();
+  const [overview, digest] = await Promise.all([autopilotOverview(), lastDigestStatus()]);
   const { mode, paused, upcoming, recent, shadow } = overview;
-  if (mode === "off" || mode === "draft") {
+  const digestConfig = digestSettings();
+  if ((mode === "off" || mode === "draft") && !digestConfig.enabled) {
     if (!upcoming.length && !recent.length && !shadow.items.length) return null;
   }
   const sending = mode === "send";
@@ -108,6 +111,19 @@ export async function AutopilotPanel() {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {digestConfig.enabled && (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 text-sm">
+          <p className="text-slate-600">
+            Daily digest by email at {digestConfig.hour}:00
+            {digest?.lastDigestAt ? ` · last ${formatDateTime(digest.lastDigestAt)}` : " · none sent yet"}
+            {digest?.lastDigestError && <span className="block text-red-700">Last attempt failed: {digest.lastDigestError}</span>}
+          </p>
+          <form action={sendDigestNow}>
+            <button className="rounded-lg border border-slate-400 bg-white px-3 py-1.5 font-medium text-slate-800 hover:border-slate-600" type="submit">Email digest now</button>
+          </form>
         </div>
       )}
     </section>
