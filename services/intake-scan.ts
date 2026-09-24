@@ -6,8 +6,11 @@ import { inboxIntakeText, readOutlookInboxMessage, type OutlookInboxMessage } fr
 /** Off unless the user turned it on, which FR-01 requires; dryrun records decisions without importing. */
 export type ScanMode = "off" | "dryrun" | "on";
 
-export const MAX_CLASSIFIED_PER_SCAN = 5;
-export const MAX_IMPORTED_PER_SCAN = 3;
+// Each import runs the whole pipeline inside the scan (about six model calls and an Outlook upload), so
+// five keeps a scan well inside the fifteen minutes after which a task is reported as interrupted.
+// Nothing past the cap is lost: the scan stops there and the next one starts from that message.
+export const MAX_CLASSIFIED_PER_SCAN = 10;
+export const MAX_IMPORTED_PER_SCAN = 5;
 const IMPORT_CONFIDENCE = 0.7;
 
 export function intakeScanMode(value = process.env.MAIL_INTAKE_SCAN): ScanMode {
@@ -32,6 +35,14 @@ const jobWords = /\b(?:c2c|w2|1099|corp to corp|contract|contractor|consultant|p
 export function worthClassifying(message: { fromAddress: string; subject: string; preview: string }) {
   if (automatedSender(message.fromAddress)) return false;
   return jobWords.test(`${message.subject} ${message.preview}`);
+}
+
+/**
+ * True when this message would need a new-intake judgement the scan has no budget left for. The scan
+ * must stop here rather than step over it, or the watermark passes a job email that nobody ever read.
+ */
+export function intakeBudgetSpent(message: { fromAddress: string; subject: string; preview: string }, counts: { classified: number; imported: number }) {
+  return worthClassifying(message) && (counts.classified >= MAX_CLASSIFIED_PER_SCAN || counts.imported >= MAX_IMPORTED_PER_SCAN);
 }
 
 export type ScanDecision = { isOpportunity: boolean; confidence: number; reason: string };

@@ -36,7 +36,7 @@ test("Outlook Inbox parsing keeps only bounded validated message metadata", asyn
   }]);
 });
 
-test("an incremental scan asks only for mail newer than the watermark, oldest first", async () => {
+test("an incremental scan asks for mail from the watermark on, oldest first", async () => {
   const urls: string[] = [];
   const fetcher = (async (input: RequestInfo | URL) => {
     urls.push(String(input));
@@ -48,7 +48,8 @@ test("an incremental scan asks only for mail newer than the watermark, oldest fi
 
   const since = new Date("2026-08-22T08:00:00.000Z");
   const incremental = await listOutlookInboxMessages({ accessToken: "fictional-access-token", fetcher }, since);
-  assert.ok(urls[0]?.includes(encodeURIComponent("receivedDateTime gt 2026-08-22T08:00:00.000Z")), "The watermark must be pushed into the query, not filtered locally.");
+  assert.ok(urls[0]?.includes(encodeURIComponent("receivedDateTime ge 2026-08-22T08:00:00.000Z")),
+    "The watermark is pushed into the query, and inclusively: Graph times are whole seconds, so a message sharing the last decided one's second must still come back.");
   assert.ok(urls[0]?.includes("receivedDateTime%20asc"));
   assert.deepEqual(incremental.map((message) => message.id), ["older", "newer"], "Walking forward requires oldest first.");
 
