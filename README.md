@@ -50,9 +50,18 @@ usable resume when several share a role family, and when the validator objects i
 once with the objections as feedback. Non-blocking notes that survive the rewrite are accepted; the
 first email only has to get the resume in front of the recruiter.
 
+Every intake is also scored against the approved candidate context. The requirement list comes from
+the analysis (required skills, years, and any work authorization, clearance, local or relocation
+requirement); the model judges each item and must quote the context for it, and a verdict whose quote is
+not really in the context is downgraded. The score is computed from those verdicts, not picked by the
+model: MET counts 1, PARTIAL half, over the skills. It shows on the review screen, the job page and the
+queue. In place of the review path's 70% analysis-confidence gate, the autopilot accepts 50% and lets the
+score decide.
+
 The autopilot holds instead, and the source stays under **Waiting for your review** with the reason,
-when there is no recruiter email, no usable resume, no job title, the same JD (or a similar title from
-the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
+when there is no recruiter email, no usable resume, no job title, the match is below `MATCH_THRESHOLD`
+(default 50%), the context itself states a conflict with an eligibility requirement, the same JD (or a
+similar title from the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
 about the candidate the approved context does not support — survives the rewrite. Pasted text never
 rides the autopilot. Sending stays manual: the app still holds no `Mail.Send` permission.
 

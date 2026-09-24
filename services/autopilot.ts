@@ -1,5 +1,22 @@
 import type { DuplicateMatch, JobCase } from "@/services/job-case";
+import type { MatchReport } from "@/services/match-score";
 import type { OutreachValidation } from "@/services/outreach-agent";
+
+/**
+ * The fit a job needs before the autopilot writes to the recruiter. The first email only has to get
+ * the resume read, so the default is half. MATCH_THRESHOLD takes 0.6 or 60; anything unreadable is 0.5.
+ */
+export function matchThreshold(value = process.env.MATCH_THRESHOLD) {
+  const number = Number(value?.trim());
+  if (!value?.trim() || !Number.isFinite(number) || number < 0 || number > 100) return 0.5;
+  return number > 1 ? number / 100 : number;
+}
+
+/**
+ * The analyzer's certainty about its own extraction. The review path asks for 70%; the autopilot lets
+ * the match score and the validator judge the job instead, and only refuses an extraction this unsure.
+ */
+export const AUTOPILOT_MIN_CONFIDENCE = 0.5;
 
 /**
  * off (default) = every source waits for the user; draft = mail the scan imported goes all the way to
@@ -38,4 +55,19 @@ export function autopilotDuplicateHold(jobCase: JobCase, matches: DuplicateMatch
     ? matches.find((match) => match.recruiter?.trim().toLowerCase() === recruiter && match.reasons.includes("Similar job title"))
     : undefined;
   return sameRecruiter ? `${jobCase.recruiterName} already has a similar job tracked: "${sameRecruiter.title}".` : null;
+}
+
+const percent = (value: number) => `${Math.round(value * 100)}%`;
+
+/**
+ * An eligibility conflict the context itself states is the one thing no loose fit makes up for; below
+ * that, the score decides. A JD with no skills to score goes ahead, since there is nothing to fall short of.
+ */
+export function autopilotMatchHold(report: MatchReport | null, threshold = matchThreshold()) {
+  if (!report) return "The match score could not be computed.";
+  const conflict = report.requirements.find((item) => item.kind === "eligibility" && item.verdict === "CONFLICT");
+  if (conflict) return `Eligibility conflict: ${conflict.requirement}${conflict.evidence ? ` (your context: "${conflict.evidence}")` : ""}.`;
+  if (report.score === null || report.score >= threshold) return null;
+  const missing = report.requirements.filter((item) => item.kind === "skill" && item.verdict === "MISSING").map((item) => item.requirement);
+  return `Match ${percent(report.score)} is below ${percent(threshold)}${missing.length ? `; missing ${missing.slice(0, 5).join(", ")}` : ""}.`;
 }

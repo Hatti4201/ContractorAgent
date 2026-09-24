@@ -4,6 +4,9 @@ import { generateOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/acti
 import { addActivity, completeAttention, deleteJob, selectResume, updateJob, updateJobCase } from "@/app/(protected)/jobs/actions";
 import { DeleteJobForm } from "@/components/delete-job-form";
 import { GenerateOutreachButton } from "@/components/generate-outreach-button";
+import { MatchReportSection } from "@/components/match-report";
+import { matchThreshold } from "@/services/autopilot";
+import { readMatchReport } from "@/services/match-score";
 import { JobForm } from "@/components/job-form";
 import { requireAuth } from "@/lib/auth";
 import { activityTypes, dateInputValue, formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
@@ -143,6 +146,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
           </form>
         </section>
       )}
+
+      {job.matchReport !== null && <MatchReportSection report={readMatchReport(job.matchReport)} threshold={matchThreshold()} />}
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" id="resume-router">
         <div className="flex flex-wrap items-start justify-between gap-4">

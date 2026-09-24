@@ -56,9 +56,10 @@ export async function buildResumeRoute(
   confidence: number,
   resumes: ResumeRecord[],
   // ponytail: several resumes in one family are near-identical versions, so the autopilot takes the
-  // first by name instead of waiting; the ranking by fit arrives with the match score.
-  options: { allowSeveral?: boolean } = {},
+  // first by name instead of waiting. Ranking them by fit would need the resumes' text, which is not read.
+  options: { allowSeveral?: boolean; minConfidence?: number } = {},
 ) {
+  const minConfidence = options.minConfidence ?? RESUME_CONFIDENCE_THRESHOLD;
   const checked: CheckedResume[] = await Promise.all(resumes.map(async (resume) => {
     const result = resume.active ? await checkResumeFile(resume.filePath) : { usable: false, issue: "Resume is inactive." };
     return { ...resume, usable: result.usable, issue: result.issue };
@@ -67,11 +68,11 @@ export async function buildResumeRoute(
     .filter((resume) => resume.active && resume.usable)
     .sort((left, right) => Number(right.roleFamily === roleFamily) - Number(left.roleFamily === roleFamily) || left.name.localeCompare(right.name));
   const matching = usable.filter((resume) => resume.roleFamily === roleFamily);
-  const recommended = roleFamily && confidence >= RESUME_CONFIDENCE_THRESHOLD && (options.allowSeveral ? matching.length >= 1 : matching.length === 1) ? matching[0] : null;
+  const recommended = roleFamily && confidence >= minConfidence && (options.allowSeveral ? matching.length >= 1 : matching.length === 1) ? matching[0] : null;
 
   let issue: string | null = null;
   if (!roleFamily) issue = "Confirm a role family before selecting a resume.";
-  else if (confidence < RESUME_CONFIDENCE_THRESHOLD) issue = "Role confidence is below 70%; choose a resume manually.";
+  else if (confidence < minConfidence) issue = `Role confidence is below ${Math.round(minConfidence * 100)}%; choose a resume manually.`;
   else if (!recommended) issue = matching.length ? "More than one usable resume matches this role family." : "No usable active resume matches this role family.";
 
   return { recommended, candidates: usable, checked, needsReview: !recommended, issue };
