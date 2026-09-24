@@ -16,17 +16,18 @@ function number(value: string | undefined, fallback: number, low: number, high: 
   return Number.isInteger(parsed) && parsed >= low && parsed <= high ? parsed : fallback;
 }
 
-export function scanWindowFromEnv(env: Partial<Record<string, string>> = process.env): ScanWindow {
-  const days = (env.MAIL_SCAN_DAYS ?? "1,2,3,4,5")
+/** `prefix` lets the exposure channel keep its own window (EXPOSURE_*) with the same shape and defaults. */
+export function scanWindowFromEnv(env: Partial<Record<string, string>> = process.env, prefix = "MAIL_SCAN"): ScanWindow {
+  const days = (env[`${prefix}_DAYS`] ?? "1,2,3,4,5")
     .split(",")
     .map((value) => Number(value.trim()))
     .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6);
   return {
-    enabled: (env.MAIL_SCAN_ENABLED ?? "true").toLowerCase() !== "false",
+    enabled: (env[`${prefix}_ENABLED`] ?? "true").toLowerCase() !== "false",
     days: days.length ? [...new Set(days)] : [1, 2, 3, 4, 5],
-    startHour: number(env.MAIL_SCAN_START_HOUR, 6, 0, 23),
-    endHour: number(env.MAIL_SCAN_END_HOUR, 15, 0, 23),
-    intervalMs: number(env.MAIL_SCAN_INTERVAL_MINUTES, 60, 5, 1440) * 60_000,
+    startHour: number(env[`${prefix}_START_HOUR`], 6, 0, 23),
+    endHour: number(env[`${prefix}_END_HOUR`], 15, 0, 23),
+    intervalMs: number(env[`${prefix}_INTERVAL_MINUTES`], 60, 5, 1440) * 60_000,
     timeZone: configuredTimeZone(env.APP_TIME_ZONE),
   };
 }

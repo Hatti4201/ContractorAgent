@@ -3,4 +3,6 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { startMailScanScheduler } = await import("@/services/mail-scheduler");
   startMailScanScheduler();
+  const { startExposureScheduler } = await import("@/services/exposure-scheduler");
+  startExposureScheduler();
 }

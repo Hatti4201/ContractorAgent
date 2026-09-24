@@ -404,3 +404,45 @@ model MailScanState {
 
   @@map("mail_scan_state")
 }
+
+enum ExposureChannel {
+  DICE
+}
+
+enum ExposureResult {
+  APPLIED
+  DRY_RUN_READY
+  SKIPPED
+  FAILED
+}
+
+// Phase 9 (REQUIREMENTS FR-14): one row per job the exposure channel applied to, rehearsed or passed
+// over. Deliberately separate from Opportunity so unattended applying never touches the CRM funnel.
+model ExposureApplication {
+  id         String          @id @default(cuid())
+  channel    ExposureChannel
+  externalId String          @map("external_id")
+  title      String
+  company    String?
+  url        String
+  result     ExposureResult
+  reason     String?
+  // Every question the agent answered, so identity answers can be audited against the profile.
+  answers    Json?
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@index([channel, externalId])
+  @@index([createdAt])
+  @@map("exposure_applications")
+}
+
+model ExposureState {
+  id                  String    @id @default("primary")
+  lastRunAt           DateTime? @map("last_run_at")
+  lastSuccessAt       DateTime? @map("last_success_at")
+  consecutiveFailures Int       @default(0) @map("consecutive_failures")
+  lastError           String?   @map("last_error")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@map("exposure_state")
+}

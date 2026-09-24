@@ -7,6 +7,7 @@ export function Navigation({ logoutAction, attentionCount, intakeCount }: { logo
     { href: "/needs-attention", label: "Needs attention", badge: attentionCount || undefined },
     { href: "/jobs", label: "Jobs" },
     { href: "/recruiters", label: "Recruiters" },
+    { href: "/exposure", label: "Exposure" },
     // Everything past here is setup rather than daily work.
     { href: "/resumes", label: "Resumes", divider: true },
     { href: "/outlook", label: "Outlook" },
