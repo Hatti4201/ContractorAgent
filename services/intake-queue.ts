@@ -41,8 +41,8 @@ export async function queuedIntakes(database: Prisma.TransactionClient = getPris
         state: failed.has(intake.id) ? "FAILED" : "ANALYZING",
         detail: failed.has(intake.id) ? "Analysis did not finish. Open it to try again." : null } as const;
     }
-    if (preview?.brake) {
-      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "STOPPED", detail: preview.brake } as const;
+    if (preview?.brake || preview?.hold) {
+      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "STOPPED", detail: preview.brake ?? preview.hold } as const;
     }
     return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "READY", detail: null } as const;
   });

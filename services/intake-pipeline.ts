@@ -1,6 +1,8 @@
 import { OutreachDraftStatus } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
+import { autopilotApplies } from "@/services/autopilot";
+import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
 import { analyzeJobText } from "@/services/job-analyzer";
 import { activeRoleFamilies } from "@/services/role-family";
@@ -13,6 +15,7 @@ import {
   type OutreachInput,
   type OutreachValidation,
 } from "@/services/outreach-agent";
+import { buildOutlookDraftForJob } from "@/services/outlook-draft";
 import { buildResumeRoute, RESUME_CONFIDENCE_THRESHOLD } from "@/services/resume-router";
 import type { TaskHandle } from "@/services/tasks";
 
@@ -25,6 +28,8 @@ export type IntakePreview = {
   validation: OutreachValidation | null;
   status: OutreachDraftStatus;
   brake: string | null;
+  /** Why the autopilot left a finished email for the user instead of confirming it. */
+  hold: string | null;
 };
 
 const stopped = (brake: string, resumeId: string | null = null): IntakePreview => ({
@@ -36,6 +41,7 @@ const stopped = (brake: string, resumeId: string | null = null): IntakePreview =
   validation: null,
   status: OutreachDraftStatus.NEEDS_REVIEW,
   brake,
+  hold: null,
 });
 
 async function savePreview(intakeId: string, preview: IntakePreview) {
@@ -52,7 +58,8 @@ function intakeDiscarded(error: unknown) {
 
 /**
  * Runs analysis, deterministic resume routing, drafting and validation before any Opportunity exists.
- * Nothing here becomes authoritative CRM data; the result is a preview the user confirms.
+ * The result is a preview the user confirms, unless the autopilot applies to this intake: then an
+ * acceptable email is confirmed and built into an Outlook draft here, and anything else waits.
  */
 export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
   try {
@@ -66,6 +73,7 @@ export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
 
 async function prepareIntake(intakeId: string, task?: TaskHandle) {
   const intake = await getPrisma().jobIntake.findUniqueOrThrow({ where: { id: intakeId } });
+  const autopilot = autopilotApplies(intake);
 
   await task?.progress("Analyzing the job description");
   const analysis: JobCase = intake.analysis
@@ -86,6 +94,7 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     analysis.roleFamily,
     analysis.confidence,
     await getPrisma().resume.findMany({ where: { active: true } }),
+    { allowSeveral: autopilot },
   );
   const resumeId = route.recommended?.id ?? null;
 
@@ -115,11 +124,18 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
   const blockers = await outreachBlockingIssues(input);
   if (blockers.length) return savePreview(intakeId, stopped(blockers[0]!.message, resumeId));
 
-  const content = await generateOutreachContent(input);
+  let content = await generateOutreachContent(input);
   await task?.progress("Validating the draft");
-  const validation = await validateOutreachContent(input, content);
+  let validation = await validateOutreachContent(input, content);
+  // Nobody is waiting to fix a rejected email, so the autopilot hands the auditor's reasons back to
+  // the writer once. What still fails after that is left for the user.
+  if (autopilot && validation.status !== "PASS") {
+    await task?.progress("Rewriting the draft to fix the validation issues");
+    content = await generateOutreachContent(input, {}, { previous: content, issues: validation.issues });
+    validation = await validateOutreachContent(input, content);
+  }
 
-  await savePreview(intakeId, {
+  const preview: IntakePreview = {
     resumeId,
     mode: input.mode,
     toAddress: input.toAddress,
@@ -128,7 +144,25 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     validation,
     status: validation.status === "PASS" ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW,
     brake: null,
-  });
+    hold: null,
+  };
+  await savePreview(intakeId, preview);
+  if (autopilot) await runAutopilot(intakeId, analysis, preview, task);
+}
+
+/** Confirms the intake and builds its Outlook draft, or records why it waits for the user instead. */
+async function runAutopilot(intakeId: string, analysis: JobCase, preview: IntakePreview, task?: TaskHandle) {
+  await task?.progress("Confirming the job and building the Outlook draft");
+  let opportunityId: string;
+  try {
+    opportunityId = await autoConfirmIntake(intakeId, analysis, preview);
+  } catch (error) {
+    // Anything the autopilot cannot finish stays in the queue with its reason, never silently.
+    const hold = error instanceof AutopilotHold ? error.message : `The autopilot could not confirm this job: ${error instanceof Error ? error.message : "unknown error"}`;
+    return savePreview(intakeId, { ...preview, hold: hold.slice(0, 500) });
+  }
+  // From here the job exists; a refused or failed Outlook draft records its reason on the draft itself.
+  try { await buildOutlookDraftForJob(opportunityId); } catch { /* recorded on the draft */ }
 }
 
 export function parseIntakePreview(value: unknown): IntakePreview | null {
@@ -144,5 +178,6 @@ export function parseIntakePreview(value: unknown): IntakePreview | null {
     validation: preview.validation as OutreachValidation | null ?? null,
     status: preview.status === OutreachDraftStatus.DRAFT ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW,
     brake: text("brake"),
+    hold: text("hold"),
   };
 }

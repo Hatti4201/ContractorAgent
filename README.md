@@ -42,6 +42,20 @@ handled. The schedule is a timer inside the server process: stopping the server 
 resumes on the next tick after a restart rather than firing a burst of missed scans. Repeated failures
 are counted and reported on Needs attention, because an unattended scan must not fail quietly.
 
+## Autopilot
+
+With `MAIL_INTAKE_SCAN=on` and `AUTOPILOT=draft`, a job the scan imports from Outlook goes all the way to
+a verified Outlook reply draft with the resume attached, and no click. The pipeline takes the first
+usable resume when several share a role family, and when the validator objects it rewrites the email
+once with the objections as feedback. Non-blocking notes that survive the rewrite are accepted; the
+first email only has to get the resume in front of the recruiter.
+
+The autopilot holds instead, and the source stays under **Waiting for your review** with the reason,
+when there is no recruiter email, no usable resume, no job title, the same JD (or a similar title from
+the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
+about the candidate the approved context does not support — survives the rewrite. Pasted text never
+rides the autopilot. Sending stays manual: the app still holds no `Mail.Send` permission.
+
 ## Employer copy
 
 A C2C engagement copies the employer by default. The address comes only from `EMPLOYER_CC_ADDRESS` in the

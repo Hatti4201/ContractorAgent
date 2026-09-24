@@ -102,9 +102,9 @@ export async function mailScanState() {
  */
 /**
  * A message that matches no opportunity may still be a recruiter offering a new role. FR-01 lets the
- * scan turn one into a pending intake, and only that: the user still confirms before anything becomes
- * an Opportunity, the mailbox is never modified, and every judgement is written down so a dry run can
- * be read afterwards and no message is ever judged twice.
+ * scan turn one into a pending intake. The user confirms it, or with AUTOPILOT=draft the pipeline does
+ * when its email passes the hard gates; the mailbox gains at most that Outlook draft, and every
+ * judgement is written down so a dry run can be read afterwards and no message is judged twice.
  */
 async function considerAsNewIntake(message: OutlookInboxMessage, mode: ScanMode, task?: TaskHandle) {
   if (!worthClassifying(message)) return { classified: false, imported: false };
