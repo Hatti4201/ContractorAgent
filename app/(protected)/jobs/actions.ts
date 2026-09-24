@@ -310,7 +310,7 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
       : await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
 
     const created = await createOpportunityFromIntake(database, {
-      intake, reviewed, source, recruiterLinkedin, selectedResumeId, markDuplicate, confirmedBy: "user",
+      intake, reviewed, source, recruiterLinkedin, selectedResumeId, match: preview?.match ?? null, markDuplicate, confirmedBy: "user",
     });
     const { roleFamily } = created;
 

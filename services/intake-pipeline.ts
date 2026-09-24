@@ -1,10 +1,11 @@
 import { OutreachDraftStatus } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
-import { autopilotApplies } from "@/services/autopilot";
+import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold } from "@/services/autopilot";
 import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
 import { analyzeJobText } from "@/services/job-analyzer";
+import { assessMatch, readMatchReport, type MatchReport } from "@/services/match-score";
 import { activeRoleFamilies } from "@/services/role-family";
 import { loadOutreachContext } from "@/services/outreach-context";
 import {
@@ -30,9 +31,11 @@ export type IntakePreview = {
   brake: string | null;
   /** Why the autopilot left a finished email for the user instead of confirming it. */
   hold: string | null;
+  /** Null when scoring failed; the autopilot then holds rather than guess. */
+  match: MatchReport | null;
 };
 
-const stopped = (brake: string, resumeId: string | null = null): IntakePreview => ({
+const stopped = (brake: string, resumeId: string | null, match: MatchReport | null): IntakePreview => ({
   resumeId,
   mode: null,
   toAddress: null,
@@ -42,6 +45,7 @@ const stopped = (brake: string, resumeId: string | null = null): IntakePreview =
   status: OutreachDraftStatus.NEEDS_REVIEW,
   brake,
   hold: null,
+  match,
 });
 
 async function savePreview(intakeId: string, preview: IntakePreview) {
@@ -89,14 +93,21 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     data: { analysis: analysis as unknown as Prisma.InputJsonValue },
   });
 
+  // Scored for every intake, so the review screen shows the fit too; a failure only costs the autopilot.
+  await task?.progress("Scoring the match against your profile");
+  let match: MatchReport | null = null;
+  try { match = await assessMatch(analysis, await loadOutreachContext()); } catch { match = null; }
+
   await task?.progress("Routing the resume");
+  const minConfidence = autopilot ? AUTOPILOT_MIN_CONFIDENCE : RESUME_CONFIDENCE_THRESHOLD;
   const route = await buildResumeRoute(
     analysis.roleFamily,
     analysis.confidence,
     await getPrisma().resume.findMany({ where: { active: true } }),
-    { allowSeveral: autopilot },
+    { allowSeveral: autopilot, minConfidence },
   );
   const resumeId = route.recommended?.id ?? null;
+  const stop = (brake: string) => savePreview(intakeId, stopped(brake, resumeId, match));
 
   // Drafting an email that is certain to be rewritten wastes a call, so the pipeline stops early
   // and hands the remaining decision back to the user.
@@ -104,10 +115,10 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     // The analyzer often knows exactly why -- an address that belongs to the poster, say -- and that
     // reason is worth more than the bare fact that no recipient exists.
     const reason = analysis.warnings.find((warning) => warning.field === "recruiterEmail")?.message;
-    return savePreview(intakeId, stopped(`No recruiter email was found, so no outreach email could be written.${reason ? ` ${reason}` : ""} Add one, then generate the draft from the job.`, resumeId));
+    return stop(`No recruiter email was found, so no outreach email could be written.${reason ? ` ${reason}` : ""} Add one, then generate the draft from the job.`);
   }
-  if (analysis.confidence < RESUME_CONFIDENCE_THRESHOLD) return savePreview(intakeId, stopped("Analysis confidence is below 70%. Review the facts first, then generate the draft from the job.", resumeId));
-  if (!route.recommended) return savePreview(intakeId, stopped(route.issue ?? "No usable resume matched this role family.", resumeId));
+  if (analysis.confidence < minConfidence) return stop(`Analysis confidence is below ${Math.round(minConfidence * 100)}%. Review the facts first, then generate the draft from the job.`);
+  if (!route.recommended) return stop(route.issue ?? "No usable resume matched this role family.");
 
   await task?.progress("Writing the outreach email");
   const input: OutreachInput = {
@@ -122,14 +133,15 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     approvedContext: await loadOutreachContext(),
   };
   const blockers = await outreachBlockingIssues(input);
-  if (blockers.length) return savePreview(intakeId, stopped(blockers[0]!.message, resumeId));
+  if (blockers.length) return stop(blockers[0]!.message);
 
   let content = await generateOutreachContent(input);
   await task?.progress("Validating the draft");
   let validation = await validateOutreachContent(input, content);
   // Nobody is waiting to fix a rejected email, so the autopilot hands the auditor's reasons back to
-  // the writer once. What still fails after that is left for the user.
-  if (autopilot && validation.status !== "PASS") {
+  // the writer once. What still fails after that is left for the user, and a job the match already
+  // holds back is not worth the second call.
+  if (autopilot && !autopilotMatchHold(match) && validation.status !== "PASS") {
     await task?.progress("Rewriting the draft to fix the validation issues");
     content = await generateOutreachContent(input, {}, { previous: content, issues: validation.issues });
     validation = await validateOutreachContent(input, content);
@@ -145,6 +157,7 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     status: validation.status === "PASS" ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW,
     brake: null,
     hold: null,
+    match,
   };
   await savePreview(intakeId, preview);
   if (autopilot) await runAutopilot(intakeId, analysis, preview, task);
@@ -179,5 +192,6 @@ export function parseIntakePreview(value: unknown): IntakePreview | null {
     status: preview.status === OutreachDraftStatus.DRAFT ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW,
     brake: text("brake"),
     hold: text("hold"),
+    match: readMatchReport(preview.match),
   };
 }

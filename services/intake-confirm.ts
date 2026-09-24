@@ -9,11 +9,12 @@ import {
   OutreachMode,
 } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
-import { autopilotAccepts, autopilotDuplicateHold } from "@/services/autopilot";
+import { autopilotAccepts, autopilotDuplicateHold, autopilotMatchHold } from "@/services/autopilot";
 import { resolveContacts } from "@/services/contacts";
 import { employerCcSetting } from "@/services/employer";
 import type { IntakePreview } from "@/services/intake-pipeline";
 import { findDuplicateMatches, type JobCase } from "@/services/job-case";
+import type { MatchReport } from "@/services/match-score";
 import { replyModes } from "@/services/outlook-graph";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 
@@ -29,6 +30,7 @@ export async function createOpportunityFromIntake(database: Prisma.TransactionCl
   source: IntakeSource;
   recruiterLinkedin: string | null;
   selectedResumeId: string | null;
+  match: MatchReport | null;
   markDuplicate: boolean;
   confirmedBy: "user" | "autopilot";
 }) {
@@ -68,6 +70,8 @@ export async function createOpportunityFromIntake(database: Prisma.TransactionCl
       jobCase: { ...reviewed, roleFamily } as unknown as Prisma.InputJsonValue,
       jdFingerprint: intake.fingerprint,
       selectedResumeId,
+      matchScore: input.match?.score ?? null,
+      ...(input.match ? { matchReport: input.match as unknown as Prisma.InputJsonValue } : {}),
       ...contacts,
       applicationTrack: { create: { currentStage: input.markDuplicate ? ApplicationStage.DUPLICATE : ApplicationStage.DISCOVERED } },
       activities: {
@@ -95,6 +99,8 @@ export class AutopilotHold extends Error {}
  */
 export async function autoConfirmIntake(intakeId: string, analysis: JobCase, preview: IntakePreview) {
   if (!analysis.title) throw new AutopilotHold("The analysis found no job title.");
+  const matchHold = autopilotMatchHold(preview.match);
+  if (matchHold) throw new AutopilotHold(matchHold);
   if (!preview.resumeId || !preview.mode || !preview.toAddress || !preview.subject || !preview.body) {
     throw new AutopilotHold("The pipeline did not produce a complete email.");
   }
@@ -128,6 +134,7 @@ export async function autoConfirmIntake(intakeId: string, analysis: JobCase, pre
       source: { sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt },
       recruiterLinkedin: null,
       selectedResumeId: resumeId,
+      match: preview.match,
       markDuplicate: false,
       confirmedBy: "autopilot",
     });

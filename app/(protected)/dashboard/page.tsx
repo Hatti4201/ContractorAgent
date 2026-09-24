@@ -276,6 +276,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     <span className="truncate">{intake.recruiterName ?? "Recruiter unknown"}</span>
                     <span aria-hidden="true">·</span>
                     <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${intakeStates[intake.state]!.tone}`}>{intakeStates[intake.state]!.label}</span>
+                    {intake.matchScore !== null && <span className="shrink-0">{Math.round(intake.matchScore * 100)}%</span>}
                   </span>
                 </Link>
               </li>

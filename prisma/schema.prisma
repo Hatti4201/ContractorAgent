@@ -162,6 +162,9 @@ model Opportunity {
   rawJd            String?           @map("raw_jd")
   jobCase          Json?             @map("job_case")
   jdFingerprint    String?           @map("jd_fingerprint")
+  /// Share of the JD's skills the approved context covers, 0..1; null when the JD listed none.
+  matchScore       Float?            @map("match_score")
+  matchReport      Json?             @map("match_report")
   recruiterId      String?           @map("recruiter_id")
   vendorId         String?           @map("vendor_id")
   selectedResumeId String?           @map("selected_resume_id")

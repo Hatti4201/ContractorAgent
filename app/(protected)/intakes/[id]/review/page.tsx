@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { confirmIntake, confirmIntakeWithDraft } from "@/app/(protected)/jobs/actions";
 import { EmploymentType, IntakeStatus, type OutreachMode } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
+import { MatchReportSection } from "@/components/match-report";
+import { matchThreshold } from "@/services/autopilot";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview } from "@/services/intake-pipeline";
@@ -103,6 +105,14 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       </div>
 
       {files.length > 0 && <p className="mt-8 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><span className="font-medium">Attachments:</span> {files.join(", ")}</p>}
+
+      {preview?.hold && (
+        <p className="mt-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-950" role="status">
+          The autopilot left this job for you: {preview.hold}
+        </p>
+      )}
+
+      {preview && <MatchReportSection report={preview.match} threshold={matchThreshold()} />}
 
       {openWarnings.length > 0 && (
         <section className="mt-8">
