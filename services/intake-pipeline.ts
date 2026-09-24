@@ -16,6 +16,7 @@ import {
   type OutreachInput,
   type OutreachValidation,
 } from "@/services/outreach-agent";
+import { scheduleAutoSend } from "@/services/auto-send";
 import { buildOutlookDraftForJob } from "@/services/outlook-draft";
 import { buildResumeRoute, RESUME_CONFIDENCE_THRESHOLD } from "@/services/resume-router";
 import type { TaskHandle } from "@/services/tasks";
@@ -174,8 +175,10 @@ async function runAutopilot(intakeId: string, analysis: JobCase, preview: Intake
     const hold = error instanceof AutopilotHold ? error.message : `The autopilot could not confirm this job: ${error instanceof Error ? error.message : "unknown error"}`;
     return savePreview(intakeId, { ...preview, hold: hold.slice(0, 500) });
   }
-  // From here the job exists; a refused or failed Outlook draft records its reason on the draft itself.
-  try { await buildOutlookDraftForJob(opportunityId); } catch { /* recorded on the draft */ }
+  // From here the job exists; a refused or failed Outlook draft records its reason on the draft itself,
+  // and only a draft that really reached Outlook is scheduled (or shadow-recorded) for sending.
+  try { await buildOutlookDraftForJob(opportunityId); } catch { return; }
+  await scheduleAutoSend(opportunityId);
 }
 
 export function parseIntakePreview(value: unknown): IntakePreview | null {

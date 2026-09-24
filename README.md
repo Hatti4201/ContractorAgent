@@ -16,9 +16,9 @@ Resume files and outreach rules stay local because they contain personal informa
 
 ## Phase 7 boundary
 
-Phase 7 uses Microsoft delegated OAuth with only `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. The application never requests `Mail.Send` and contains no send endpoint. After the user sends in Outlook, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
+Phase 7 uses Microsoft delegated OAuth with `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. `Mail.Send` is requested only while `AUTOPILOT=send` (see Automatic sending); in every other mode the user sends from Outlook. After a send, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
 
-Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra, grant delegated `Mail.ReadWrite`, and do not grant `Mail.Send`. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
+Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra and grant delegated `Mail.ReadWrite`; add delegated `Mail.Send` only to use automatic sending. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
 
 ## Background tasks
 
@@ -63,7 +63,31 @@ when there is no recruiter email, no usable resume, no job title, the match is b
 (default 50%), the context itself states a conflict with an eligibility requirement, the same JD (or a
 similar title from the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
 about the candidate the approved context does not support — survives the rewrite. Pasted text never
-rides the autopilot. Sending stays manual: the app still holds no `Mail.Send` permission.
+rides the autopilot.
+
+## Automatic sending
+
+`AUTOPILOT` goes `off` → `draft` → `shadow` → `send`, one step at a time:
+
+- **shadow** builds drafts exactly like `draft`, and records for each one when it would have been sent.
+  The Autopilot panel on the dashboard shows, for the last 7 days, how many the autopilot would have
+  sent and how many of those you sent yourself. Run it for a week; if you sent nearly all of them and
+  rarely changed a word, move on.
+- **send** sends each draft the autopilot built `AUTO_SEND_DELAY_MINUTES` (default 10) after building
+  it, at most `AUTO_SEND_DAILY_LIMIT` (default 20) in any rolling 24 hours. Until then it shows under
+  **About to send** with a **Don't send** link, and **Pause all sending** stops everything without a
+  restart. It sends the draft as it stands in Outlook, so an edit you make there in the window goes too.
+
+Right before each send the draft is re-checked: still approved, recipient, resume and private context
+unchanged, and still a draft in Outlook (one you already sent or deleted is left alone). Anything that
+fails a check stays in Outlook for you and is never retried; a send that was claimed but never
+confirmed is reported, not repeated, so nothing goes twice. Sends run on the scheduler's five-minute
+tick, so they need `MAIL_SCAN_ENABLED`; outside the scan window only a send that fell due in the last
+hour goes, and anything older waits for the next window rather than reaching a recruiter at night.
+
+To enable it, add delegated `Mail.Send` to the app registration in Microsoft Entra, set `AUTOPILOT=send`,
+restart, then disconnect and reconnect Outlook so the new permission is granted. Without the grant,
+reading and drafting keep working and only the sends fail, each with that reason.
 
 ## Employer copy
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { discardIntake } from "@/app/(protected)/intake/actions";
 import { DiscardIntakeCross } from "@/components/delete-job-form";
 import { IntakeForm } from "@/components/intake-form";
+import { AutopilotPanel } from "@/components/autopilot-panel";
 import {
   ApplicationStage,
   EmploymentType,
@@ -212,6 +213,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           Outlook confirmed the send, and the version you actually sent is archived. <Link className="underline" href={`/jobs/${sentJobId}/outreach`}>Open the archived email</Link>
         </p>
       )}
+
+      <AutopilotPanel />
 
       {beingPrepared.length > 0 && (
         <section className="mt-8">

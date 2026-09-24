@@ -10,6 +10,15 @@ import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "@/services/o
 
 const CONNECTION_ID = "primary";
 export const OUTLOOK_SCOPES = ["Mail.ReadWrite"];
+/**
+ * Asked for only while AUTOPILOT=send, and only through its own token, so a mailbox connected without
+ * it keeps reading and drafting exactly as before; only the automatic send reports the missing grant.
+ */
+export const OUTLOOK_SEND_SCOPES = ["Mail.Send"];
+
+function consentScopes() {
+  return process.env.AUTOPILOT?.trim().toLowerCase() === "send" ? [...OUTLOOK_SCOPES, ...OUTLOOK_SEND_SCOPES] : OUTLOOK_SCOPES;
+}
 
 function environment() {
   const clientId = process.env.MICROSOFT_CLIENT_ID ?? "";
@@ -74,7 +83,7 @@ export async function outlookConnected() {
 export async function outlookAuthorizationUrl(state: string, codeChallenge: string) {
   const { application, config } = client(false);
   return application.getAuthCodeUrl({
-    scopes: OUTLOOK_SCOPES,
+    scopes: consentScopes(),
     redirectUri: config.redirectUri,
     state,
     codeChallenge,
@@ -85,17 +94,26 @@ export async function outlookAuthorizationUrl(state: string, codeChallenge: stri
 
 export async function completeOutlookAuthorization(code: string, codeVerifier: string) {
   const { application, config } = client(false);
-  const result = await application.acquireTokenByCode({ code, codeVerifier, scopes: OUTLOOK_SCOPES, redirectUri: config.redirectUri });
+  const result = await application.acquireTokenByCode({ code, codeVerifier, scopes: consentScopes(), redirectUri: config.redirectUri });
   if (!result?.accessToken) throw new Error("Microsoft authorization did not return an access token.");
 }
 
-export async function outlookAccessToken() {
+async function silentToken(scopes: string[], failure: string) {
   const { application } = client(true);
   const accounts = await application.getTokenCache().getAllAccounts();
-  if (accounts.length !== 1) throw new Error("Reconnect Outlook before creating a draft.");
-  const result = await application.acquireTokenSilent({ account: accounts[0]!, scopes: OUTLOOK_SCOPES });
-  if (!result?.accessToken) throw new Error("Reconnect Outlook before creating a draft.");
+  if (accounts.length !== 1) throw new Error(failure);
+  let result;
+  try { result = await application.acquireTokenSilent({ account: accounts[0]!, scopes }); } catch { throw new Error(failure); }
+  if (!result?.accessToken) throw new Error(failure);
   return result.accessToken;
+}
+
+export async function outlookAccessToken() {
+  return silentToken(OUTLOOK_SCOPES, "Reconnect Outlook before creating a draft.");
+}
+
+export async function outlookSendToken() {
+  return silentToken(OUTLOOK_SEND_SCOPES, "Outlook has not granted Mail.Send. Add it to the app registration, then reconnect Outlook with AUTOPILOT=send.");
 }
 
 export async function disconnectOutlookConnection() {

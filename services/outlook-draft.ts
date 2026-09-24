@@ -26,7 +26,7 @@ export async function preparedDraft(id: string) {
   return draft;
 }
 
-async function approvalIssue(draft: Awaited<ReturnType<typeof preparedDraft>>) {
+export async function approvalIssue(draft: Awaited<ReturnType<typeof preparedDraft>>) {
   if (draft.status !== OutreachDraftStatus.APPROVED || !draft.approvedAt) return "Approve the outreach draft before Outlook creation.";
   if (!draft.opportunity.recruiter?.email || draft.toAddress.toLowerCase() !== draft.opportunity.recruiter.email.toLowerCase()) return "Recipient no longer matches the confirmed Recruiter.";
   if (!draft.opportunity.roleFamily || draft.attachmentResume.roleFamily !== draft.opportunity.roleFamily || !draft.attachmentResume.active) return "Selected Resume no longer matches the confirmed Role Family.";
@@ -102,7 +102,7 @@ export async function buildOutlookDraftForJob(id: string, defer?: (run: () => Pr
               },
             }),
             getPrisma().activity.create({
-              data: { opportunityId: id, type: ActivityType.OUTLOOK_DRAFT_CREATED, description: "Validated Outlook draft created with the selected Resume; user send is still required." },
+              data: { opportunityId: id, type: ActivityType.OUTLOOK_DRAFT_CREATED, description: "Validated Outlook draft created with the selected Resume; it waits in Outlook to be sent." },
             }),
           ]);
           createdLink = safeOutlookLink(external.webLink);

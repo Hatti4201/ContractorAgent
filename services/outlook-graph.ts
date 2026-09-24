@@ -149,6 +149,22 @@ async function deleteMessage(messageIdValue: string, options: FetchOptions) {
   await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}`, { method: "DELETE" }, options, [204, 404]);
 }
 
+/** Whether the draft is still there and still a draft; the user may have sent or deleted it meanwhile. */
+export async function outlookDraftStatus(messageIdValue: string, options: FetchOptions) {
+  try {
+    const message = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,isDraft`, { method: "GET" }, options, [200]));
+    return message.isDraft === true ? "DRAFT" as const : "SENT" as const;
+  } catch (error) {
+    if (error instanceof OutlookGraphError && error.status === 404) return "GONE" as const;
+    throw error;
+  }
+}
+
+/** Sends an existing draft as it stands in Outlook. Needs Mail.Send; Graph answers 202 when accepted. */
+export async function sendOutlookDraft(messageIdValue: string, options: FetchOptions) {
+  await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/send`, { method: "POST" }, options, [202]);
+}
+
 export async function removeOutlookDraftMessage(messageIdValue: string, options: FetchOptions) {
   await deleteMessage(messageIdValue, options);
 }
