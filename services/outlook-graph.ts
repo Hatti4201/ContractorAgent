@@ -291,8 +291,10 @@ function inboxMessage(value: unknown): OutlookInboxMessage {
 }
 
 /**
- * Without a watermark this returns the newest messages; with one it returns the oldest messages that
- * arrived after it, so repeated scans walk forward through the mailbox and cannot skip a run's worth.
+ * Without a watermark this returns the newest messages; with one it returns the oldest messages from
+ * it onward, so repeated scans walk forward through the mailbox and cannot skip a run's worth. The
+ * bound is inclusive because Graph times are whole seconds: a message sharing the last decided one's
+ * second must come back. The one that was decided comes back too, and the scan recognises it.
  */
 /**
  * The full message behind a listed one. Plain text is requested so the analyzer reads what the user
@@ -324,7 +326,7 @@ export function inboxIntakeText(message: { subject: string; fromAddress: string;
 export async function listOutlookInboxMessages(options: FetchOptions, since?: Date | null) {
   const select = "$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25";
   const path = since
-    ? `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20asc&$filter=receivedDateTime%20gt%20${encodeURIComponent(since.toISOString())}`
+    ? `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20asc&$filter=receivedDateTime%20ge%20${encodeURIComponent(since.toISOString())}`
     : `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20desc`;
   const result = object(await graphRequest(path, { method: "GET" }, options, [200]));
   if (!Array.isArray(result.value)) throw new Error("Microsoft Graph message list is invalid.");

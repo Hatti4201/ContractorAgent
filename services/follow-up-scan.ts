@@ -14,9 +14,8 @@ import { listOutlookInboxMessages, type OutlookInboxMessage } from "@/services/o
 import {
   classifyInboxMessage,
   createIntakeFromMessage,
+  intakeBudgetSpent,
   intakeScanMode,
-  MAX_CLASSIFIED_PER_SCAN,
-  MAX_IMPORTED_PER_SCAN,
   recordScanDecision,
   shouldImport,
   worthClassifying,
@@ -99,7 +98,8 @@ export async function mailScanState() {
  * records a pending suggestion for each. No CRM business state changes here; confirmation does that.
  *
  * The watermark only advances past messages this run actually decided on, so hitting the per-run
- * analysis cap defers the remainder to the next scan instead of stepping over it.
+ * analysis cap, or the new-intake budget, defers the remainder to the next scan instead of stepping
+ * over it.
  */
 /**
  * A message that matches no opportunity may still be a recruiter offering a new role. FR-01 lets the
@@ -172,14 +172,17 @@ export async function scanFollowUps(task?: TaskHandle) {
     let decidedThrough: Date | null = null;
     for (const message of messages) {
       if (analyzed >= MAX_ANALYSES_PER_SCAN) break;
-      decidedThrough = message.receivedAt;
-      if (seen.has(message.id)) continue;
-      // The app's own digest lands here too; it names jobs but is never a recruiter's mail.
-      if (isDigestMessage(message)) continue;
       // Matching is local, so a scan that finds nothing relevant costs no model call at all.
-      const match = matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
+      const match = seen.has(message.id) || isDigestMessage(message)
+        ? null
+        : matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
+      // Out of intake budget: stop before this message, so the next scan starts with it.
+      if (match && !match.relevant && scanMode !== "off" && intakeBudgetSpent(message, { classified, imported })) break;
+      decidedThrough = message.receivedAt;
+      // Already decided, or the app's own digest, which names jobs but is never a recruiter's mail.
+      if (!match) continue;
       if (!match.relevant) {
-        if (scanMode !== "off" && classified < MAX_CLASSIFIED_PER_SCAN && imported < MAX_IMPORTED_PER_SCAN) {
+        if (scanMode !== "off") {
           const outcome = await considerAsNewIntake(message, scanMode, task);
           if (outcome.classified) classified += 1;
           if (outcome.imported) imported += 1;

@@ -36,9 +36,10 @@ real IANA name such as `America/Los_Angeles`; an unrecognised value silently fal
 takes follow-up due dates with it. Set `MAIL_SCAN_ENABLED=false` to turn the schedule off; the manual
 button on Needs attention runs the same code either way.
 
-Each scan asks Microsoft Graph only for mail newer than the last message it decided on, so a run that
-finds nothing new costs no model call, and the watermark advances only past messages that run actually
-handled. The schedule is a timer inside the server process: stopping the server stops it, and it
+Each scan asks Microsoft Graph only for mail from the last message it decided on, so a run that finds
+nothing new costs no model call, and the watermark advances only past messages that run actually
+handled. A scan judges at most 10 unmatched messages and imports at most 5 new jobs; when either budget
+runs out it stops there, and the next scan starts from the first message it did not reach. The schedule is a timer inside the server process: stopping the server stops it, and it
 resumes on the next tick after a restart rather than firing a burst of missed scans. Repeated failures
 are counted and reported on Needs attention, because an unattended scan must not fail quietly.
 
