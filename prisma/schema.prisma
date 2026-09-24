@@ -98,6 +98,17 @@ enum OutlookDraftState {
   SENT
 }
 
+/// What the autopilot does with an Outlook draft it built. SHADOW only records when it would have
+/// sent; SCHEDULED waits out the delay; SENDING is claimed and never retried, so no mail goes twice.
+enum AutoSendState {
+  SHADOW
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
 enum FollowUpStatus {
   PENDING
   FAILED
@@ -119,6 +130,7 @@ enum TaskKind {
   OUTLOOK_SENT_CHECK
   FOLLOW_UP_SCAN
   FOLLOW_UP_RETRY
+  AUTO_SEND
 }
 
 enum FollowUpEvent {
@@ -328,6 +340,12 @@ model OutreachDraft {
   sentSubject           String?             @map("sent_subject")
   sentBody              String?             @map("sent_body")
   sentToAddress         String?             @map("sent_to_address")
+  autoSendState         AutoSendState?      @map("auto_send_state")
+  /// When the autopilot sends (SCHEDULED) or would have sent (SHADOW).
+  autoSendAt            DateTime?           @map("auto_send_at")
+  /// When Outlook accepted the autopilot's send; the rolling daily limit counts these.
+  autoSentAt            DateTime?           @map("auto_sent_at")
+  autoSendError         String?             @map("auto_send_error")
   opportunity        Opportunity         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   attachmentResume   Resume              @relation(fields: [attachmentResumeId], references: [id], onDelete: Restrict)
   createdAt          DateTime             @default(now()) @map("created_at")
@@ -336,6 +354,8 @@ model OutreachDraft {
   @@index([status])
   @@index([outlookState])
   @@index([attachmentResumeId])
+  @@index([autoSendState, autoSendAt])
+  @@index([autoSentAt])
   @@map("outreach_drafts")
 }
 
@@ -406,4 +426,13 @@ model MailScanState {
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("mail_scan_state")
+}
+
+/// The kill switch for automatic sending, flipped from the dashboard without a restart.
+model AutopilotControl {
+  id         String   @id @default("primary")
+  sendPaused Boolean  @default(false) @map("send_paused")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("autopilot_control")
 }

@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { EmploymentType, JobSourceType, OutreachMode, WorkArrangement } from "../app/generated/prisma/enums";
-import { autopilotAccepts, autopilotApplies, autopilotDuplicateHold, autopilotMode } from "../services/autopilot";
+import {
+  autoSendDailyLimit,
+  autoSendDelayMinutes,
+  autoSendPlan,
+  autopilotAccepts,
+  autopilotApplies,
+  autopilotDuplicateHold,
+  autopilotMode,
+  sendQuota,
+} from "../services/autopilot";
 import type { DuplicateMatch, JobCase } from "../services/job-case";
 import { generateOutreachContent, type OutreachInput } from "../services/outreach-agent";
 import { buildResumeRoute } from "../services/resume-router";
@@ -114,4 +123,31 @@ test("a rewrite hands the rejected email and its issues back to the writer", asy
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("shadow and send ride the same autopilot as draft", () => {
+  assert.equal(autopilotMode("shadow"), "shadow");
+  assert.equal(autopilotMode(" Send "), "send");
+  assert.equal(autopilotMode("sendnow"), "off");
+  for (const mode of ["draft", "shadow", "send"] as const) assert.ok(autopilotApplies({ sourceMessageId: "AAMk-fictional" }, mode));
+});
+
+test("only shadow and send plan anything, and both wait out the delay", () => {
+  const now = new Date("2026-09-24T17:00:00Z");
+  assert.equal(autoSendPlan("draft", now, 10), null);
+  assert.equal(autoSendPlan("off", now, 10), null);
+  assert.deepEqual(autoSendPlan("shadow", now, 10), { state: "SHADOW", at: new Date("2026-09-24T17:10:00Z") });
+  assert.deepEqual(autoSendPlan("send", now, 30), { state: "SCHEDULED", at: new Date("2026-09-24T17:30:00Z") });
+});
+
+test("the delay and limit fall back to safe defaults on anything unreadable", () => {
+  assert.equal(autoSendDelayMinutes(undefined), 10);
+  assert.equal(autoSendDelayMinutes("0"), 10, "No window at all is not a delay.");
+  assert.equal(autoSendDelayMinutes("15"), 15);
+  assert.equal(autoSendDelayMinutes("2.5"), 10);
+  assert.equal(autoSendDailyLimit(undefined), 20);
+  assert.equal(autoSendDailyLimit("0"), 0, "Zero is a real choice: send nothing.");
+  assert.equal(autoSendDailyLimit("9999"), 20);
+  assert.equal(sendQuota(20, 5), 15);
+  assert.equal(sendQuota(20, 25), 0);
 });

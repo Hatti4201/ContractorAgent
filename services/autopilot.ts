@@ -19,18 +19,49 @@ export function matchThreshold(value = process.env.MATCH_THRESHOLD) {
 export const AUTOPILOT_MIN_CONFIDENCE = 0.5;
 
 /**
- * off (default) = every source waits for the user; draft = mail the scan imported goes all the way to
- * a verified Outlook draft with no click, and only what fails a hard gate waits. The user still sends.
+ * off (default) = every source waits for the user.
+ * draft = mail the scan imported goes all the way to a verified Outlook draft with no click; only what
+ *   fails a hard gate waits. The user still sends.
+ * shadow = draft, and each draft also records when it would have been sent, so a trial week shows
+ *   what automatic sending would have done before it is allowed to.
+ * send = the draft is sent after AUTO_SEND_DELAY_MINUTES unless cancelled, within the daily limit.
  */
-export type AutopilotMode = "off" | "draft";
+export type AutopilotMode = "off" | "draft" | "shadow" | "send";
+const modes: readonly AutopilotMode[] = ["off", "draft", "shadow", "send"];
 
 export function autopilotMode(value = process.env.AUTOPILOT): AutopilotMode {
-  return value?.trim().toLowerCase() === "draft" ? "draft" : "off";
+  const mode = value?.trim().toLowerCase() as AutopilotMode | undefined;
+  return mode && modes.includes(mode) ? mode : "off";
 }
 
 /** Only mail read from the mailbox rides the autopilot; pasted text is someone at the keyboard already. */
 export function autopilotApplies(intake: { sourceMessageId: string | null }, mode = autopilotMode()) {
-  return mode === "draft" && Boolean(intake.sourceMessageId);
+  return mode !== "off" && Boolean(intake.sourceMessageId);
+}
+
+function bounded(value: string | undefined, fallback: number, low: number, high: number) {
+  const parsed = Number(value?.trim());
+  return value?.trim() && Number.isInteger(parsed) && parsed >= low && parsed <= high ? parsed : fallback;
+}
+
+/** The window to cancel a send in. The scheduler ticks every five minutes, so a send lands up to five late. */
+export function autoSendDelayMinutes(value = process.env.AUTO_SEND_DELAY_MINUTES) {
+  return bounded(value, 10, 1, 1440);
+}
+
+/** Sends allowed in any rolling 24 hours, so a restart after a quiet night cannot release a burst. */
+export function autoSendDailyLimit(value = process.env.AUTO_SEND_DAILY_LIMIT) {
+  return bounded(value, 20, 0, 500);
+}
+
+/** What happens to a draft the autopilot just built: nothing, a shadow record, or a scheduled send. */
+export function autoSendPlan(mode: AutopilotMode, now: Date, delayMinutes = autoSendDelayMinutes()) {
+  if (mode !== "shadow" && mode !== "send") return null;
+  return { state: mode === "send" ? "SCHEDULED" as const : "SHADOW" as const, at: new Date(now.getTime() + delayMinutes * 60_000) };
+}
+
+export function sendQuota(limit: number, sentInLastDay: number) {
+  return Math.max(0, limit - sentInLastDay);
 }
 
 /**
