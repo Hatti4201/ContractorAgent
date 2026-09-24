@@ -1,7 +1,8 @@
 import { OutreachDraftStatus } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
-import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold } from "@/services/autopilot";
+import { OutreachMode } from "@/app/generated/prisma/enums";
+import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute } from "@/services/autopilot";
 import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
 import { analyzeJobText } from "@/services/job-analyzer";
@@ -17,7 +18,9 @@ import {
   type OutreachValidation,
 } from "@/services/outreach-agent";
 import { scheduleAutoSend } from "@/services/auto-send";
+import { outlookAccessToken } from "@/services/outlook-auth";
 import { buildOutlookDraftForJob } from "@/services/outlook-draft";
+import { listOutlookSourceMessages } from "@/services/outlook-graph";
 import { buildResumeRoute, RESUME_CONFIDENCE_THRESHOLD } from "@/services/resume-router";
 import type { TaskHandle } from "@/services/tasks";
 
@@ -34,6 +37,8 @@ export type IntakePreview = {
   hold: string | null;
   /** Null when scoring failed; the autopilot then holds rather than guess. */
   match: MatchReport | null;
+  /** The Outlook message a reply answers, chosen by the autopilot; the review screen picks its own. */
+  replySourceMessageId: string | null;
 };
 
 const stopped = (brake: string, resumeId: string | null, match: MatchReport | null): IntakePreview => ({
@@ -47,6 +52,7 @@ const stopped = (brake: string, resumeId: string | null, match: MatchReport | nu
   brake,
   hold: null,
   match,
+  replySourceMessageId: null,
 });
 
 async function savePreview(intakeId: string, preview: IntakePreview) {
@@ -78,7 +84,7 @@ export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
 
 async function prepareIntake(intakeId: string, task?: TaskHandle) {
   const intake = await getPrisma().jobIntake.findUniqueOrThrow({ where: { id: intakeId } });
-  const autopilot = autopilotApplies(intake);
+  const autopilot = autopilotApplies();
 
   await task?.progress("Analyzing the job description");
   const analysis: JobCase = intake.analysis
@@ -121,9 +127,13 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
   if (analysis.confidence < minConfidence) return stop(`Analysis confidence is below ${Math.round(minConfidence * 100)}%. Review the facts first, then generate the draft from the job.`);
   if (!route.recommended) return stop(route.issue ?? "No usable resume matched this role family.");
 
+  const outreach = autopilot
+    ? await resolveRoute(intake, analysis.recruiterEmail)
+    : { mode: determineOutreachMode(intake.sourceType, []), replySourceMessageId: null };
+
   await task?.progress("Writing the outreach email");
   const input: OutreachInput = {
-    mode: determineOutreachMode(intake.sourceType, []),
+    mode: outreach.mode,
     toAddress: analysis.recruiterEmail,
     recruiterName: analysis.recruiterName,
     jobCase: analysis,
@@ -159,9 +169,28 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     brake: null,
     hold: null,
     match,
+    replySourceMessageId: outreach.replySourceMessageId,
   };
   await savePreview(intakeId, preview);
   if (autopilot) await runAutopilot(intakeId, analysis, preview, task);
+}
+
+/**
+ * The mode is settled before the email is written, because a reply and a new email read differently.
+ * A pasted email from the recruiter is answered in their Outlook thread when one of their recent
+ * messages is there to answer, and otherwise as a new email rather than waiting for someone to pick one.
+ */
+async function resolveRoute(intake: Parameters<typeof autopilotRoute>[0], recruiterEmail: string) {
+  const route = autopilotRoute(intake, recruiterEmail);
+  if (route.thread === "source") return { mode: route.mode, replySourceMessageId: intake.sourceMessageId };
+  if (route.thread === "lookup") {
+    try {
+      const [latest] = await listOutlookSourceMessages(recruiterEmail, { accessToken: await outlookAccessToken() });
+      if (latest) return { mode: route.mode, replySourceMessageId: latest.id };
+    } catch { /* Outlook unavailable: write a new email instead */ }
+    return { mode: OutreachMode.FIRST_OUTREACH, replySourceMessageId: null };
+  }
+  return { mode: route.mode, replySourceMessageId: null };
 }
 
 /** Confirms the intake and builds its Outlook draft, or records why it waits for the user instead. */
@@ -196,5 +225,6 @@ export function parseIntakePreview(value: unknown): IntakePreview | null {
     brake: text("brake"),
     hold: text("hold"),
     match: readMatchReport(preview.match),
+    replySourceMessageId: text("replySourceMessageId"),
   };
 }

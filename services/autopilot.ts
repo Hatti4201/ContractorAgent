@@ -1,3 +1,4 @@
+import { JobSourceType, OutreachMode } from "@/app/generated/prisma/enums";
 import type { DuplicateMatch, JobCase } from "@/services/job-case";
 import type { MatchReport } from "@/services/match-score";
 import type { OutreachValidation } from "@/services/outreach-agent";
@@ -34,9 +35,39 @@ export function autopilotMode(value = process.env.AUTOPILOT): AutopilotMode {
   return mode && modes.includes(mode) ? mode : "off";
 }
 
-/** Only mail read from the mailbox rides the autopilot; pasted text is someone at the keyboard already. */
-export function autopilotApplies(intake: { sourceMessageId: string | null }, mode = autopilotMode()) {
-  return mode !== "off" && Boolean(intake.sourceMessageId);
+/**
+ * Every intake rides the autopilot once it is on, pasted ones included: a paste is often a forward or
+ * a post copied in passing, not a promise to review it. The hard gates apply to it all the same.
+ */
+export function autopilotApplies(mode = autopilotMode()) {
+  return mode !== "off";
+}
+
+/** The address as a whole token, so "a@x.com" is not found inside "aa@x.com" or "a@x.com.au". */
+export function addressIn(text: string | null, address: string) {
+  if (!text) return false;
+  const escaped = address.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9._%+@-])${escaped}($|[^a-z0-9._%+@-])`, "i").test(text);
+}
+
+export type AutopilotRoute =
+  | { mode: typeof OutreachMode.DIRECT_EMAIL_REPLY; thread: "source" | "lookup" }
+  | { mode: Exclude<OutreachMode, typeof OutreachMode.DIRECT_EMAIL_REPLY | typeof OutreachMode.THREAD_FOLLOW_UP>; thread: null };
+
+/**
+ * How the autopilot answers, decided by who actually sent the job, since the review screen that used
+ * to settle it is not there:
+ * - the recruiter's own mail, still in Outlook: reply in that thread;
+ * - the recruiter's own mail, pasted: reply in their thread if one is found, else a new email;
+ * - mail from anyone else (a friend's forward, a Dice relay): a new email to the recruiter address the
+ *   text names, which the validator then insists is really in the text and is not the forwarder;
+ * - a post or plain text: a new email.
+ */
+export function autopilotRoute(intake: { sourceType: JobSourceType; sourceMessageId: string | null; originalSender: string | null }, recruiterEmail: string): AutopilotRoute {
+  if (intake.sourceType === JobSourceType.FORWARDED_JD) return { mode: OutreachMode.FORWARDED_JD_OUTREACH, thread: null };
+  if (intake.sourceType !== JobSourceType.DIRECT_EMAIL) return { mode: OutreachMode.FIRST_OUTREACH, thread: null };
+  if (!addressIn(intake.originalSender, recruiterEmail)) return { mode: OutreachMode.FORWARDED_JD_OUTREACH, thread: null };
+  return { mode: OutreachMode.DIRECT_EMAIL_REPLY, thread: intake.sourceMessageId ? "source" : "lookup" };
 }
 
 function bounded(value: string | undefined, fallback: number, low: number, high: number) {

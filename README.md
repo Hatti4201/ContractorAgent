@@ -45,8 +45,8 @@ are counted and reported on Needs attention, because an unattended scan must not
 
 ## Autopilot
 
-With `MAIL_INTAKE_SCAN=on` and `AUTOPILOT=draft`, a job the scan imports from Outlook goes all the way to
-a verified Outlook reply draft with the resume attached, and no click. The pipeline takes the first
+With `AUTOPILOT=draft`, every job goes all the way to a verified Outlook draft with the resume attached,
+and no click: the ones the scan imports from Outlook (with `MAIL_INTAKE_SCAN=on`) and the ones you paste. The pipeline takes the first
 usable resume when several share a role family, and when the validator objects it rewrites the email
 once with the objections as feedback. Non-blocking notes that survive the rewrite are accepted; the
 first email only has to get the resume in front of the recruiter.
@@ -63,8 +63,18 @@ The autopilot holds instead, and the source stays under **Waiting for your revie
 when there is no recruiter email, no usable resume, no job title, the match is below `MATCH_THRESHOLD`
 (default 50%), the context itself states a conflict with an eligibility requirement, the same JD (or a
 similar title from the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
-about the candidate the approved context does not support — survives the rewrite. Pasted text never
-rides the autopilot.
+about the candidate the approved context does not support — survives the rewrite.
+
+How it answers depends on who actually sent the job, because no review screen settles it:
+
+| The job came as | The autopilot writes |
+|---|---|
+| The recruiter's own email, in Outlook | A reply in that thread |
+| The recruiter's own email, pasted | A reply in their most recent Outlook thread, or a new email when none is found |
+| Anyone else's email: a friend's forward, a Dice relay, a pasted forward | A new email to the recruiter address the text names, never back to the forwarder |
+| A LinkedIn post or plain text | A new email to the address the text names |
+
+A job whose text names no recruiter email still waits for you, whichever way it arrived.
 
 ## Automatic sending
 
