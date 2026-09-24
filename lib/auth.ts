@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { captureKey, captureKeyMatches } from "@/lib/capture";
 import { createSessionToken, isSessionTokenValid, passwordsMatch } from "@/lib/session-token";
 
 const COOKIE_NAME = "contractor_session";
@@ -46,4 +47,13 @@ export async function isAuthenticated() {
 
 export async function requireAuth() {
   if (!await isAuthenticated()) redirect("/login");
+}
+
+/** The key the LinkedIn bookmarklet carries; only the authenticated install page ever shows it. */
+export function bookmarkletKey() {
+  return captureKey(requiredEnvironmentVariable("SESSION_SECRET"));
+}
+
+export function isBookmarkletKeyValid(candidate: unknown) {
+  return captureKeyMatches(candidate, requiredEnvironmentVariable("SESSION_SECRET"));
 }

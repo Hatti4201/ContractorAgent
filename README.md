@@ -100,6 +100,24 @@ To enable it, add delegated `Mail.Send` to the app registration in Microsoft Ent
 (or `DAILY_DIGEST=on`), restart, then disconnect and reconnect Outlook so the new permission is granted. Without the grant,
 reading and drafting keep working and only the sends fail, each with that reason.
 
+## LinkedIn bookmarklet
+
+LinkedIn is never scraped. Instead, **Add job → From LinkedIn** installs a Safari bookmarklet: select a
+post's text (open "see more" first), click **→ Agent**, and a tab opens on `/capture`, submits the text
+with the page address, and closes itself. The job then goes through the same pipeline and autopilot
+gates as any paste; a post that names no recruiter email waits for you.
+
+The bookmarklet opens a tab rather than calling the app, because LinkedIn's content policy blocks page
+scripts from calling other sites. The text travels in the URL fragment, which never reaches a server
+log, and the tab opens with `noopener`. `/capture` submits without a click, so the bookmarklet carries a
+private key derived from `SESSION_SECRET`, and `/api/capture` refuses anything without it: otherwise any
+website could open `/capture` with a made-up post naming its own address, and with `AUTOPILOT=send` your
+resume would be mailed there. The key is shown only on the signed-in install page, and changing
+`SESSION_SECRET` retires every installed copy. The same post sent twice within a day is refused.
+
+The app has to be reachable from the browser the bookmarklet runs in, so while it runs on `localhost`
+this works in Safari on the same Mac, not on a phone.
+
 ## Daily digest
 
 With `DAILY_DIGEST=on` the app emails you once per scan day, at `DIGEST_HOUR` (by default when the scan
