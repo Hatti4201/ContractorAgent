@@ -430,9 +430,12 @@ model MailScanState {
 
 /// The kill switch for automatic sending, flipped from the dashboard without a restart.
 model AutopilotControl {
-  id         String   @id @default("primary")
-  sendPaused Boolean  @default(false) @map("send_paused")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id              String    @id @default("primary")
+  sendPaused      Boolean   @default(false) @map("send_paused")
+  /// When the daily digest last went out (or was attempted); one per local date.
+  lastDigestAt    DateTime? @map("last_digest_at")
+  lastDigestError String?   @map("last_digest_error")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@map("autopilot_control")
 }

@@ -22,6 +22,7 @@ import {
   worthClassifying,
   type ScanMode,
 } from "@/services/intake-scan";
+import { isDigestMessage } from "@/services/digest";
 import { runIntakePipeline } from "@/services/intake-pipeline";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
 import { applyFollowUp, followUpAutoEnabled, shouldApplyFollowUp } from "@/services/follow-up-auto";
@@ -173,6 +174,8 @@ export async function scanFollowUps(task?: TaskHandle) {
       if (analyzed >= MAX_ANALYSES_PER_SCAN) break;
       decidedThrough = message.receivedAt;
       if (seen.has(message.id)) continue;
+      // The app's own digest lands here too; it names jobs but is never a recruiter's mail.
+      if (isDigestMessage(message)) continue;
       // Matching is local, so a scan that finds nothing relevant costs no model call at all.
       const match = matchFollowUpOpportunity(message.fromAddress, message.subject, candidates);
       if (!match.relevant) {
