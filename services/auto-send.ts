@@ -1,6 +1,6 @@
 import { ActivityType, AutoSendState, OutlookDraftState, TaskKind } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
-import { autoSendDailyLimit, autoSendDelayMinutes, autoSendPlan, autopilotMode, sendQuota, type AutopilotMode } from "@/services/autopilot";
+import { autoSendDailyLimit, autoSendDelayMinutes, autoSendPlan, autopilotMode, rankForSending, sendQuota, type AutopilotMode } from "@/services/autopilot";
 import { outlookAccessToken, outlookSendToken } from "@/services/outlook-auth";
 import { approvalIssue, preparedDraft } from "@/services/outlook-draft";
 import { isWithinScanWindow, scanWindowFromEnv } from "@/services/mail-schedule";
@@ -72,20 +72,26 @@ async function recoverStaleSends(now: Date) {
 }
 
 /**
- * Sends every scheduled draft whose window has passed, oldest first, as far as the daily limit allows.
+ * Sends every scheduled draft whose window has passed, best match first, as far as the daily limit
+ * allows; what the limit leaves over is handed to the user.
  * Each draft is re-checked right before it goes: still approved, recipient and resume unchanged, still
  * a draft in Outlook. Anything that fails a check is left in Outlook for the user and never retried.
  */
 export async function sendDueDrafts(task?: TaskHandle, now = new Date()) {
   const database = getPrisma();
-  const quota = sendQuota(autoSendDailyLimit(), await sentInLastDay(now));
-  if (!quota) return { sent: 0 };
-  const due = await database.outreachDraft.findMany({
+  const limit = autoSendDailyLimit();
+  const quota = sendQuota(limit, await sentInLastDay(now));
+  const scheduled = await database.outreachDraft.findMany({
     where: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: dueFilter(now) },
-    select: { id: true, opportunityId: true },
-    orderBy: { autoSendAt: "asc" },
-    take: quota,
+    select: { id: true, opportunityId: true, autoSendAt: true, opportunity: { select: { matchScore: true } } },
   });
+  const { sending: due, overLimit } = rankForSending(scheduled.map((draft) => ({ ...draft, matchScore: draft.opportunity.matchScore })), quota);
+  if (overLimit.length) {
+    await database.outreachDraft.updateMany({
+      where: { id: { in: overLimit.map((draft) => draft.id) }, autoSendState: AutoSendState.SCHEDULED },
+      data: { autoSendState: AutoSendState.CANCELLED, autoSendError: `Not sent: the daily limit of ${limit} was reached and better matches went first. The draft is still in Outlook for you.` },
+    });
+  }
   if (!due.length) return { sent: 0 };
 
   let readToken: string;
