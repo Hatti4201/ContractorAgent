@@ -66,3 +66,32 @@ export function sweepItemState(intake: {
   if (draft.outlookState === "NOT_CREATED" || draft.outlookState === "CREATING") return { state: "WORKING", detail: null };
   return { state: "NEEDS_YOU", detail: draft.outlookError ?? "The Outlook draft was not created." };
 }
+
+/** An icon key for a reason tag; the page maps it to a lucide icon. */
+export type ReasonKind = "rules" | "local" | "f2f" | "noise" | "role" | "email" | "match" | "eligibility" | "resume" | "duplicate" | "email-check" | "failed" | "review" | "other";
+
+/**
+ * A reason as a tag of a word or two, for a page that shows the full sentence only on hover. Matched
+ * on the sentences this app writes itself (policy skips, sweep verdicts, autopilot holds).
+ */
+export function shortReason(text: string | null | undefined): { kind: ReasonKind; label: string } | null {
+  if (!text) return null;
+  const onlyIn = /^(?:Skipped by your application rules: )?(W2|full-time|1099)[^,]*? only, in (.+?): outside/i.exec(text);
+  if (onlyIn) return { kind: "rules", label: `${onlyIn[1]} · ${onlyIn[2]}` };
+  if (/Local candidates only/i.test(text)) return { kind: "local", label: "Local only" };
+  if (/Face-to-face/i.test(text)) return { kind: "f2f", label: "F2F" };
+  const match = /^Match (\d+%)/.exec(text);
+  if (match) return { kind: "match", label: match[1]! };
+  if (/Hotlist|bench sales/i.test(text)) return { kind: "noise", label: "Hotlist" };
+  if (/not a hiring post|Consultants on offer|looking for work/i.test(text)) return { kind: "noise", label: "Candidate" };
+  if (/Not a job post/i.test(text)) return { kind: "noise", label: "Not a job" };
+  if (/Outside your role/i.test(text)) return { kind: "role", label: "Other role" };
+  if (/No email in the post|No recruiter email/i.test(text)) return { kind: "email", label: "No email" };
+  if (/Eligibility conflict/i.test(text)) return { kind: "eligibility", label: "Eligibility" };
+  if (/resume|role family/i.test(text)) return { kind: "resume", label: "Resume" };
+  if (/already tracked|already has a similar job/i.test(text)) return { kind: "duplicate", label: "Duplicate" };
+  if (/validation/i.test(text)) return { kind: "email-check", label: "Email check" };
+  if (/failed|could not/i.test(text)) return { kind: "failed", label: "Failed" };
+  if (/written and waits for your review/i.test(text)) return { kind: "review", label: "Review" };
+  return { kind: "other", label: text.length > 24 ? `${text.slice(0, 22)}…` : text };
+}

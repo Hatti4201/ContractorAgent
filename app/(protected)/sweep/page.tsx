@@ -1,182 +1,141 @@
 import Link from "next/link";
+import { Ban, FilePen, Mail, Pause, Play, RotateCcw, Send, type LucideIcon } from "lucide-react";
 import { runAutopilotOnWaiting } from "@/app/(protected)/dashboard/actions";
 import { reviewSkippedIntake } from "@/app/(protected)/sweep/actions";
 import { SweepPaste, SweepRefresher } from "@/components/sweep-paste";
+import { SweepCard, type SweepCardView, type SweepGroup } from "@/components/sweep-report";
+import { Toast } from "@/components/toast";
 import { requireAuth } from "@/lib/auth";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { currentAutopilotMode } from "@/services/auto-send";
 import { waitingForAutopilot } from "@/services/autopilot-batch";
 import { recentSweeps, skippedByRules, type SweepView } from "@/services/sweep";
+import { shortReason } from "@/services/sweep-plan";
 
 type Post = SweepView["posts"][number];
 
-const stateLabels: Record<string, { label: string; tone: string }> = {
-  SENT: { label: "Sent", tone: "bg-emerald-100 text-emerald-900" },
-  SCHEDULED: { label: "Sending soon", tone: "bg-emerald-50 text-emerald-800" },
-  IN_OUTLOOK: { label: "Draft in Outlook", tone: "bg-sky-100 text-sky-900" },
-  WORKING: { label: "Preparing", tone: "bg-slate-100 text-slate-700" },
-  NEEDS_YOU: { label: "Needs you", tone: "bg-amber-100 text-amber-900" },
-  READY: { label: "Ready for review", tone: "bg-sky-100 text-sky-900" },
-  SKIPPED: { label: "Skipped", tone: "bg-slate-100 text-slate-700" },
+const modes: Record<"off" | "draft" | "shadow" | "send", { icon: LucideIcon; label: string; tone: string }> = {
+  off: { icon: Pause, label: "Off", tone: "border-amber-300 bg-amber-50 text-amber-900" },
+  draft: { icon: FilePen, label: "Drafts", tone: "border-sky-200 bg-sky-50 text-sky-900" },
+  shadow: { icon: FilePen, label: "Drafts", tone: "border-sky-200 bg-sky-50 text-sky-900" },
+  send: { icon: Send, label: "Send", tone: "border-emerald-200 bg-emerald-50 text-emerald-900" },
 };
 
-const percent = (value: number | null) => (value === null ? null : `${Math.round(value * 100)}% match`);
+const byState: Partial<Record<string, SweepGroup>> = {
+  NEEDS_YOU: "needs", READY: "ready", WORKING: "working", IN_OUTLOOK: "outlook", SCHEDULED: "soon", SENT: "sent", SKIPPED: "skipped",
+};
+
+function groupOf(post: Post): SweepGroup {
+  if (post.outcome === "NO_EMAIL" || post.outcome === "FAILED") return "needs";
+  if (post.outcome === "SKIPPED") return "skipped";
+  if (post.outcome === "NOISE" || post.outcome === "NOT_RELEVANT") return "not";
+  return (post.state && byState[post.state]) || "working";
+}
 
 /** The screen's title, or the post's first line when screening never ran. */
 function titleOf(post: Post) {
   return post.title ?? (post.excerpt.split("\n").find((line) => line.trim())?.trim().slice(0, 120) || "Untitled post");
 }
 
-function needsYou(post: Post) {
-  return post.outcome === "NO_EMAIL" || post.outcome === "FAILED" || post.state === "NEEDS_YOU";
+function cardView(sweep: SweepView): SweepCardView {
+  return {
+    id: sweep.id,
+    when: formatDateTime(sweep.createdAt),
+    running: sweep.status === "RUNNING",
+    progress: sweep.progress,
+    error: sweep.error,
+    postCount: sweep.postCount,
+    repeats: sweep.repeats,
+    posts: sweep.posts.map((post) => {
+      const reason = post.detail ?? post.reason;
+      return {
+        id: post.id,
+        title: titleOf(post),
+        href: post.opportunityId ? `/jobs/${post.opportunityId}/outreach` : post.intakeId ? `/intakes/${post.intakeId}/review` : null,
+        author: post.author,
+        profileUrl: post.profileUrl,
+        email: post.email,
+        match: post.matchScore,
+        group: groupOf(post),
+        reason,
+        tag: shortReason(reason),
+        excerpt: post.excerpt,
+      };
+    }),
+  };
 }
 
-function Author({ post }: { post: Post }) {
-  return post.profileUrl
-    ? <a className="font-medium text-emerald-700 underline" href={post.profileUrl} rel="noreferrer" target="_blank">{post.author}</a>
-    : <span className="font-medium">{post.author}</span>;
+function runNotice(run: number) {
+  if (run > 0) return { text: `Running on ${run}`, tone: "ok" as const };
+  if (run === -1) return { text: "Already running", tone: "warn" as const };
+  return { text: "Nothing to run", tone: "warn" as const };
 }
-
-function Excerpt({ post }: { post: Post }) {
-  return (
-    <details className="mt-1">
-      <summary className="cursor-pointer text-xs text-slate-500">Show post</summary>
-      <p className="mt-1 whitespace-pre-wrap text-xs text-slate-600">{post.excerpt}</p>
-    </details>
-  );
-}
-
-function PostRow({ post, showReason = true }: { post: Post; showReason?: boolean }) {
-  const state = post.state ? stateLabels[post.state] : null;
-  const link = post.opportunityId ? `/jobs/${post.opportunityId}/outreach` : post.intakeId ? `/intakes/${post.intakeId}/review` : null;
-  return (
-    <li className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          {link
-            ? <Link className="font-semibold text-slate-950 underline" href={link}>{titleOf(post)}</Link>
-            : <span className="font-semibold text-slate-950">{titleOf(post)}</span>}
-          <p className="mt-0.5 text-slate-600">
-            <Author post={post} />
-            {post.email && <> · {post.email}</>}
-            {percent(post.matchScore) && <> · {percent(post.matchScore)}</>}
-          </p>
-          {showReason && (post.detail ?? post.reason) && <p className="mt-1 text-slate-700">{post.detail ?? post.reason}</p>}
-          <Excerpt post={post} />
-        </div>
-        {state && <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${state.tone}`}>{state.label}</span>}
-      </div>
-    </li>
-  );
-}
-
-function Group({ title, posts, open = false, showReason = true }: { title: string; posts: Post[]; open?: boolean; showReason?: boolean }) {
-  if (!posts.length) return null;
-  return (
-    <details className="mt-4" open={open}>
-      <summary className="cursor-pointer text-sm font-semibold text-slate-900">{title} ({posts.length})</summary>
-      <ul className="mt-2 space-y-2">{posts.map((post) => <PostRow key={post.id} post={post} showReason={showReason} />)}</ul>
-    </details>
-  );
-}
-
-function SweepReport({ sweep, latest }: { sweep: SweepView; latest: boolean }) {
-  const posts = sweep.posts;
-  const count = (test: (post: Post) => boolean) => posts.filter(test).length;
-  const onTheirWay = posts.filter((post) => post.state && ["SENT", "SCHEDULED", "IN_OUTLOOK", "WORKING"].includes(post.state));
-  const summary = [
-    `${sweep.postCount} posts`,
-    sweep.repeats ? `${sweep.repeats} seen before` : null,
-    `${count((post) => post.state === "SENT")} sent`,
-    `${count((post) => post.state === "SCHEDULED")} sending soon`,
-    `${count((post) => post.state === "IN_OUTLOOK")} in Outlook`,
-    `${count((post) => post.state === "READY")} ready for review`,
-    `${count(needsYou)} need you`,
-    `${count((post) => post.outcome === "SKIPPED" || post.state === "SKIPPED")} skipped by your rules`,
-    `${count((post) => post.outcome === "NOT_RELEVANT" || post.outcome === "NOISE")} not for you`,
-  ].filter(Boolean).join(" · ");
-
-  return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-semibold text-slate-950">Sweep of {formatDateTime(sweep.createdAt)}</h3>
-        {sweep.status === "RUNNING" && <span className="text-sm text-slate-600">{sweep.progress ?? "Working"}…</span>}
-      </div>
-      <p className="mt-1 text-sm text-slate-700">{summary}</p>
-      {sweep.error && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-800">{sweep.error}</p>}
-      <Group open={latest} posts={posts.filter(needsYou)} title="Needs you" />
-      <Group open={latest} posts={posts.filter((post) => post.state === "READY")} title="Ready for your review (email written)" />
-      <Group open={latest} posts={onTheirWay} showReason={false} title="On their way" />
-      <Group posts={posts.filter((post) => post.outcome === "SKIPPED" || post.state === "SKIPPED")} title="Skipped by your rules" />
-      <Group posts={posts.filter((post) => post.outcome === "NOT_RELEVANT")} title="Outside your roles" />
-      <Group posts={posts.filter((post) => post.outcome === "NOISE")} title="Not a job (hotlists, candidates, ads)" />
-    </section>
-  );
-}
-
-const modeLabels = { off: "Off", draft: "Drafts only", shadow: "Drafts only", send: "Send" } as const;
 
 export default async function SweepPage({ searchParams }: { searchParams: Promise<{ error?: string; autopilotRun?: string }> }) {
   await requireAuth();
   const [{ error, autopilotRun }, sweeps, skipped, mode, waiting] = await Promise.all([searchParams, recentSweeps(), skippedByRules(), currentAutopilotMode(), waitingForAutopilot()]);
   const active = sweeps.some((sweep) => sweep.status === "RUNNING" || sweep.posts.some((post) => post.state === "WORKING" || post.state === "SCHEDULED"));
-  const run = autopilotRun === undefined ? null : Number(autopilotRun);
+  const notice = autopilotRun === undefined ? null : runNotice(Number(autopilotRun));
+  const { icon: ModeIcon, label, tone } = modes[mode];
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-12">
+    <div className="mx-auto max-w-4xl px-6 py-8">
       <SweepRefresher active={active} />
-      <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">LinkedIn Sweep</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Sweep a LinkedIn feed</h1>
-      <p className="mt-3 text-sm text-slate-600">
-        Every post is screened once: hotlists and candidate posts are dropped, then your rules apply (W2 only in the Bay
-        Area or remote; C2C anywhere except local-only; no face-to-face interview outside the Bay Area). Jobs with a
-        recruiter email go through the autopilot as it is set below; posts without one are listed for you with the author&apos;s profile.
-      </p>
-      <div className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${mode === "off" ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
-        <p>
-          Autopilot: <span className="font-semibold">{modeLabels[mode]}</span>
-          {mode === "off" ? " — swept jobs wait for your review instead of becoming drafts." : mode === "send" ? " — jobs that pass are drafted and sent." : " — jobs that pass become Outlook drafts for you to send."}
-        </p>
-        <Link className="font-medium underline" href="/dashboard#autopilot">Change</Link>
-      </div>
-      {mode !== "off" && waiting.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
-          <p>{waiting.length} job{waiting.length === 1 ? " is" : "s are"} ready for review from before the autopilot was on.</p>
+      {notice && <Toast clear={["autopilotRun"]} text={notice.text} tone={notice.tone} />}
+      {error && <Toast clear={["error"]} text="No longer skipped" tone="warn" />}
+
+      <div className="mb-3 flex items-center gap-2">
+        <Link
+          aria-label={`Autopilot: ${label}. Change it on the dashboard`}
+          className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold ${tone}`}
+          href="/dashboard#autopilot"
+          title={mode === "off" ? "Autopilot off: swept jobs wait for your review. Click to change" : "Autopilot · click to change"}
+        >
+          <ModeIcon aria-hidden="true" size={14} />{label}
+        </Link>
+        {mode !== "off" && waiting.length > 0 && (
           <form action={runAutopilotOnWaiting.bind(null, "/sweep")}>
-            <button className="rounded-lg bg-sky-800 px-3 py-1.5 font-medium text-white hover:bg-sky-900" type="submit">Run the autopilot on them</button>
+            <button
+              aria-label={`Run the autopilot on ${waiting.length} jobs waiting with a finished email`}
+              className="flex items-center gap-1.5 rounded-full bg-sky-700 px-3 py-1 text-sm font-semibold text-white hover:bg-sky-800"
+              title={`Run the autopilot on ${waiting.length} jobs waiting with a finished email`}
+              type="submit"
+            >
+              <Play aria-hidden="true" size={13} />{waiting.length}
+            </button>
           </form>
-        </div>
-      )}
-      {run !== null && (
-        <p className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800" role="status">
-          {run > 0 ? `The autopilot is working through ${run} waiting job${run === 1 ? "" : "s"}; this page updates as they finish.` : run === -1 ? "The autopilot is already working through the waiting jobs." : "Nothing was run: no job is waiting with a finished email, or the autopilot is off."}
-        </p>
-      )}
-      {error && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">That job is no longer skipped.</p>}
+        )}
+      </div>
 
-      <div className="mt-6"><SweepPaste /></div>
+      <SweepPaste />
 
-      {sweeps.map((sweep, index) => <SweepReport key={sweep.id} latest={index === 0} sweep={sweep} />)}
+      <div className="mt-4 space-y-2">
+        {sweeps.map((sweep, index) => <SweepCard key={sweep.id} latest={index === 0} sweep={cardView(sweep)} />)}
+      </div>
 
       {skipped.length > 0 && (
-        <section className="mt-10">
-          <h2 className="text-xl font-semibold text-slate-950">Skipped by your rules this week</h2>
-          <p className="mt-1 text-sm text-slate-600">From every source, mail included. Review one anyway to put it back in the queue.</p>
-          <ul className="mt-4 space-y-2">
-            {skipped.map((item) => (
-              <li className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm" key={item.id}>
-                <div className="min-w-0">
-                  <p className="font-semibold text-slate-950">{item.title}</p>
-                  <p className="mt-0.5 text-slate-600">{formatEnum(item.sourceType)}{item.recruiter ? ` · ${item.recruiter}` : ""} · {formatDateTime(item.at)}</p>
-                  {item.reason && <p className="mt-1 text-slate-700">{item.reason}</p>}
-                </div>
-                <form action={reviewSkippedIntake.bind(null, item.id)}>
-                  <button className="rounded-lg border border-slate-300 px-3 py-1.5 font-medium text-slate-800 hover:bg-slate-50" type="submit">Review anyway</button>
-                </form>
-              </li>
-            ))}
+        <details className="mt-6">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-slate-600 [&::-webkit-details-marker]:hidden" title="Skipped by your rules this week, from every source">
+            <Ban aria-hidden="true" size={15} />{skipped.length}<span className="font-normal text-slate-400">· 7d</span>
+          </summary>
+          <ul className="mt-2 space-y-1.5">
+            {skipped.map((item) => {
+              const tag = shortReason(item.reason);
+              return (
+                <li className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2" key={item.id}>
+                  <Mail aria-hidden="true" className="shrink-0 text-slate-300" size={14} />
+                  <span className="min-w-0 truncate text-sm font-medium text-slate-900" title={`${formatEnum(item.sourceType)}${item.recruiter ? ` · ${item.recruiter}` : ""} · ${formatDateTime(item.at)}`}>{item.title}</span>
+                  {tag && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600" title={item.reason ?? undefined}>{tag.label}</span>}
+                  <form action={reviewSkippedIntake.bind(null, item.id)} className="ml-auto shrink-0">
+                    <button aria-label={`Review ${item.title} anyway`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" title="Review anyway" type="submit">
+                      <RotateCcw aria-hidden="true" size={15} />
+                    </button>
+                  </form>
+                </li>
+              );
+            })}
           </ul>
-        </section>
+        </details>
       )}
     </div>
   );

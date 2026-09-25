@@ -49,3 +49,16 @@ test("a queued post's state follows its intake, job and draft", () => {
   assert.equal(sweepItemState({ ...intake, draft: { ...draft, autoSendState: "CANCELLED", autoSendError: "Daily limit" } }, false).detail, "Daily limit");
   assert.equal(sweepItemState({ ...intake, status: "SKIPPED" }, false).state, "SKIPPED");
 });
+
+test("reasons shrink to a tag a glance can read", async () => {
+  const { shortReason } = await import("../services/sweep-plan");
+  assert.deepEqual(shortReason("Skipped by your application rules: W2 only, in Dallas, TX: outside the Bay Area you take C2C only."), { kind: "rules", label: "W2 · Dallas, TX" });
+  assert.equal(shortReason("Local candidates only, in Irving, TX, with no relocation.")?.label, "Local only");
+  assert.equal(shortReason("Face-to-face interview required in Blue Ash, OH, outside the Bay Area.")?.label, "F2F");
+  assert.equal(shortReason("Match 42% is below 50%; missing Kafka, AWS.")?.label, "42%");
+  assert.equal(shortReason("Hotlist or bench sales: consultants on offer, not a job.")?.label, "Hotlist");
+  assert.equal(shortReason("No email in the post: message the author on LinkedIn if it is worth it.")?.label, "No email");
+  assert.equal(shortReason("Eligibility conflict: Work authorization: USC/GC only.")?.label, "Eligibility");
+  assert.equal(shortReason('The same JD is already tracked as "Java Lead".')?.label, "Duplicate");
+  assert.equal(shortReason(null), null);
+});
