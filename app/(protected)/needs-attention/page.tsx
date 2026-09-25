@@ -12,6 +12,7 @@ import { formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { buildAttentionItems, configuredTimeZone, type AttentionItem } from "@/services/attention";
 import { parseFollowUpEvidence } from "@/services/follow-up";
+import { exposureState } from "@/services/exposure-run";
 import { mailScanState } from "@/services/follow-up-scan";
 import { outlookConnected } from "@/services/outlook-auth";
 
@@ -36,7 +37,7 @@ function proposedText(value: string | null, hasBusinessChange: boolean) {
 export default async function NeedsAttentionPage() {
   await requireAuth();
   const database = getPrisma();
-  const [opportunities, suggestions, connected, scanState] = await Promise.all([
+  const [opportunities, suggestions, connected, scanState, exposure] = await Promise.all([
     database.opportunity.findMany({
       select: {
         id: true,
@@ -64,6 +65,7 @@ export default async function NeedsAttentionPage() {
     }),
     outlookConnected(),
     mailScanState(),
+    exposureState(),
   ]);
   const timeZone = configuredTimeZone();
   const items = buildAttentionItems(opportunities, new Date(), timeZone);
@@ -94,6 +96,13 @@ export default async function NeedsAttentionPage() {
           The Outlook scan has failed {scanState.consecutiveFailures} time{scanState.consecutiveFailures === 1 ? "" : "s"} in a row: {scanState.lastError ?? "reason unknown"}
           {scanState.lastSuccessAt ? ` Last successful scan: ${formatDateTime(scanState.lastSuccessAt)}.` : " No scan has ever succeeded."}
           {" "}Reconnect Outlook or check the AI configuration, then scan again.
+        </p>
+      )}
+
+      {exposure.consecutiveFailures > 0 && (
+        <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900" role="alert">
+          Dice exposure stopped: {exposure.lastError ?? "reason unknown"}{" "}
+          <Link className="underline" href="/exposure">Open exposure</Link>
         </p>
       )}
 
