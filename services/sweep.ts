@@ -1,5 +1,6 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import { IntakeStatus, JobSourceType, SweepOutcome, SweepStatus, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
+import { pooled } from "@/lib/pooled";
 import { obviousNoise, postIntakeText, splitFeed, type FeedPost } from "@/lib/linkedin-feed";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview, runIntakePipeline } from "@/services/intake-pipeline";
@@ -16,17 +17,6 @@ const SCREEN_CONCURRENCY = 2;
 const STALE_SWEEP_MS = 30 * 60_000;
 
 export class SweepInputError extends Error {}
-
-/** Runs `work` over `items`, at most `limit` at a time, in order of start. */
-async function pooled<T>(items: T[], limit: number, work: (item: T, index: number) => Promise<void>) {
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      await work(items[index]!, index);
-    }
-  }));
-}
 
 /**
  * Splits the pasted page, records the sweep, and screens and prepares its posts behind the response.

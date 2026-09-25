@@ -11,13 +11,16 @@ import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "@/services/o
 const CONNECTION_ID = "primary";
 export const OUTLOOK_SCOPES = ["Mail.ReadWrite"];
 /**
- * Asked for only while AUTOPILOT=send or DAILY_DIGEST=on, and only through its own token, so a mailbox connected without
- * it keeps reading and drafting exactly as before; only the automatic send reports the missing grant.
+ * Asked for only when something sends: the autopilot switched to send (or AUTOPILOT=send before the
+ * switch is used), the daily digest, or the user turning sending on right now. It has its own token, so
+ * a mailbox connected without it keeps reading and drafting exactly as before.
  */
 export const OUTLOOK_SEND_SCOPES = ["Mail.Send"];
 
-function consentScopes() {
-  const sending = process.env.AUTOPILOT?.trim().toLowerCase() === "send" || process.env.DAILY_DIGEST?.trim().toLowerCase() === "on";
+async function consentScopes(forSending: boolean) {
+  const control = await getPrisma().autopilotControl.findUnique({ where: { id: "primary" }, select: { mode: true } });
+  const autopilotSends = control?.mode ? control.mode === "SEND" : process.env.AUTOPILOT?.trim().toLowerCase() === "send";
+  const sending = forSending || autopilotSends || process.env.DAILY_DIGEST?.trim().toLowerCase() === "on";
   return sending ? [...OUTLOOK_SCOPES, ...OUTLOOK_SEND_SCOPES] : OUTLOOK_SCOPES;
 }
 
@@ -81,10 +84,10 @@ export async function outlookConnected() {
   return Boolean(await getPrisma().outlookConnection.findUnique({ where: { id: CONNECTION_ID }, select: { id: true } }));
 }
 
-export async function outlookAuthorizationUrl(state: string, codeChallenge: string) {
+export async function outlookAuthorizationUrl(state: string, codeChallenge: string, forSending = false) {
   const { application, config } = client(false);
   return application.getAuthCodeUrl({
-    scopes: consentScopes(),
+    scopes: await consentScopes(forSending),
     redirectUri: config.redirectUri,
     state,
     codeChallenge,
@@ -93,9 +96,9 @@ export async function outlookAuthorizationUrl(state: string, codeChallenge: stri
   });
 }
 
-export async function completeOutlookAuthorization(code: string, codeVerifier: string) {
+export async function completeOutlookAuthorization(code: string, codeVerifier: string, forSending = false) {
   const { application, config } = client(false);
-  const result = await application.acquireTokenByCode({ code, codeVerifier, scopes: consentScopes(), redirectUri: config.redirectUri });
+  const result = await application.acquireTokenByCode({ code, codeVerifier, scopes: await consentScopes(forSending), redirectUri: config.redirectUri });
   if (!result?.accessToken) throw new Error("Microsoft authorization did not return an access token.");
 }
 
@@ -114,7 +117,7 @@ export async function outlookAccessToken() {
 }
 
 export async function outlookSendToken() {
-  return silentToken(OUTLOOK_SEND_SCOPES, "Outlook has not granted Mail.Send. Add it to the app registration, then reconnect Outlook with AUTOPILOT=send or DAILY_DIGEST=on.");
+  return silentToken(OUTLOOK_SEND_SCOPES, "Outlook has not granted Mail.Send. Choose Send on the dashboard's autopilot switch to reconnect Outlook with it.");
 }
 
 /** The connected mailbox's own address, which is where the digest goes unless DIGEST_TO says otherwise. */

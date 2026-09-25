@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { TaskKind } from "@/app/generated/prisma/enums";
+import { AutopilotSetting, TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
-import { cancelAutoSend, setAutoSendPaused } from "@/services/auto-send";
+import { cancelAutoSend, setAutopilotSetting } from "@/services/auto-send";
+import { startAutopilotOnWaiting } from "@/services/autopilot-batch";
 import { sendDigest } from "@/services/digest-send";
-import { outlookAccessToken } from "@/services/outlook-auth";
+import { outlookAccessToken, outlookSendToken } from "@/services/outlook-auth";
 import { scanFollowUps } from "@/services/follow-up-scan";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
 import { startTask, TaskBusyError } from "@/services/tasks";
@@ -58,11 +60,39 @@ export async function cancelScheduledSend(draftId: string) {
   revalidatePath("/dashboard");
 }
 
-/** The kill switch: takes effect on the next tick, and scheduled emails wait until it is released. */
-export async function pauseAutoSend(paused: boolean) {
+const settings = new Set<string>(Object.values(AutopilotSetting));
+
+/**
+ * The dashboard's autopilot switch. Send is taken only once Outlook allows sending; otherwise the user
+ * is sent to Outlook to grant it, and the callback turns sending on when it comes back granted.
+ */
+export async function chooseAutopilot(setting: string) {
   await requireAuth();
-  await setAutoSendPaused(paused);
+  if (!settings.has(setting)) throw new Error("Choose Off, Drafts or Send.");
+  if (setting === AutopilotSetting.SEND) {
+    let granted = true;
+    try { await outlookSendToken(); } catch { granted = false; }
+    if (!granted) redirect("/api/outlook/connect?send=1");
+  }
+  const cancelled = await setAutopilotSetting(setting as AutopilotSetting);
   revalidatePath("/dashboard");
+  revalidatePath("/sweep");
+  redirect(`/dashboard?autopilot=${setting.toLowerCase()}${cancelled ? `&cancelled=${cancelled}` : ""}#autopilot`);
+}
+
+/** Takes every job still waiting with a finished email through the autopilot as it is now set. */
+export async function runAutopilotOnWaiting(returnTo: string) {
+  await requireAuth();
+  let started = 0;
+  try {
+    started = await startAutopilotOnWaiting(after);
+  } catch (error) {
+    if (!(error instanceof TaskBusyError)) throw error;
+    started = -1;
+  }
+  const back = returnTo === "/sweep" ? "/sweep" : "/dashboard";
+  revalidatePath(back);
+  redirect(`${back}?autopilotRun=${started}${back === "/dashboard" ? "#autopilot" : ""}`);
 }
 
 /** The digest on demand, covering everything since the last one; the next scheduled one starts from here. */

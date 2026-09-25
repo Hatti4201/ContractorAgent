@@ -38,8 +38,11 @@ export function sweepVerdict(triaged: TriagedPost): SweepVerdict {
   return { outcome: "QUEUED", reason: decision.reason, decision };
 }
 
-/** Where a queued post stands now, read from its intake, job and draft. */
-export type SweepItemState = "WORKING" | "SENT" | "SCHEDULED" | "IN_OUTLOOK" | "NEEDS_YOU" | "SKIPPED";
+/**
+ * Where a queued post stands now, read from its intake, job and draft. READY is a finished email
+ * waiting for review, which is where every job lands with the autopilot off: not a problem to fix.
+ */
+export type SweepItemState = "WORKING" | "SENT" | "SCHEDULED" | "IN_OUTLOOK" | "READY" | "NEEDS_YOU" | "SKIPPED";
 
 export function sweepItemState(intake: {
   status: "PENDING" | "CONFIRMED" | "SKIPPED";
@@ -52,7 +55,7 @@ export function sweepItemState(intake: {
   if (intake.status === "PENDING") {
     if (intake.stopReason) return { state: "NEEDS_YOU", detail: intake.stopReason };
     if (taskFailed) return { state: "NEEDS_YOU", detail: "Preparing this job failed. Open it to try again." };
-    return intake.hasPreview ? { state: "NEEDS_YOU", detail: "Ready for your review." } : { state: "WORKING", detail: null };
+    return intake.hasPreview ? { state: "READY", detail: "The email is written and waits for your review." } : { state: "WORKING", detail: null };
   }
   const draft = intake.draft;
   if (!draft) return { state: "NEEDS_YOU", detail: "Confirmed, but no email was written." };
