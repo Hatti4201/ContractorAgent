@@ -6,7 +6,7 @@ import { getPrisma } from "@/lib/prisma";
 const STALE_AFTER_MS = 15 * 60 * 1000;
 
 export type TaskHandle = { id: string; progress: (value: string) => Promise<void> };
-type TaskRequest = { kind: TaskKind; label: string; subjectId?: string | null; href?: string | null };
+type TaskRequest = { kind: TaskKind; label: string; subjectId?: string | null; href?: string | null; silent?: boolean };
 
 export class TaskBusyError extends Error {
   constructor(readonly existingId: string) {
@@ -36,7 +36,7 @@ async function claim(request: TaskRequest) {
     if (running) throw new TaskBusyError(running.id);
   }
   return getPrisma().task.create({
-    data: { kind: request.kind, label: request.label, subjectId: request.subjectId ?? null, href: request.href ?? null },
+    data: { kind: request.kind, label: request.label, subjectId: request.subjectId ?? null, href: request.href ?? null, silent: request.silent ?? false },
     select: { id: true },
   });
 }

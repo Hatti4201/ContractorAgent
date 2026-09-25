@@ -1,4 +1,6 @@
 import { TaskKind } from "@/app/generated/prisma/enums";
+import { autoSendTick } from "@/services/auto-send";
+import { digestTick } from "@/services/digest-send";
 import { mailScanState, scanFollowUps } from "@/services/follow-up-scan";
 import { scanWindowFromEnv, shouldScanNow } from "@/services/mail-schedule";
 import { outlookConnected } from "@/services/outlook-auth";
@@ -13,6 +15,9 @@ const TICK_MS = 5 * 60_000;
 const globalForScheduler = globalThis as unknown as { mailScanTimer?: ReturnType<typeof setInterval> };
 
 async function tick() {
+  // Sending checks its own hours (see auto-send), so it runs ahead of the scan window check.
+  await autoSendTick().catch(() => {});
+  await digestTick().catch(() => {});
   const window = scanWindowFromEnv();
   if (!window.enabled) return;
   const state = await mailScanState();

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
+import { cancelAutoSend, setAutoSendPaused } from "@/services/auto-send";
+import { sendDigest } from "@/services/digest-send";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { scanFollowUps } from "@/services/follow-up-scan";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
@@ -47,4 +49,25 @@ export async function scanMailNow() {
   }
   revalidatePath("/dashboard");
   revalidatePath("/needs-attention");
+}
+
+/** Keeps one scheduled email as an Outlook draft for the user to send, or not. */
+export async function cancelScheduledSend(draftId: string) {
+  await requireAuth();
+  await cancelAutoSend(draftId);
+  revalidatePath("/dashboard");
+}
+
+/** The kill switch: takes effect on the next tick, and scheduled emails wait until it is released. */
+export async function pauseAutoSend(paused: boolean) {
+  await requireAuth();
+  await setAutoSendPaused(paused);
+  revalidatePath("/dashboard");
+}
+
+/** The digest on demand, covering everything since the last one; the next scheduled one starts from here. */
+export async function sendDigestNow() {
+  await requireAuth();
+  await sendDigest();
+  revalidatePath("/dashboard");
 }

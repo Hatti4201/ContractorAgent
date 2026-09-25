@@ -11,6 +11,7 @@ export async function GET() {
   await sweepStaleTasks();
   const tasks = await getPrisma().task.findMany({
     where: {
+      silent: false,
       OR: [
         { status: TaskStatus.RUNNING },
         { finishedAt: { gte: new Date(Date.now() - RECENT_MS) } },

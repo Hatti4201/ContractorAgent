@@ -4,9 +4,9 @@ import { loginAction } from "@/app/login/actions";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next } = await searchParams;
 
   return (
     <main className="grid min-h-screen place-items-center px-6 py-16">
@@ -17,6 +17,7 @@ export default async function LoginPage({
           Enter the private application password to access job data.
         </p>
         <form action={loginAction} className="mt-6">
+          {next === "capture" && <input name="next" type="hidden" value="capture" />}
           <label className="block text-sm font-medium text-slate-800" htmlFor="password">
             Password
           </label>

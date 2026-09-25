@@ -24,6 +24,7 @@ import { getPrisma } from "@/lib/prisma";
 import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, readReviewedJobCase } from "@/services/job-case";
 import { activeRoleFamilies } from "@/services/role-family";
 import { profileUrl, resolveContacts } from "@/services/contacts";
+import { createOpportunityFromIntake } from "@/services/intake-confirm";
 import { employerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -298,21 +299,9 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
       originalSender: text(formData, "originalSender", 500),
       receivedAt: dateTimeValue(formData.get("receivedAt")),
     };
-    const claimed = await database.jobIntake.updateMany({
-      where: { id, status: IntakeStatus.PENDING },
-      data: { status: IntakeStatus.CONFIRMED, confirmedAt: new Date() },
-    });
-    if (claimed.count !== 1) throw new Error("Intake was already confirmed.");
     // The profile link is user-entered only; the analyzer never guesses a URL.
     const recruiterLinkedin = profileUrl(text(formData, "recruiterLinkedin", 500));
     if (recruiterLinkedin === false) throw new Error("The recruiter profile link must be a full https:// URL.");
-    const contacts = await resolveContacts(database, {
-      vendorName: reviewed.vendor,
-      recruiterName: reviewed.recruiterName,
-      recruiterEmail: reviewed.recruiterEmail,
-      recruiterPhone: reviewed.recruiterPhone,
-      recruiterLinkedin,
-    });
 
     const preview = parseIntakePreview(intake.preview);
     const chosenResumeId = text(formData, "resumeId", 100) ?? preview?.resumeId ?? null;
@@ -320,41 +309,10 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
       ? chosenResumeId
       : await automaticResumeId(database, reviewed.roleFamily, reviewed.confidence);
 
-    // The analyzer will not guess a family, but picking a resume states one: the registry entry is
-    // where the family comes from, the same thing selectResume means by it. Adopting it here creates
-    // the job consistent, instead of one that reaches outreach with a resume and no family and blocks
-    // the draft on a fact the user already supplied.
-    const adoptedRoleFamily = !reviewed.roleFamily && selectedResumeId
-      ? (await database.resume.findUnique({ where: { id: selectedResumeId }, select: { roleFamily: true } }))?.roleFamily ?? null
-      : null;
-    const roleFamily = reviewed.roleFamily ?? adoptedRoleFamily;
-
-    const created = await database.opportunity.create({
-      data: {
-        title: reviewed.title,
-        client: reviewed.client,
-        location: reviewed.location,
-        roleFamily,
-        employmentType: reviewed.employmentType,
-        workArrangement: reviewed.workArrangement,
-        rawJd: intake.rawText,
-        jobCase: { ...reviewed, roleFamily } as unknown as Prisma.InputJsonValue,
-        jdFingerprint: intake.fingerprint,
-        selectedResumeId,
-        ...contacts,
-        applicationTrack: { create: { currentStage: markDuplicate ? ApplicationStage.DUPLICATE : ApplicationStage.DISCOVERED } },
-        activities: {
-          create: [
-            { type: ActivityType.JOB_CREATED, description: "Opportunity created from confirmed AI intake." },
-            { type: ActivityType.JD_RECEIVED, description: `JD confirmed from ${source.sourceType}.` },
-            ...(selectedResumeId ? [{ type: ActivityType.RESUME_SELECTED, description: "Resume selected by deterministic role-family mapping." }] : []),
-            // Setting a confirmed fact from something other than the review form stays explainable.
-            ...(adoptedRoleFamily ? [{ type: ActivityType.CORRECTION, description: `Role family set to ${adoptedRoleFamily} from the chosen resume (was unset).` }] : []),
-          ],
-        },
-      },
+    const created = await createOpportunityFromIntake(database, {
+      intake, reviewed, source, recruiterLinkedin, selectedResumeId, match: preview?.match ?? null, markDuplicate, confirmedBy: "user",
     });
-    await database.jobIntake.update({ where: { id }, data: { opportunityId: created.id, ...source } });
+    const { roleFamily } = created;
 
     const draft = readReviewedDraft(formData);
     if (draft && preview?.mode && selectedResumeId) {

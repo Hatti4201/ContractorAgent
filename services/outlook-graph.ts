@@ -149,6 +149,36 @@ async function deleteMessage(messageIdValue: string, options: FetchOptions) {
   await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}`, { method: "DELETE" }, options, [204, 404]);
 }
 
+/** Whether the draft is still there and still a draft; the user may have sent or deleted it meanwhile. */
+export async function outlookDraftStatus(messageIdValue: string, options: FetchOptions) {
+  try {
+    const message = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,isDraft`, { method: "GET" }, options, [200]));
+    return message.isDraft === true ? "DRAFT" as const : "SENT" as const;
+  } catch (error) {
+    if (error instanceof OutlookGraphError && error.status === 404) return "GONE" as const;
+    throw error;
+  }
+}
+
+/**
+ * Mails a new message the app wrote itself, such as the digest to its own user. Not kept in Sent
+ * Items, where the sent-draft sweep would otherwise have one more message to look at. Needs Mail.Send.
+ */
+export async function sendOutlookMail(input: { to: string; subject: string; html: string }, options: FetchOptions) {
+  await graphRequest("/me/sendMail", {
+    method: "POST",
+    body: JSON.stringify({
+      message: { subject: input.subject, body: { contentType: "HTML", content: input.html }, toRecipients: recipient(input.to) },
+      saveToSentItems: false,
+    }),
+  }, options, [202]);
+}
+
+/** Sends an existing draft as it stands in Outlook. Needs Mail.Send; Graph answers 202 when accepted. */
+export async function sendOutlookDraft(messageIdValue: string, options: FetchOptions) {
+  await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/send`, { method: "POST" }, options, [202]);
+}
+
 export async function removeOutlookDraftMessage(messageIdValue: string, options: FetchOptions) {
   await deleteMessage(messageIdValue, options);
 }
@@ -261,8 +291,10 @@ function inboxMessage(value: unknown): OutlookInboxMessage {
 }
 
 /**
- * Without a watermark this returns the newest messages; with one it returns the oldest messages that
- * arrived after it, so repeated scans walk forward through the mailbox and cannot skip a run's worth.
+ * Without a watermark this returns the newest messages; with one it returns the oldest messages from
+ * it onward, so repeated scans walk forward through the mailbox and cannot skip a run's worth. The
+ * bound is inclusive because Graph times are whole seconds: a message sharing the last decided one's
+ * second must come back. The one that was decided comes back too, and the scan recognises it.
  */
 /**
  * The full message behind a listed one. Plain text is requested so the analyzer reads what the user
@@ -294,7 +326,7 @@ export function inboxIntakeText(message: { subject: string; fromAddress: string;
 export async function listOutlookInboxMessages(options: FetchOptions, since?: Date | null) {
   const select = "$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25";
   const path = since
-    ? `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20asc&$filter=receivedDateTime%20gt%20${encodeURIComponent(since.toISOString())}`
+    ? `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20asc&$filter=receivedDateTime%20ge%20${encodeURIComponent(since.toISOString())}`
     : `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20desc`;
   const result = object(await graphRequest(path, { method: "GET" }, options, [200]));
   if (!Array.isArray(result.value)) throw new Error("Microsoft Graph message list is invalid.");

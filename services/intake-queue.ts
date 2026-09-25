@@ -9,6 +9,7 @@ export type QueuedIntake = {
   sourceType: string;
   title: string;
   recruiterName: string | null;
+  matchScore: number | null;
   state: "ANALYZING" | "READY" | "STOPPED" | "FAILED";
   detail: string | null;
 };
@@ -36,15 +37,16 @@ export async function queuedIntakes(database: Prisma.TransactionClient = getPris
     const preview = parseIntakePreview(intake.preview);
     const title = analysis?.title?.slice(0, 120) || intake.rawText.trim().split("\n")[0]?.slice(0, 120) || "Untitled source";
     const recruiterName = analysis?.recruiterName?.slice(0, 120) || null;
+    const matchScore = preview?.match?.score ?? null;
     if (!intake.analysis) {
-      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName,
+      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, matchScore,
         state: failed.has(intake.id) ? "FAILED" : "ANALYZING",
         detail: failed.has(intake.id) ? "Analysis did not finish. Open it to try again." : null } as const;
     }
-    if (preview?.brake) {
-      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "STOPPED", detail: preview.brake } as const;
+    if (preview?.brake || preview?.hold) {
+      return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, matchScore, state: "STOPPED", detail: preview.brake ?? preview.hold } as const;
     }
-    return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, state: "READY", detail: null } as const;
+    return { id: intake.id, createdAt: intake.createdAt, sourceType: intake.sourceType, title, recruiterName, matchScore, state: "READY", detail: null } as const;
   });
 }
 

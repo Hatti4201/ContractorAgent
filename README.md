@@ -16,9 +16,9 @@ Resume files and outreach rules stay local because they contain personal informa
 
 ## Phase 7 boundary
 
-Phase 7 uses Microsoft delegated OAuth with only `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. The application never requests `Mail.Send` and contains no send endpoint. After the user sends in Outlook, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
+Phase 7 uses Microsoft delegated OAuth with `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. `Mail.Send` is requested only while `AUTOPILOT=send` or `DAILY_DIGEST=on` (see Automatic sending and Daily digest); in every other mode the user sends from Outlook. After a send, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
 
-Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra, grant delegated `Mail.ReadWrite`, and do not grant `Mail.Send`. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
+Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra and grant delegated `Mail.ReadWrite`; add delegated `Mail.Send` only to use automatic sending. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
 
 ## Background tasks
 
@@ -36,11 +36,102 @@ real IANA name such as `America/Los_Angeles`; an unrecognised value silently fal
 takes follow-up due dates with it. Set `MAIL_SCAN_ENABLED=false` to turn the schedule off; the manual
 button on Needs attention runs the same code either way.
 
-Each scan asks Microsoft Graph only for mail newer than the last message it decided on, so a run that
-finds nothing new costs no model call, and the watermark advances only past messages that run actually
-handled. The schedule is a timer inside the server process: stopping the server stops it, and it
+Each scan asks Microsoft Graph only for mail from the last message it decided on, so a run that finds
+nothing new costs no model call, and the watermark advances only past messages that run actually
+handled. A scan judges at most 10 unmatched messages and imports at most 5 new jobs; when either budget
+runs out it stops there, and the next scan starts from the first message it did not reach. The schedule is a timer inside the server process: stopping the server stops it, and it
 resumes on the next tick after a restart rather than firing a burst of missed scans. Repeated failures
 are counted and reported on Needs attention, because an unattended scan must not fail quietly.
+
+## Autopilot
+
+With `AUTOPILOT=draft`, every job goes all the way to a verified Outlook draft with the resume attached,
+and no click: the ones the scan imports from Outlook (with `MAIL_INTAKE_SCAN=on`) and the ones you paste. The pipeline takes the first
+usable resume when several share a role family, and when the validator objects it rewrites the email
+once with the objections as feedback. Non-blocking notes that survive the rewrite are accepted; the
+first email only has to get the resume in front of the recruiter.
+
+Every intake is also scored against the approved candidate context. The requirement list comes from
+the analysis (required skills, years, and any work authorization, clearance, local or relocation
+requirement); the model judges each item and must quote the context for it, and a verdict whose quote is
+not really in the context is downgraded. The score is computed from those verdicts, not picked by the
+model: MET counts 1, PARTIAL half, over the skills. It shows on the review screen, the job page and the
+queue. In place of the review path's 70% analysis-confidence gate, the autopilot accepts 50% and lets the
+score decide.
+
+The autopilot holds instead, and the source stays under **Waiting for your review** with the reason,
+when there is no recruiter email, no usable resume, no job title, the match is below `MATCH_THRESHOLD`
+(default 50%), the context itself states a conflict with an eligibility requirement, the same JD (or a
+similar title from the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
+about the candidate the approved context does not support — survives the rewrite.
+
+How it answers depends on who actually sent the job, because no review screen settles it:
+
+| The job came as | The autopilot writes |
+|---|---|
+| The recruiter's own email, in Outlook | A reply in that thread |
+| The recruiter's own email, pasted | A reply in their most recent Outlook thread, or a new email when none is found |
+| Anyone else's email: a friend's forward, a Dice relay, a pasted forward | A new email to the recruiter address the text names, never back to the forwarder |
+| A LinkedIn post or plain text | A new email to the address the text names |
+
+A job whose text names no recruiter email still waits for you, whichever way it arrived.
+
+## Automatic sending
+
+`AUTOPILOT` goes `off` → `draft` → `shadow` → `send`, one step at a time:
+
+- **shadow** builds drafts exactly like `draft`, and records for each one when it would have been sent.
+  The Autopilot panel on the dashboard shows, for the last 7 days, how many the autopilot would have
+  sent and how many of those you sent yourself. Run it for a week; if you sent nearly all of them and
+  rarely changed a word, move on.
+- **send** sends each draft the autopilot built `AUTO_SEND_DELAY_MINUTES` (default 10) after building
+  it, at most `AUTO_SEND_DAILY_LIMIT` (default 20) in any rolling 24 hours. Until then it shows under
+  **About to send** with a **Don't send** link, and **Pause all sending** stops everything without a
+  restart. It sends the draft as it stands in Outlook, so an edit you make there in the window goes too.
+
+Right before each send the draft is re-checked: still approved, recipient, resume and private context
+unchanged, and still a draft in Outlook (one you already sent or deleted is left alone). Anything that
+fails a check stays in Outlook for you and is never retried; a send that was claimed but never
+confirmed is reported, not repeated, so nothing goes twice. Sends run on the scheduler's five-minute
+tick, so they need `MAIL_SCAN_ENABLED`; outside the scan window only a send that fell due in the last
+hour goes, and anything older waits for the next window rather than reaching a recruiter at night.
+
+To enable it, add delegated `Mail.Send` to the app registration in Microsoft Entra, set `AUTOPILOT=send`
+(or `DAILY_DIGEST=on`), restart, then disconnect and reconnect Outlook so the new permission is granted. Without the grant,
+reading and drafting keep working and only the sends fail, each with that reason.
+
+## LinkedIn bookmarklet
+
+LinkedIn is never scraped. Instead, **Add job → From LinkedIn** installs a Safari bookmarklet: select a
+post's text (open "see more" first), click **→ Agent**, and a tab opens on `/capture`, submits the text
+with the page address, and closes itself. The job then goes through the same pipeline and autopilot
+gates as any paste; a post that names no recruiter email waits for you.
+
+The bookmarklet opens a tab rather than calling the app, because LinkedIn's content policy blocks page
+scripts from calling other sites. The text travels in the URL fragment, which never reaches a server
+log, and the tab opens with `noopener`. `/capture` submits without a click, so the bookmarklet carries a
+private key derived from `SESSION_SECRET`, and `/api/capture` refuses anything without it: otherwise any
+website could open `/capture` with a made-up post naming its own address, and with `AUTOPILOT=send` your
+resume would be mailed there. The key is shown only on the signed-in install page, and changing
+`SESSION_SECRET` retires every installed copy. The same post sent twice within a day is refused.
+
+The app has to be reachable from the browser the bookmarklet runs in, so while it runs on `localhost`
+this works in Safari on the same Mac, not on a phone.
+
+## Daily digest
+
+With `DAILY_DIGEST=on` the app emails you once per scan day, at `DIGEST_HOUR` (by default when the scan
+window closes): what the autopilot sent, what it did not send and why, jobs waiting for your input with
+their hold reasons, drafts waiting in Outlook for you, recruiter replies to review, and a warning when the
+scan keeps failing. Every item links back into the app (`APP_URL`, or the origin of the Outlook callback).
+A day with nothing to report sends nothing. **Email digest now** on the dashboard's Autopilot panel sends
+one on demand.
+
+It goes to the connected mailbox unless `DIGEST_TO` names another address, and needs delegated
+`Mail.Send` like automatic sending does (add it in Entra, then reconnect Outlook). It is not kept in Sent
+Items, and the scan skips any message whose subject starts with `[Contractor Agent]`, so the digest is
+never read as recruiter mail. A failed attempt is shown on the panel with its reason and is not retried
+until the next day.
 
 ## Employer copy
 

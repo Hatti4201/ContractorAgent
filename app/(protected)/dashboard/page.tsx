@@ -3,6 +3,7 @@ import { discardIntake } from "@/app/(protected)/intake/actions";
 import { DiscardIntakeCross } from "@/components/delete-job-form";
 import { ExposureCard } from "@/components/exposure-card";
 import { IntakeForm } from "@/components/intake-form";
+import { AutopilotPanel } from "@/components/autopilot-panel";
 import {
   ApplicationStage,
   EmploymentType,
@@ -215,6 +216,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </p>
       )}
 
+      <AutopilotPanel />
+
       {beingPrepared.length > 0 && (
         <section className="mt-8">
           <h2 className="text-xl font-semibold text-slate-950">Emails being prepared ({beingPrepared.length})</h2>
@@ -278,6 +281,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     <span className="truncate">{intake.recruiterName ?? "Recruiter unknown"}</span>
                     <span aria-hidden="true">·</span>
                     <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${intakeStates[intake.state]!.tone}`}>{intakeStates[intake.state]!.label}</span>
+                    {intake.matchScore !== null && <span className="shrink-0">{Math.round(intake.matchScore * 100)}%</span>}
                   </span>
                 </Link>
               </li>

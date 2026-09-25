@@ -74,6 +74,23 @@ enum JobSourceType {
 enum IntakeStatus {
   PENDING
   CONFIRMED
+  /// The autopilot passed on it under the user's application rules; the reason is in the preview.
+  SKIPPED
+}
+
+enum SweepStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+enum SweepOutcome {
+  NOISE
+  NOT_RELEVANT
+  SKIPPED
+  NO_EMAIL
+  QUEUED
+  FAILED
 }
 
 enum OutreachMode {
@@ -98,6 +115,17 @@ enum OutlookDraftState {
   SENT
 }
 
+/// What the autopilot does with an Outlook draft it built. SHADOW only records when it would have
+/// sent; SCHEDULED waits out the delay; SENDING is claimed and never retried, so no mail goes twice.
+enum AutoSendState {
+  SHADOW
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
 enum FollowUpStatus {
   PENDING
   FAILED
@@ -119,6 +147,7 @@ enum TaskKind {
   OUTLOOK_SENT_CHECK
   FOLLOW_UP_SCAN
   FOLLOW_UP_RETRY
+  AUTO_SEND
 }
 
 enum FollowUpEvent {
@@ -162,6 +191,9 @@ model Opportunity {
   rawJd            String?           @map("raw_jd")
   jobCase          Json?             @map("job_case")
   jdFingerprint    String?           @map("jd_fingerprint")
+  /// Share of the JD's skills the approved context covers, 0..1; null when the JD listed none.
+  matchScore       Float?            @map("match_score")
+  matchReport      Json?             @map("match_report")
   recruiterId      String?           @map("recruiter_id")
   vendorId         String?           @map("vendor_id")
   selectedResumeId String?           @map("selected_resume_id")
@@ -193,11 +225,14 @@ model JobIntake {
   attachmentMetadata Json?         @map("attachment_metadata")
   analysis           Json?
   preview            Json?
+  /// The application-rule facts read from the source and the decision they led to.
+  policy             Json?
   fingerprint        String
   sourceMessageId    String?       @unique @map("source_message_id")
   status             IntakeStatus  @default(PENDING)
   opportunityId      String?       @unique @map("opportunity_id")
   opportunity        Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  sweepPost          SweepPost?
   confirmedAt        DateTime?     @map("confirmed_at")
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
@@ -325,6 +360,12 @@ model OutreachDraft {
   sentSubject           String?             @map("sent_subject")
   sentBody              String?             @map("sent_body")
   sentToAddress         String?             @map("sent_to_address")
+  autoSendState         AutoSendState?      @map("auto_send_state")
+  /// When the autopilot sends (SCHEDULED) or would have sent (SHADOW).
+  autoSendAt            DateTime?           @map("auto_send_at")
+  /// When Outlook accepted the autopilot's send; the rolling daily limit counts these.
+  autoSentAt            DateTime?           @map("auto_sent_at")
+  autoSendError         String?             @map("auto_send_error")
   opportunity        Opportunity         @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   attachmentResume   Resume              @relation(fields: [attachmentResumeId], references: [id], onDelete: Restrict)
   createdAt          DateTime             @default(now()) @map("created_at")
@@ -333,6 +374,8 @@ model OutreachDraft {
   @@index([status])
   @@index([outlookState])
   @@index([attachmentResumeId])
+  @@index([autoSendState, autoSendAt])
+  @@index([autoSentAt])
   @@map("outreach_drafts")
 }
 
@@ -385,6 +428,8 @@ model Task {
   href       String?
   progress   String?
   error      String?
+  /// Run as part of a larger job with its own progress (a LinkedIn sweep), so kept out of the tray.
+  silent     Boolean    @default(false)
   startedAt  DateTime   @default(now()) @map("started_at")
   finishedAt DateTime?  @map("finished_at")
 
@@ -451,4 +496,55 @@ model ExposureState {
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("exposure_state")
+}
+
+/// The kill switch for automatic sending, flipped from the dashboard without a restart.
+model AutopilotControl {
+  id              String    @id @default("primary")
+  sendPaused      Boolean   @default(false) @map("send_paused")
+  /// When the daily digest last went out (or was attempted); one per local date.
+  lastDigestAt    DateTime? @map("last_digest_at")
+  lastDigestError String?   @map("last_digest_error")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("autopilot_control")
+}
+
+/** One LinkedIn page the user pasted in whole, and what became of its posts. */
+model Sweep {
+  id        String      @id @default(cuid())
+  status    SweepStatus @default(RUNNING)
+  progress  String?
+  error     String?
+  /// Posts found in the paste, and how many were already seen in an earlier sweep.
+  postCount Int         @map("post_count")
+  repeats   Int         @default(0)
+  posts     SweepPost[]
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  @@index([createdAt])
+  @@map("sweeps")
+}
+
+/** A post is judged once: its fingerprint is remembered, so tomorrow's overlapping paste skips it. */
+model SweepPost {
+  id          String       @id @default(cuid())
+  sweepId     String       @map("sweep_id")
+  sweep       Sweep        @relation(fields: [sweepId], references: [id], onDelete: Cascade)
+  fingerprint String       @unique
+  author      String
+  profileUrl  String?      @map("profile_url")
+  headline    String?
+  text        String
+  title       String?
+  email       String?
+  outcome     SweepOutcome
+  reason      String?
+  intakeId    String?      @unique @map("intake_id")
+  intake      JobIntake?   @relation(fields: [intakeId], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  @@index([sweepId])
+  @@map("sweep_posts")
 }

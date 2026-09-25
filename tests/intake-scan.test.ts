@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   automatedSender,
+  intakeBudgetSpent,
+  MAX_CLASSIFIED_PER_SCAN,
+  MAX_IMPORTED_PER_SCAN,
   intakeScanMode,
   parseScanDecision,
   shouldImport,
@@ -49,4 +52,14 @@ test("a scan decision is parsed strictly or refused", () => {
   assert.throws(() => parseScanDecision({ isOpportunity: true, confidence: 2, reason: "x" }), /confidence/);
   assert.throws(() => parseScanDecision({ isOpportunity: "yes", confidence: 0.8, reason: "x" }), /isOpportunity/);
   assert.throws(() => parseScanDecision({ isOpportunity: true, confidence: 0.8, reason: "x", extra: 1 }), /schema/);
+});
+
+test("a spent budget stops the scan at a job email instead of stepping over it", () => {
+  const job = { fromAddress: "recruiter@example.invalid", subject: "Java contract role", preview: "W2 position, remote." };
+  const chatter = { ...job, subject: "Lunch tomorrow?", preview: "Are you free at noon." };
+  assert.ok(!intakeBudgetSpent(job, { classified: 0, imported: 0 }));
+  assert.ok(intakeBudgetSpent(job, { classified: MAX_CLASSIFIED_PER_SCAN, imported: 0 }));
+  assert.ok(intakeBudgetSpent(job, { classified: 1, imported: MAX_IMPORTED_PER_SCAN }));
+  assert.ok(!intakeBudgetSpent(chatter, { classified: MAX_CLASSIFIED_PER_SCAN, imported: MAX_IMPORTED_PER_SCAN }),
+    "Mail that would never be judged costs nothing, so it is passed even with no budget left.");
 });
