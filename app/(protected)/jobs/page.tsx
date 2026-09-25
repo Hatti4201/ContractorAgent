@@ -2,18 +2,22 @@ import Link from "next/link";
 import { Highlight, MarkedText } from "@/components/highlight";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatEnum } from "@/lib/job-values";
+import { X } from "lucide-react";
+import { pipelineColumns } from "@/services/dashboard-analytics";
 import { hiddenMatches, listJobs, searchJobs, type ListedJob, type Snippet } from "@/services/job-search";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 
-export default async function JobsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ q?: string; stage?: string }> }) {
   await requireAuth();
-  const { q } = await searchParams;
+  const { q, stage } = await searchParams;
   const term = (typeof q === "string" ? q : "").trim().slice(0, 200);
+  // A dashboard pipeline column's "+N →" lands here filtered to that column.
+  const column = term ? undefined : pipelineColumns.find((item) => item.key === stage);
 
   const search = term ? await searchJobs(term) : null;
-  const jobs: ListedJob[] = search?.jobs ?? await listJobs();
+  const jobs: ListedJob[] = search?.jobs ?? await listJobs(undefined, column?.stages);
   // Snippets are read off the searched rows, so the plain listing never loads a JD or an email body.
   const snippets = new Map<string, Snippet[]>(search?.jobs.map((job) => [job.id, hiddenMatches(job, term)]));
 
@@ -37,6 +41,11 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         <button className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" type="submit">Search</button>
         {term && <Link className="text-sm font-medium text-emerald-700 underline" href="/jobs">Clear</Link>}
       </form>
+      {column && (
+        <Link aria-label={`Show all stages instead of ${column.label}`} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-slate-950 px-3 py-1 text-sm font-medium text-white hover:bg-slate-800" href="/jobs" title="Show all stages">
+          {column.label} · {jobs.length} <X aria-hidden="true" size={14} />
+        </Link>
+      )}
       {term && (
         <p className="mt-3 text-sm text-slate-600">
           {jobs.length ? `${jobs.length}${search?.truncated ? "+" : ""} matching ${jobs.length === 1 ? "job" : "jobs"}` : "No match"} for “{term}”. A phone number matches however it was typed in.

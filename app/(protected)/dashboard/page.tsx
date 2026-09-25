@@ -1,9 +1,14 @@
 import Link from "next/link";
+import {
+  ArrowRight, Briefcase, Building2, CalendarCheck, Filter, Handshake, MailSearch, MessageSquareReply, Phone, Plus,
+  RotateCcw, Send, TriangleAlert, Trophy, UserRoundCheck, Users, type LucideIcon,
+} from "lucide-react";
 import { discardIntake } from "@/app/(protected)/intake/actions";
-import { DiscardIntakeCross } from "@/components/delete-job-form";
 import { ExposureCard } from "@/components/exposure-card";
-import { IntakeForm } from "@/components/intake-form";
 import { AutopilotPanel } from "@/components/autopilot-panel";
+import { PendingStrip, type PendingItem } from "@/components/pending-strip";
+import { PerformanceTable } from "@/components/performance-table";
+import { Toast } from "@/components/toast";
 import {
   ApplicationStage,
   EmploymentType,
@@ -11,7 +16,7 @@ import {
 } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
-import { applicationStages, employmentTypes, formatDateTime, formatEnum, intakeStates } from "@/lib/job-values";
+import { applicationStages, employmentTypes, formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { allRoleFamilies } from "@/services/role-family";
 import { getPrisma } from "@/lib/prisma";
 import {
@@ -19,6 +24,7 @@ import {
   summarizeDashboard,
   timeRanges,
   type DashboardMetricKey,
+  type PipelineColumnKey,
   type TimeRange,
 } from "@/services/dashboard-analytics";
 import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
@@ -69,46 +75,29 @@ function dashboardHref(filters: Filters, changes: Partial<Filters> = {}, anchor 
   return `/dashboard${params.size ? `?${params}` : ""}${anchor}`;
 }
 
-function PerformanceTable({
-  title,
-  rows,
-  filter,
-  filters,
-}: {
-  title: string;
-  rows: ReturnType<typeof summarizeDashboard>["vendorPerformance"];
-  filter: "vendor" | "recruiter";
-  filters: Filters;
-}) {
-  return (
-    <section>
-      <h2 className="text-xl font-semibold text-slate-950">{title}</h2>
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-        {rows.length ? (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
-              <tr>
-                <th className="px-4 py-3 font-medium" scope="col">Name</th>
-                {dashboardMetrics.map((metric) => (
-                  <th className="px-3 py-3 text-right font-medium" key={metric.key} scope="col">{metric.key === "total" ? "Jobs" : formatEnum(metric.key)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {rows.map((row) => (
-                <tr key={row.id}>
-                  <td className="whitespace-nowrap px-4 py-3 font-medium">
-                    <Link className="text-emerald-700 underline" href={dashboardHref(filters, { [filter]: row.id })}>{row.name}</Link>
-                  </td>
-                  {dashboardMetrics.map((metric) => <td className="px-3 py-3 text-right text-slate-700" key={metric.key}>{row[metric.key]}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : <p className="p-6 text-sm text-slate-600">No matching activity in this time range.</p>}
-      </div>
-    </section>
-  );
+const metricLook: Record<DashboardMetricKey, { icon: LucideIcon; short: string }> = {
+  total: { icon: Briefcase, short: "Jobs" },
+  outreach: { icon: Send, short: "Outreach" },
+  replies: { icon: MessageSquareReply, short: "Replies" },
+  calls: { icon: Phone, short: "Calls" },
+  rtr: { icon: Handshake, short: "RTR" },
+  submitted: { icon: UserRoundCheck, short: "Submitted" },
+  interviews: { icon: CalendarCheck, short: "Interviews" },
+  offers: { icon: Trophy, short: "Offers" },
+};
+
+const PIPELINE_PREVIEW = 10;
+const DETAILS_PREVIEW = 3;
+
+/** A job's fit as a dot: green from 70%, amber from 50%, grey below, none when unscored. */
+function matchDot(score: number | null | undefined) {
+  if (score === null || score === undefined) return null;
+  return score >= 0.7 ? "bg-emerald-500" : score >= 0.5 ? "bg-amber-400" : "bg-slate-300";
+}
+
+function pipelineHref(column: PipelineColumnKey, jobId: string) {
+  // A job still at outreach is about its email; later stages are about the job itself.
+  return column === "outreach" ? `/jobs/${jobId}/outreach` : `/jobs/${jobId}`;
 }
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<Search> }) {
@@ -148,6 +137,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         recruiter: { select: { id: true, name: true } },
         applicationTrack: { select: { currentStage: true } },
         activities: { select: { type: true, occurredAt: true } },
+        matchScore: true,
       },
       orderBy: { updatedAt: "desc" },
     }),
@@ -183,258 +173,210 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // Only our own redirect writes this, so anything that is not a plain id is ignored rather than linked.
   const sentJobId = typeof query.sent === "string" && /^[a-z0-9]+$/i.test(query.sent) ? query.sent : null;
 
+  const activeFilters = [filters.role, filters.vendor, filters.recruiter, filters.stage, filters.employment].filter(Boolean).length;
+  const metricColumns = dashboardMetrics.map((metric) => ({ key: metric.key, label: metricLook[metric.key].short, tip: metric.label }));
+  const performanceRows = (rows: typeof summary.vendorPerformance, filter: "vendor" | "recruiter") => rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    href: dashboardHref(filters, { [filter]: row.id }),
+    values: dashboardMetrics.map((metric) => row[metric.key]),
+  }));
+  const pending = {
+    preparing: beingPrepared.map((draft): PendingItem => ({
+      id: draft.id,
+      title: draft.opportunity.title,
+      href: `/jobs/${draft.opportunityId}/outreach`,
+      tip: [draft.opportunity.recruiter?.name, draft.state === "READY" ? "Ready for Outlook" : draft.state === "WRITING" ? "Writing" : "Needs review"].filter(Boolean).join(" · "),
+      dot: draft.state === "READY" ? "green" : draft.state === "WRITING" ? "slate" : "amber",
+    })),
+    inOutlook: waitingToSend.map((draft): PendingItem => ({
+      id: draft.id,
+      title: draft.opportunity.title,
+      href: `/jobs/${draft.opportunityId}/outreach`,
+      tip: [draft.opportunity.recruiter?.name, draft.outlookDraftCreatedAt ? `built ${formatDateTime(draft.outlookDraftCreatedAt)}` : null].filter(Boolean).join(" · "),
+      dot: "sky",
+      outlookLink: safeOutlookLink(draft.outlookWebLink),
+    })),
+    review: queue.map((intake): PendingItem => ({
+      id: intake.id,
+      title: intake.title,
+      href: `/intakes/${intake.id}/review`,
+      tip: [intake.recruiterName, intake.detail].filter(Boolean).join(" · ") || null,
+      dot: intake.state === "READY" ? "green" : intake.state === "STOPPED" ? "amber" : intake.state === "FAILED" ? "red" : "slate",
+      match: intake.matchScore,
+      discard: discardIntake.bind(null, intake.id, "/dashboard"),
+    })),
+  };
+  const details = summary.details[filters.metric];
+
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
-      <ExposureCard />
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Overview</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Marketing funnel</h1>
+    <div className="mx-auto max-w-6xl px-6 py-8">
+      {query.error === "missing" && <Toast clear={["error"]} text="Already confirmed or discarded" tone="warn" />}
+      {sentJobId && <Toast clear={["sent"]} text="Sent · archived" />}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full min-w-0 md:w-auto md:flex-1">
+          <AutopilotPanel notice={{ autopilot: value(query, "autopilot"), cancelled: value(query, "cancelled"), autopilotRun: query.autopilotRun === undefined ? undefined : value(query, "autopilotRun") }} />
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Link className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-medium text-amber-950 hover:border-amber-500" href="/needs-attention">
-            Needs attention ({attentionCount})
+        <div className="flex items-center gap-2 max-md:ml-auto">
+          <Link aria-label={`Needs attention: ${attentionCount}`} className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold ${attentionCount ? "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-500" : "border-slate-200 bg-white text-slate-400"}`} href="/needs-attention" title="Needs attention">
+            <TriangleAlert aria-hidden="true" size={17} /> {attentionCount}
           </Link>
           <form action={scanMailNow}>
-            <button className="rounded-lg border border-blue-300 bg-white px-4 py-2.5 font-medium text-blue-800 hover:border-blue-600" type="submit">Scan mail</button>
+            <button aria-label="Scan mail now" className="rounded-xl border border-slate-200 bg-white p-2.5 text-blue-700 hover:border-blue-500" title="Scan mail now" type="submit">
+              <MailSearch aria-hidden="true" size={18} />
+            </button>
           </form>
-          <Link className="rounded-lg bg-slate-950 px-4 py-2.5 font-medium text-white hover:bg-slate-800" href="/intake">
-            Add job
+          <Link aria-label="Add a job" className="rounded-xl bg-slate-950 p-2.5 text-white hover:bg-slate-800" href="/intake" title="Add a job">
+            <Plus aria-hidden="true" size={18} />
           </Link>
         </div>
       </div>
 
-      {query.error === "missing" && (
-        <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900" role="alert">
-          That source was already confirmed or discarded, so there was nothing left to remove.
-        </p>
-      )}
+      <PendingStrip checkSent={checkSentDraftsNow} inOutlook={pending.inOutlook} preparing={pending.preparing} review={pending.review} />
 
-      {sentJobId && (
-        <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">
-          Outlook confirmed the send, and the version you actually sent is archived. <Link className="underline" href={`/jobs/${sentJobId}/outreach`}>Open the archived email</Link>
-        </p>
-      )}
+      <div className="mt-6"><ExposureCard /></div>
 
-      <AutopilotPanel notice={{ autopilot: value(query, "autopilot"), cancelled: value(query, "cancelled"), autopilotRun: query.autopilotRun === undefined ? undefined : value(query, "autopilotRun") }} />
-
-      {beingPrepared.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-xl font-semibold text-slate-950">Emails being prepared ({beingPrepared.length})</h2>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {beingPrepared.map((draft) => (
-              <li className="rounded-lg border border-slate-200 bg-white px-3 py-2" key={draft.id}>
-                <Link className="truncate text-sm font-semibold text-slate-950 underline" href={`/jobs/${draft.opportunityId}/outreach`}>{draft.opportunity.title}</Link>
-                <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
-                  <span className="truncate">{draft.opportunity.recruiter?.name ?? "Recruiter unknown"}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${draft.state === "READY" ? "bg-emerald-50 text-emerald-800" : draft.state === "WRITING" ? "bg-slate-100 text-slate-700" : "bg-amber-50 text-amber-900"}`}>
-                    {draft.state === "READY" ? "Ready for Outlook" : draft.state === "WRITING" ? "Writing" : "Needs review"}
-                  </span>
-                </p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {waitingToSend.length > 0 && (
-        <section className="mt-8">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-xl font-semibold text-slate-950">Drafts waiting in Outlook ({waitingToSend.length})</h2>
-            <div className="flex flex-wrap items-center gap-3">
-              <form action={checkSentDraftsNow}>
-                <button className="rounded-lg border border-slate-400 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:border-slate-600" type="submit">Check now</button>
-              </form>
-            </div>
-          </div>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {waitingToSend.map((draft) => {
-              const link = safeOutlookLink(draft.outlookWebLink);
-              return (
-                <li className="rounded-lg border border-blue-200 bg-white px-3 py-2" key={draft.id}>
-                  <Link className="truncate text-sm font-semibold text-slate-950 underline" href={`/jobs/${draft.opportunityId}/outreach`}>{draft.opportunity.title}</Link>
-                  <p className="mt-0.5 truncate text-xs text-slate-600">
-                    {draft.opportunity.recruiter?.name ?? "Recruiter unknown"}
-                    {draft.outlookDraftCreatedAt ? ` · built ${formatDateTime(draft.outlookDraftCreatedAt)}` : ""}
-                  </p>
-                  {link && <a className="mt-1 inline-block text-xs font-medium text-blue-700 underline" href={link} rel="noreferrer" target="_blank">Open in Outlook</a>}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
-      {queue.length > 0 && (
-        <section className="mt-8">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-xl font-semibold text-slate-950">Waiting for your review ({queue.length})</h2>
-          </div>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {queue.map((intake) => (
-              <li className="group relative" key={intake.id}>
-                <DiscardIntakeCross action={discardIntake.bind(null, intake.id, "/dashboard")} title={intake.title} />
-                <Link className="flex h-full flex-col rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-emerald-600" href={`/intakes/${intake.id}/review`} title={intake.detail ?? undefined}>
-                  <span className="truncate pr-5 text-sm font-semibold text-slate-950">{intake.title}</span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
-                    <span className="truncate">{intake.recruiterName ?? "Recruiter unknown"}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${intakeStates[intake.state]!.tone}`}>{intakeStates[intake.state]!.label}</span>
-                    {intake.matchScore !== null && <span className="shrink-0">{Math.round(intake.matchScore * 100)}%</span>}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="mt-8 rounded-2xl border-2 border-emerald-600 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-950">Add a job</h2>
-          </div>
-          <Link className="text-sm font-medium text-emerald-700 underline" href="/intake">Sources waiting for review, or enter a job manually →</Link>
-        </div>
-        <Link className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:border-emerald-600" href="/intake#inbox">
-          <span>
-            <span className="font-medium text-emerald-950">From your inbox →</span>
-          </span>
-        </Link>
-        <div className="mt-2"><IntakeForm autoFocus={false} rows={5} /></div>
-      </section>
-
-      <section aria-label="Time range" className="mt-8 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {timeRanges.map((range) => (
           <Link
             aria-current={filters.range === range ? "page" : undefined}
-            className={`rounded-full px-4 py-2 text-sm font-medium ${filters.range === range ? "bg-slate-950 text-white" : "border border-slate-300 bg-white text-slate-700 hover:border-slate-500"}`}
+            className={`rounded-full px-3 py-1 text-sm font-medium ${filters.range === range ? "bg-slate-950 text-white" : "border border-slate-300 bg-white text-slate-600 hover:border-slate-500"}`}
             href={dashboardHref(filters, { range })}
             key={range}
           >
             {rangeLabels[range]}
           </Link>
         ))}
+        <details className="relative ml-auto" open={activeFilters > 0}>
+          <summary aria-label="Filters" className="flex cursor-pointer list-none items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-600 hover:border-slate-500 [&::-webkit-details-marker]:hidden" title="Filters">
+            <Filter aria-hidden="true" size={14} />
+            {activeFilters > 0 && <span className="rounded-full bg-slate-950 px-1.5 text-xs text-white">{activeFilters}</span>}
+          </summary>
+          <form className="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg" method="get">
+            <input name="range" type="hidden" value={filters.range} />
+            {([
+              ["role", "All roles", roleFamilies.map((family) => [family.code, family.label])],
+              ["vendor", "All vendors", vendors.map((item) => [item.id, item.name])],
+              ["recruiter", "All recruiters", recruiters.map((item) => [item.id, item.name])],
+              ["stage", "All stages", applicationStages.map((item) => [item, formatEnum(item)])],
+              ["employment", "All types", employmentTypes.map((item) => [item, formatEnum(item)])],
+            ] as const).map(([name, all, options]) => (
+              <select aria-label={all.replace("All ", "")} className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm" defaultValue={filters[name]} key={name} name={name}>
+                <option value="">{all}</option>
+                {options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            ))}
+            <div className="flex items-center justify-end gap-2">
+              <Link aria-label="Reset filters" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" href="/dashboard" title="Reset"><RotateCcw aria-hidden="true" size={15} /></Link>
+              <button aria-label="Apply filters" className="rounded-lg bg-slate-950 p-1.5 text-white" title="Apply" type="submit"><Filter aria-hidden="true" size={15} /></button>
+            </div>
+          </form>
+        </details>
+      </div>
+
+      <section aria-label="Funnel metrics" className="mt-4 grid grid-cols-4 gap-2 lg:grid-cols-8">
+        {dashboardMetrics.map((metric) => {
+          const { icon: Icon, short } = metricLook[metric.key];
+          const active = filters.metric === metric.key;
+          return (
+            <Link
+              aria-current={active ? "true" : undefined}
+              className={`rounded-xl border bg-white px-3 py-2 hover:border-emerald-500 ${active ? "border-emerald-600 ring-2 ring-emerald-100" : "border-slate-200"}`}
+              href={dashboardHref(filters, { metric: metric.key }, "#metric-details")}
+              key={metric.key}
+              title={metric.label}
+            >
+              <span className="flex items-center gap-1.5 text-xs text-slate-500"><Icon aria-hidden="true" size={13} />{short}</span>
+              <span className="mt-0.5 block text-2xl font-semibold text-slate-950">{summary.counts[metric.key]}</span>
+            </Link>
+          );
+        })}
       </section>
 
-      <form className="mt-5 grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-5" method="get">
-        <input name="range" type="hidden" value={filters.range} />
-        <label className="text-sm font-medium text-slate-700">
-          Role
-          <select className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2" defaultValue={filters.role} name="role">
-            <option value="">All roles</option>
-            {roleFamilies.map((family) => <option key={family.code} value={family.code}>{family.label}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-medium text-slate-700">
-          Vendor
-          <select className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2" defaultValue={filters.vendor} name="vendor">
-            <option value="">All vendors</option>
-            {vendors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-medium text-slate-700">
-          Recruiter
-          <select className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2" defaultValue={filters.recruiter} name="recruiter">
-            <option value="">All recruiters</option>
-            {recruiters.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-medium text-slate-700">
-          Stage
-          <select className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2" defaultValue={filters.stage} name="stage">
-            <option value="">All stages</option>
-            {applicationStages.map((item) => <option key={item} value={item}>{formatEnum(item)}</option>)}
-          </select>
-        </label>
-        <label className="text-sm font-medium text-slate-700">
-          Employment
-          <select className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2" defaultValue={filters.employment} name="employment">
-            <option value="">All types</option>
-            {employmentTypes.map((item) => <option key={item} value={item}>{formatEnum(item)}</option>)}
-          </select>
-        </label>
-        <div className="flex items-center gap-4 sm:col-span-2 lg:col-span-5">
-          <button className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-medium text-white" type="submit">Apply filters</button>
-          <Link className="text-sm font-medium text-emerald-700 underline" href="/dashboard">Reset</Link>
-        </div>
-      </form>
-
-      <section aria-label="Funnel metrics" className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {dashboardMetrics.map((metric) => (
-          <Link
-            aria-current={filters.metric === metric.key ? "true" : undefined}
-            className={`rounded-2xl border bg-white p-5 shadow-sm hover:border-emerald-500 ${filters.metric === metric.key ? "border-emerald-600 ring-2 ring-emerald-100" : "border-slate-200"}`}
-            href={dashboardHref(filters, { metric: metric.key }, "#metric-details")}
-            key={metric.key}
-          >
-            <span className="block text-sm font-medium text-slate-600">{metric.label}</span>
-            <span className="mt-2 block text-3xl font-semibold text-slate-950">{summary.counts[metric.key]}</span>
-          </Link>
+      <section aria-label="Conversion" className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:grid-cols-5">
+        {summary.conversions.map((conversion) => (
+          <div key={conversion.label} title={`${conversion.label}: ${conversion.numerator} / ${conversion.denominator} jobs`}>
+            <div className="flex items-baseline justify-between text-xs text-slate-500">
+              <span className="truncate">{conversion.label}</span>
+              <span className="font-semibold text-slate-900">{conversion.rate === null ? "—" : `${Math.round(conversion.rate * 100)}%`}</span>
+            </div>
+            <div className="mt-1 h-1.5 rounded-full bg-slate-100">
+              <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: `${Math.round((conversion.rate ?? 0) * 100)}%` }} />
+            </div>
+          </div>
         ))}
       </section>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold text-slate-950">Conversion rate</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {summary.conversions.map((conversion) => (
-            <article className="rounded-2xl border border-slate-200 bg-white p-5" key={conversion.label}>
-              <p className="text-sm font-medium text-slate-600">{conversion.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-950">{conversion.rate === null ? "—" : `${Math.round(conversion.rate * 100)}%`}</p>
-              <p className="mt-1 text-xs text-slate-500">{conversion.numerator} / {conversion.denominator} jobs</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold text-slate-950">Pipeline</h2>
-        <div className="mt-4 grid gap-4 lg:grid-cols-5">
-          {summary.pipeline.map((column) => (
-            <article className="rounded-2xl border border-slate-200 bg-slate-100 p-3" key={column.key}>
-              <div className="flex items-center justify-between px-1 py-1">
-                <h3 className="font-semibold text-slate-950">{column.label}</h3>
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-600">{column.jobs.length}</span>
+      <section aria-label="Pipeline" className="mt-6 grid gap-3 lg:grid-cols-5">
+        {summary.pipeline.map((column) => {
+          const hidden = column.jobs.length - PIPELINE_PREVIEW;
+          return (
+            <article className="rounded-2xl bg-slate-100 p-2" key={column.key}>
+              <div className="flex items-center justify-between px-1.5 py-1">
+                <h3 className="text-sm font-semibold text-slate-800">{column.label}</h3>
+                <span className="rounded-full bg-white px-2 text-xs font-semibold text-slate-600">{column.jobs.length}</span>
               </div>
-              <ul className="mt-2 space-y-2">
-                {column.jobs.map((job) => (
-                  <li key={job.id}>
-                    <Link className="block rounded-xl border border-slate-200 bg-white p-3 hover:border-emerald-500" href={`/jobs/${job.id}`}>
-                      <span className="block text-sm font-semibold text-slate-950">{job.title}</span>
-                      <span className="mt-1 block text-xs text-slate-500">{job.client ?? "Client not set"}</span>
-                    </Link>
-                  </li>
-                ))}
+              <ul className="mt-1 space-y-1.5">
+                {column.jobs.slice(0, PIPELINE_PREVIEW).map((job) => {
+                  const dot = matchDot(job.matchScore);
+                  return (
+                    <li key={job.id}>
+                      <Link
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 hover:border-emerald-500"
+                        href={pipelineHref(column.key, job.id)}
+                        title={[job.client ?? "Client not set", job.matchScore != null ? `${Math.round(job.matchScore * 100)}% match` : null].filter(Boolean).join(" · ")}
+                      >
+                        {dot && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />}
+                        <span className="truncate text-sm font-medium text-slate-900">{job.title}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
-              {!column.jobs.length ? <p className="px-1 py-4 text-center text-xs text-slate-500">No jobs</p> : null}
+              {hidden > 0 && (
+                <Link aria-label={`All ${column.jobs.length} ${column.label} jobs`} className="mt-1.5 flex items-center justify-end gap-1 px-1.5 text-sm font-semibold text-slate-500 hover:text-slate-950" href={`/jobs?stage=${column.key}`} title="See all">
+                  +{hidden} <ArrowRight aria-hidden="true" size={14} />
+                </Link>
+              )}
+              {!column.jobs.length && <p className="py-3 text-center text-sm text-slate-300">—</p>}
             </article>
-          ))}
-        </div>
+          );
+        })}
       </section>
 
-      <section className="mt-10" id="metric-details">
-        <h2 className="text-xl font-semibold text-slate-950">{selectedMetric.label} details</h2>
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          {summary.details[filters.metric].length ? (
-            <ul className="divide-y divide-slate-200">
-              {summary.details[filters.metric].map((item) => (
-                <li className="flex flex-wrap items-center justify-between gap-3 p-4" key={item.jobId}>
-                  <span>
-                    <Link className="font-semibold text-slate-950 underline" href={`/jobs/${item.jobId}`}>{item.title}</Link>
-                    <span className="mt-1 block text-sm text-slate-500">{item.client ?? "Client not set"} · {formatEnum(item.type)}</span>
-                  </span>
-                  <time className="text-sm text-slate-500" dateTime={item.occurredAt.toISOString()}>{formatDateTime(item.occurredAt)}</time>
+      <section aria-label={`${selectedMetric.label} details`} className="mt-6 scroll-mt-6" id="metric-details">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            {(() => { const Icon = metricLook[filters.metric].icon; return <Icon aria-hidden="true" className="text-slate-500" size={18} />; })()}
+            {selectedMetric.label}
+          </h2>
+          <Link aria-label="All jobs" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-950" href="/jobs" title="See all">
+            <ArrowRight aria-hidden="true" size={17} />
+          </Link>
+        </div>
+        <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          {details.length ? (
+            <ul className="divide-y divide-slate-100">
+              {details.slice(0, DETAILS_PREVIEW + 1).map((item, index) => (
+                <li className={`flex items-center justify-between gap-3 px-4 py-2.5 ${index === DETAILS_PREVIEW ? "opacity-35" : ""}`} key={item.jobId}>
+                  <Link className="truncate text-sm font-medium text-slate-900 hover:text-emerald-700" href={`/jobs/${item.jobId}`} title={`${item.client ?? "Client not set"} · ${formatEnum(item.type)}`}>{item.title}</Link>
+                  <time className="shrink-0 text-xs text-slate-400" dateTime={item.occurredAt.toISOString()} title={formatDateTime(item.occurredAt)}>{formatDate(item.occurredAt)}</time>
                 </li>
               ))}
             </ul>
-          ) : <p className="p-6 text-sm text-slate-600">No matching opportunities.</p>}
+          ) : <p className="p-4 text-center text-sm text-slate-300">—</p>}
+          {details.length > DETAILS_PREVIEW + 1 && (
+            <Link className="flex items-center justify-center gap-1 border-t border-slate-100 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-950" href="/jobs" title="See all">
+              +{details.length - DETAILS_PREVIEW} <ArrowRight aria-hidden="true" size={14} />
+            </Link>
+          )}
         </div>
       </section>
 
-      <div className="mt-10 grid gap-8 xl:grid-cols-2">
-        <PerformanceTable filter="vendor" filters={filters} rows={summary.vendorPerformance} title="Vendor performance" />
-        <PerformanceTable filter="recruiter" filters={filters} rows={summary.recruiterPerformance} title="Recruiter performance" />
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <PerformanceTable columns={metricColumns} icon={<Building2 aria-hidden="true" className="text-slate-500" size={18} />} rows={performanceRows(summary.vendorPerformance, "vendor")} title="Vendors" />
+        <PerformanceTable columns={metricColumns} icon={<Users aria-hidden="true" className="text-slate-500" size={18} />} more="/recruiters" rows={performanceRows(summary.recruiterPerformance, "recruiter")} title="Recruiters" />
       </div>
     </div>
   );

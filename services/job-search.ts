@@ -1,4 +1,5 @@
 import type { Prisma } from "@/app/generated/prisma/client";
+import type { ApplicationStage } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 
 const MAX_RESULTS = 50;
@@ -77,8 +78,13 @@ export type SearchedJob = Prisma.OpportunityGetPayload<{
   select: typeof searchSelection & { activities: { select: { description: true } } };
 }>;
 
-export function listJobs(database = getPrisma()) {
-  return database.opportunity.findMany({ select: listSelection, orderBy: { updatedAt: "desc" } });
+/** Every job, or only those at one of `stages` (a pipeline column). */
+export function listJobs(database = getPrisma(), stages?: readonly ApplicationStage[]) {
+  return database.opportunity.findMany({
+    where: stages ? { applicationTrack: { is: { currentStage: { in: [...stages] } } } } : undefined,
+    select: listSelection,
+    orderBy: { updatedAt: "desc" },
+  });
 }
 
 export type JobSearch = {
