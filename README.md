@@ -12,7 +12,7 @@ Single-user web application for managing a human-reviewed contractor job workflo
 
 Intake needs only the pasted text: source type, sender, and received time are detected from the text itself and stay correctable on the review screen before anything becomes CRM fact. The Phase 4 database check creates clearly fictional intake and CRM records inside one transaction, verifies draft isolation and duplicate detection, then rolls the transaction back. With a private `OPENAI_API_KEY` configured, `npm run ai:check:phase4` verifies fictional LinkedIn, direct email, and forwarded JD analysis without logging their output.
 
-Resume files and outreach rules stay local because they contain personal information and are excluded from Git. Register an absolute PDF, DOCX, or DOC path from the authenticated `/resumes` page, and set `OUTREACH_CONTEXT_PATH` to the approved private candidate/outreach text file; both files must live outside this repository.
+Resume files and outreach rules stay local because they contain personal information and are excluded from Git. Choose a PDF, DOCX, or DOC from the authenticated `/resumes` page; the app copies it to `RESUME_STORAGE_PATH` (or `~/.contractor-agent/resumes`) and stores that private path. Set `OUTREACH_CONTEXT_PATH` to the approved private candidate/outreach text file; it must live outside this repository.
 
 ## Phase 7 boundary
 

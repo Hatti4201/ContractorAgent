@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { activeRoleFamilies, readRoleFamilyCode } from "@/services/role-family";
-import { checkResumeFile } from "@/services/resume-router";
+import { checkResumeFile, saveUploadedResume } from "@/services/resume-router";
 
 // Only an internal job path is honoured, so a submitted value can never redirect off the application.
 function returnPath(formData: FormData) {
@@ -23,18 +23,18 @@ export async function registerResume(formData: FormData) {
   const back = returnPath(formData);
   const name = text(formData, "name", 200);
   const version = text(formData, "version", 100);
-  const submittedPath = text(formData, "filePath", 4096);
+  const uploadedFile = formData.get("file");
   const submittedRole = formData.get("roleFamily");
   const query = back ? `&from=${encodeURIComponent(back)}` : "";
   const allowed = (await activeRoleFamilies()).map((family: { code: string }) => family.code);
-  if (!name || !version || !submittedPath || typeof submittedRole !== "string" || !allowed.includes(submittedRole)) {
+  if (!name || !version || !(uploadedFile instanceof File) || typeof submittedRole !== "string" || !allowed.includes(submittedRole)) {
     redirect(`/resumes?error=fields${query}`);
   }
 
-  const file = await checkResumeFile(submittedPath);
-  if (!file.usable || !file.canonicalPath) redirect(`/resumes?error=file${query}`);
   const database = getPrisma();
   if (await database.resume.findUnique({ where: { name_version: { name, version } } })) redirect(`/resumes?error=duplicate${query}`);
+  const file = await saveUploadedResume(uploadedFile);
+  if (!file?.usable || !file.canonicalPath) redirect(`/resumes?error=file${query}`);
 
   const active = formData.get("active") === "on";
   await database.$transaction(async (transaction) => {
