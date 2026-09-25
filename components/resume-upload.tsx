@@ -37,11 +37,9 @@ export function ResumeUpload({
         type="file"
       />
       {!fileName ? (
-        <div className="flex justify-end">
-          <button className="rounded-lg border border-slate-300 px-3 py-2 text-lg font-semibold leading-none text-slate-700 hover:border-emerald-600 hover:text-emerald-700" onClick={() => input.current?.click()} type="button" aria-label={`Add resume to ${roleLabel}`}>
-            +
-          </button>
-        </div>
+        <button aria-label={`Add resume to ${roleLabel}`} className="mt-4 w-full rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-emerald-600 hover:text-emerald-700" onClick={() => input.current?.click()} type="button">
+          + Add resume
+        </button>
       ) : (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm font-medium text-emerald-900">Selected: {fileName}</p>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { activeRoleFamilies, readRoleFamilyCode } from "@/services/role-family";
+import { activeRoleFamilies, codeFromLabel, readRoleFamilyCode } from "@/services/role-family";
 import { checkResumeFile, saveUploadedResume } from "@/services/resume-router";
 
 // Only an internal job path is honoured, so a submitted value can never redirect off the application.
@@ -61,9 +61,11 @@ export async function createRoleFamily(formData: FormData) {
   await requireAuth();
   const label = text(formData, "label", 100);
   const description = text(formData, "description", 500);
+  // The code is optional on the form: left blank, it is derived from the label.
+  const typed = formData.get("code");
   let code: string;
   try {
-    code = readRoleFamilyCode(formData.get("code"));
+    code = readRoleFamilyCode(typeof typed === "string" && typed.trim() ? typed : codeFromLabel(label ?? ""));
   } catch {
     redirect("/resumes?error=family-code");
   }
@@ -78,6 +80,16 @@ export async function createRoleFamily(formData: FormData) {
 
   revalidatePath("/resumes");
   revalidatePath("/dashboard");
+  redirect("/resumes?saved=1");
+}
+
+/** The description is what the analyzer reads to tell families apart, so it stays editable. */
+export async function updateRoleFamilyDescription(code: string, formData: FormData) {
+  await requireAuth();
+  const description = text(formData, "description", 500);
+  if (!description) redirect("/resumes?error=family-fields");
+  await getPrisma().roleFamily.update({ where: { code }, data: { description } });
+  revalidatePath("/resumes");
   redirect("/resumes?saved=1");
 }
 

@@ -21,6 +21,11 @@ export async function allRoleFamilies(database = getPrisma()) {
 
 const codePattern = /^[A-Z][A-Z0-9_]{1,39}$/;
 
+/** "Python + React" becomes PYTHON_REACT, so the user only has to name the family. */
+export function codeFromLabel(label: string) {
+  return label.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^[^A-Z]+|_+$/g, "").slice(0, 40);
+}
+
 /**
  * A code is written onto every job and resume that uses it and is the foreign key itself, so it is
  * checked before it can become one. Renaming is left to the database, which cascades it.
