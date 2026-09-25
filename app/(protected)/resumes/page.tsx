@@ -69,15 +69,18 @@ function FamilyCard({ family, resumes, fileChecks, draftUses, back }: {
                       <span className={`w-12 whitespace-nowrap text-left text-xs font-semibold ${resume.active ? "text-emerald-800" : "text-slate-500"}`}>{resume.active ? "In use" : "Off"}</span>
                     </button>
                   </form>
+                  <details className="relative">
+                    <summary aria-label={`More actions for ${resume.name} ${resume.version}`} className="cursor-pointer list-none rounded px-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">⋯</summary>
+                    <div className="absolute right-0 z-10 mt-1 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm shadow-lg">
+                      {uses ? (
+                        <p className="px-3 py-2 text-xs text-slate-500">Used by {uses} draft{uses === 1 ? "" : "s"}, so it can&apos;t be deleted. Switch it off instead.</p>
+                      ) : (
+                        <DeleteResumeForm action={deleteResume.bind(null, resume.id)} />
+                      )}
+                    </div>
+                  </details>
                 </div>
                 {!file?.usable && <p className="mt-1 text-xs text-amber-800">{file?.issue ?? "The file cannot be read."}</p>}
-                <div className="mt-1.5 text-xs">
-                  {uses ? (
-                    <span className="text-slate-400" title="Remove those drafts first, or just switch this resume off.">Used by {uses} draft{uses === 1 ? "" : "s"} · can&apos;t delete</span>
-                  ) : (
-                    <DeleteResumeForm action={deleteResume.bind(null, resume.id)} />
-                  )}
-                </div>
               </li>
             );
           })}

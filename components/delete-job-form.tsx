@@ -22,7 +22,7 @@ export function DeleteResumeForm({ action }: { action: () => Promise<void> }) {
     <form action={action} onSubmit={(event) => {
       if (!window.confirm("Delete this resume registry entry? The local file will not be deleted.")) event.preventDefault();
     }}>
-      <button className="text-xs font-medium text-red-600 hover:text-red-800 hover:underline" type="submit">Delete</button>
+      <button className="w-full rounded px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50" type="submit">Delete</button>
     </form>
   );
 }
