@@ -16,6 +16,8 @@ export type EmploymentFilter = (typeof employmentTypes)[number];
 /** Everything the user may change from the /exposure page (rules/exposure.md 1.1 §8). */
 export type ExposureSettings = {
   mode: ExposureMode;
+  // Off pauses only the hourly runs; the page's play button still starts one by hand.
+  scheduleEnabled: boolean;
   keywords: string[];
   postedDate: PostedDate;
   employmentTypes: EmploymentFilter[];
@@ -68,6 +70,7 @@ export function parseSettings(value: Record<string, unknown>, defaults: Exposure
   const text = (field: unknown, fallback: string) => (typeof field === "string" && field.trim() ? field.trim().slice(0, 80) : fallback);
   return {
     mode: oneOf(value.mode, exposureModes, defaults.mode),
+    scheduleEnabled: typeof value.scheduleEnabled === "boolean" ? value.scheduleEnabled : defaults.scheduleEnabled,
     keywords: keywords.length ? keywords : defaults.keywords,
     postedDate: oneOf(value.postedDate, postedDates, defaults.postedDate),
     employmentTypes: employment.length ? [...new Set(employment)] : defaults.employmentTypes,
@@ -93,6 +96,7 @@ export function parseSettings(value: Record<string, unknown>, defaults: Exposure
 export function defaultSettings(env: Env = process.env): ExposureSettings {
   const base: ExposureSettings = {
     mode: "off",
+    scheduleEnabled: true,
     keywords: ["java"],
     postedDate: "ONE",
     employmentTypes: ["CONTRACTS", "THIRD_PARTY"],
@@ -144,7 +148,7 @@ export function exposureConfig(stored: unknown, env: Env = process.env): Exposur
     cdpUrl: (env.EXPOSURE_CDP_URL ?? "http://127.0.0.1:9222").replace(/\/+$/, ""),
     jobDelayMs: settings.jobDelaySeconds * 1000,
     window: {
-      enabled: settings.mode !== "off",
+      enabled: settings.mode !== "off" && settings.scheduleEnabled,
       days: settings.days,
       startHour: settings.startHour,
       endHour: settings.endHour,
