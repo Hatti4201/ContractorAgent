@@ -9,6 +9,16 @@ type Listener = (params: Record<string, unknown>) => void;
 
 const COMMAND_TIMEOUT_MS = 30_000;
 
+// Runs before any page script: drops "beforeunload" listeners on the window and ignores onbeforeunload.
+const NO_LEAVE_PROMPT = `(() => {
+  const add = EventTarget.prototype.addEventListener;
+  EventTarget.prototype.addEventListener = function (type, ...rest) {
+    if (type === "beforeunload" && this === window) return;
+    return add.call(this, type, ...rest);
+  };
+  Object.defineProperty(window, "onbeforeunload", { configurable: true, get: () => null, set: () => {} });
+})();`;
+
 export class CdpTab {
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
@@ -69,6 +79,10 @@ export class CdpTab {
       void tab.send("Page.handleJavaScriptDialog", { accept }).catch(() => {});
     });
     await tab.send("Page.enable");
+    // On macOS, Chrome brings its window to the front to show any dialog, even one answered at once.
+    // Leaving a half-filled wizard (every dry run does) raised "Leave site?", so the page is kept from
+    // registering that prompt at all; the handler above stays as the fallback.
+    await tab.send("Page.addScriptToEvaluateOnNewDocument", { source: NO_LEAVE_PROMPT });
     // A covered or minimized window loses focus; pages that check focus should behave as if it had it.
     await tab.send("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
     return tab;
