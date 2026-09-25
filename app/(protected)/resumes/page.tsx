@@ -57,19 +57,23 @@ function FamilyCard({ family, resumes, fileChecks, draftUses, back }: {
             const file = fileChecks.get(resume.id);
             const uses = draftUses.get(resume.id) ?? 0;
             return (
-              <li className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm" key={resume.id}>
-                <div className="flex items-center gap-2">
-                  <span aria-hidden className={resume.active ? "text-emerald-600" : "text-slate-300"}>●</span>
+              <li className={`rounded-lg border px-3 py-2 text-sm ${resume.active ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`} key={resume.id}>
+                <div className="flex items-center gap-3">
                   <span className="min-w-0 flex-1 truncate font-medium text-slate-900" title={`${resume.name} · ${resume.version}`}>{resume.name} · {resume.version}</span>
-                  {resume.active && <span className="text-xs font-medium text-emerald-700">In use</span>}
+                  {/* One switch shows the state and changes it; turning one on turns the family's other one off. */}
+                  <form action={setResumeActive.bind(null, resume.id, !resume.active)}>
+                    <button aria-checked={resume.active} aria-label={`Use ${resume.name} ${resume.version} for ${family.label}`} className="flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2" role="switch" type="submit">
+                      <span className={`relative block h-5 w-9 shrink-0 rounded-full transition-colors ${resume.active ? "bg-emerald-600" : "bg-slate-300"}`}>
+                        <span className={`absolute left-0.5 top-0.5 block h-4 w-4 rounded-full bg-white shadow transition-transform ${resume.active ? "translate-x-4" : "translate-x-0"}`} />
+                      </span>
+                      <span className={`w-12 whitespace-nowrap text-left text-xs font-semibold ${resume.active ? "text-emerald-800" : "text-slate-500"}`}>{resume.active ? "In use" : "Off"}</span>
+                    </button>
+                  </form>
                 </div>
                 {!file?.usable && <p className="mt-1 text-xs text-amber-800">{file?.issue ?? "The file cannot be read."}</p>}
-                <div className="mt-2 flex items-center gap-3 text-xs">
-                  <form action={setResumeActive.bind(null, resume.id, !resume.active)}>
-                    <button className="font-medium text-slate-700 underline hover:text-slate-950" type="submit">{resume.active ? "Deactivate" : "Use this one"}</button>
-                  </form>
+                <div className="mt-1.5 text-xs">
                   {uses ? (
-                    <span className="text-slate-400" title="Remove those drafts first, or just deactivate this resume.">Used by {uses} draft{uses === 1 ? "" : "s"} · can&apos;t delete</span>
+                    <span className="text-slate-400" title="Remove those drafts first, or just switch this resume off.">Used by {uses} draft{uses === 1 ? "" : "s"} · can&apos;t delete</span>
                   ) : (
                     <DeleteResumeForm action={deleteResume.bind(null, resume.id)} />
                   )}
