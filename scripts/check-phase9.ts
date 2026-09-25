@@ -2,8 +2,8 @@ import "dotenv/config";
 import assert from "node:assert/strict";
 import { ExposureChannel, ExposureResult } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma } from "@/lib/prisma";
-import { settledByHistory } from "@/services/exposure-rules";
-import { countedToday, priorResults } from "@/services/exposure-run";
+import { exposureConfig, settledByHistory } from "@/services/exposure-rules";
+import { countedToday, exposureState, priorResults } from "@/services/exposure-run";
 
 class RollbackCheck extends Error {}
 
@@ -36,6 +36,15 @@ async function main() {
       // Applied and rehearsed count toward the daily limit; failures do not.
       assert.equal(await countedToday(database), countedBefore + 2);
 
+      // Settings saved from the page survive the round trip and win over .env; Stop is a plain flag.
+      await exposureState(database);
+      await database.exposureState.update({ where: { id: "primary" }, data: { settings: { mode: "dryrun", keywords: ["java", "fictional keyword"], perRunLimit: 12 }, stopRequested: true } });
+      const saved = await database.exposureState.findUniqueOrThrow({ where: { id: "primary" } });
+      const config = exposureConfig(saved.settings, {});
+      assert.deepEqual(config.keywords, ["java", "fictional keyword"]);
+      assert.equal(config.perRunLimit, 12);
+      assert.equal(saved.stopRequested, true);
+
       // FR-14: the channel keeps its own records and never creates an Opportunity.
       assert.equal(await database.opportunity.count(), opportunitiesBefore);
       throw new RollbackCheck();
@@ -43,7 +52,7 @@ async function main() {
   } catch (error) {
     if (!(error instanceof RollbackCheck)) throw error;
   }
-  console.log("Phase 9 exposure record, dedupe and daily-count check passed; fictional transaction rolled back.");
+  console.log("Phase 9 exposure record, dedupe, daily-count, settings and stop-flag check passed; fictional transaction rolled back.");
 }
 
 main().catch((error: unknown) => {

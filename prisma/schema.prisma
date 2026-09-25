@@ -442,6 +442,12 @@ model ExposureState {
   lastSuccessAt       DateTime? @map("last_success_at")
   consecutiveFailures Int       @default(0) @map("consecutive_failures")
   lastError           String?   @map("last_error")
+  // Settings saved from the /exposure page; null means the .env defaults (rules/exposure.md §8).
+  settings            Json?
+  // Set by the Stop button; the running pass checks it between steps and exits cleanly.
+  stopRequested       Boolean   @default(false) @map("stop_requested")
+  // One line on what the running pass is doing now; null when idle.
+  progress            String?
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("exposure_state")

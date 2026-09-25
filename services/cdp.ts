@@ -118,3 +118,12 @@ export class CdpTab {
 export function pause(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/** Whether the dedicated Chrome is up; the page shows this before anyone presses Run. */
+export async function chromeReachable(baseUrl: string) {
+  try {
+    return (await fetch(`${baseUrl}/json/version`, { signal: AbortSignal.timeout(1_000) })).ok;
+  } catch {
+    return false;
+  }
+}

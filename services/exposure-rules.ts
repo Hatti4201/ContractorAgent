@@ -1,57 +1,162 @@
 import { ExposureResult } from "@/app/generated/prisma/enums";
-import { scanWindowFromEnv, type ScanWindow } from "@/services/mail-schedule";
+import { configuredTimeZone } from "@/services/attention";
+import type { ScanWindow } from "@/services/mail-schedule";
 
 // Phase 9 (REQUIREMENTS FR-14, rules/exposure.md). Everything here is a deterministic rule: the
 // constitution keeps filtering and stopping out of the model's hands.
 
 export type ExposureMode = "off" | "dryrun" | "on";
+export const exposureModes = ["off", "dryrun", "on"] as const;
+export const postedDates = ["ONE", "THREE", "SEVEN"] as const;
+export type PostedDate = (typeof postedDates)[number];
+// Dice's own URL values, read from its filter panel.
+export const employmentTypes = ["CONTRACTS", "THIRD_PARTY", "FULLTIME", "PARTTIME"] as const;
+export type EmploymentFilter = (typeof employmentTypes)[number];
 
-export type ExposureConfig = {
+/** Everything the user may change from the /exposure page (rules/exposure.md 1.1 §8). */
+export type ExposureSettings = {
   mode: ExposureMode;
-  cdpUrl: string;
-  keyword: string;
+  keywords: string[];
+  postedDate: PostedDate;
+  employmentTypes: EmploymentFilter[];
   pageRatio: number;
   maxPages: number;
   titleBlacklist: string[];
+  companyBlacklist: string[];
   dailyLimit: number;
+  perRunLimit: number;
+  jobDelaySeconds: number;
+  days: number[];
+  startHour: number;
+  endHour: number;
+  intervalMinutes: number;
   maxConsecutiveFailures: number;
   maxStepsPerJob: number;
-  jobDelayMs: number;
   executorModel: string;
   supervisorModel: string;
-  window: ScanWindow;
 };
 
-function number(value: string | undefined, fallback: number, low: number, high: number) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= low && parsed <= high ? parsed : fallback;
+export type ExposureConfig = ExposureSettings & { cdpUrl: string; jobDelayMs: number; window: ScanWindow };
+
+type Env = Partial<Record<string, string>>;
+
+function list(value: unknown) {
+  const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,\n]/) : [];
+  const strings = items.flatMap((item) => (typeof item === "string" || typeof item === "number" ? [String(item).trim()] : []));
+  return [...new Set(strings.filter(Boolean))].slice(0, 50);
 }
 
-/** Initial values are the ones rules/exposure.md 1.0 names; every one of them is the user's to change. */
-export function exposureConfigFromEnv(env: Partial<Record<string, string>> = process.env): ExposureConfig {
-  const rawMode = (env.EXPOSURE_MODE ?? "off").toLowerCase();
-  const mode: ExposureMode = rawMode === "on" || rawMode === "dryrun" ? rawMode : "off";
-  const blacklist = (env.EXPOSURE_TITLE_BLACKLIST ?? "QA,Test,SDET").split(",").map((term) => term.trim()).filter(Boolean);
+function bounded(value: unknown, fallback: number, low: number, high: number, integer = true) {
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  if (!Number.isFinite(parsed) || parsed < low || parsed > high) return fallback;
+  return integer ? Math.floor(parsed) : parsed;
+}
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T) {
+  const text = typeof value === "string" ? value : "";
+  return allowed.find((option) => option.toLowerCase() === text.toLowerCase()) ?? fallback;
+}
+
+/**
+ * Validates settings from any source (the stored row, the page form, .env) against the defaults.
+ * An invalid field falls back to its default rather than failing the whole run.
+ */
+export function parseSettings(value: Record<string, unknown>, defaults: ExposureSettings): ExposureSettings {
+  const keywords = list(value.keywords);
+  const employment = list(value.employmentTypes).map((type) => oneOf(type, employmentTypes, "CONTRACTS"));
+  const days = list(value.days).map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+  const text = (field: unknown, fallback: string) => (typeof field === "string" && field.trim() ? field.trim().slice(0, 80) : fallback);
   return {
-    mode,
+    mode: oneOf(value.mode, exposureModes, defaults.mode),
+    keywords: keywords.length ? keywords : defaults.keywords,
+    postedDate: oneOf(value.postedDate, postedDates, defaults.postedDate),
+    employmentTypes: employment.length ? [...new Set(employment)] : defaults.employmentTypes,
+    pageRatio: bounded(value.pageRatio, defaults.pageRatio, 0.05, 1, false),
+    maxPages: bounded(value.maxPages, defaults.maxPages, 1, 50),
+    titleBlacklist: value.titleBlacklist === undefined ? defaults.titleBlacklist : list(value.titleBlacklist),
+    companyBlacklist: value.companyBlacklist === undefined ? defaults.companyBlacklist : list(value.companyBlacklist),
+    dailyLimit: bounded(value.dailyLimit, defaults.dailyLimit, 1, 1000),
+    perRunLimit: bounded(value.perRunLimit, defaults.perRunLimit, 1, 1000),
+    jobDelaySeconds: bounded(value.jobDelaySeconds, defaults.jobDelaySeconds, 0, 600),
+    days: days.length ? [...new Set(days)].sort() : defaults.days,
+    startHour: bounded(value.startHour, defaults.startHour, 0, 23),
+    endHour: bounded(value.endHour, defaults.endHour, 1, 24),
+    intervalMinutes: bounded(value.intervalMinutes, defaults.intervalMinutes, 5, 1440),
+    maxConsecutiveFailures: bounded(value.maxConsecutiveFailures, defaults.maxConsecutiveFailures, 1, 50),
+    maxStepsPerJob: bounded(value.maxStepsPerJob, defaults.maxStepsPerJob, 3, 40),
+    executorModel: text(value.executorModel, defaults.executorModel),
+    supervisorModel: text(value.supervisorModel, defaults.supervisorModel),
+  };
+}
+
+/** The rules/exposure.md initial values, overridable by .env; the page's saved settings sit on top. */
+export function defaultSettings(env: Env = process.env): ExposureSettings {
+  const base: ExposureSettings = {
+    mode: "off",
+    keywords: ["java"],
+    postedDate: "ONE",
+    employmentTypes: ["CONTRACTS", "THIRD_PARTY"],
+    pageRatio: 2 / 3,
+    maxPages: 7,
+    titleBlacklist: ["QA", "Test", "SDET"],
+    companyBlacklist: [],
+    dailyLimit: 150,
+    perRunLimit: 30,
+    jobDelaySeconds: 30,
+    days: [1, 2, 3, 4, 5],
+    startHour: 6,
+    endHour: 15,
+    intervalMinutes: 60,
+    maxConsecutiveFailures: 5,
+    maxStepsPerJob: 15,
+    executorModel: "gpt-5.6-luna",
+    supervisorModel: "gpt-5.6-luna",
+  };
+  return parseSettings({
+    mode: env.EXPOSURE_MODE,
+    keywords: env.EXPOSURE_KEYWORDS ?? env.EXPOSURE_KEYWORD,
+    postedDate: env.EXPOSURE_POSTED_DATE,
+    employmentTypes: env.EXPOSURE_EMPLOYMENT_TYPES,
+    pageRatio: env.EXPOSURE_PAGE_RATIO,
+    maxPages: env.EXPOSURE_MAX_PAGES,
+    titleBlacklist: env.EXPOSURE_TITLE_BLACKLIST,
+    companyBlacklist: env.EXPOSURE_COMPANY_BLACKLIST,
+    dailyLimit: env.EXPOSURE_DAILY_LIMIT,
+    perRunLimit: env.EXPOSURE_PER_RUN_LIMIT,
+    jobDelaySeconds: env.EXPOSURE_JOB_DELAY_SECONDS,
+    days: env.EXPOSURE_DAYS,
+    startHour: env.EXPOSURE_START_HOUR,
+    endHour: env.EXPOSURE_END_HOUR,
+    intervalMinutes: env.EXPOSURE_INTERVAL_MINUTES,
+    maxConsecutiveFailures: env.EXPOSURE_MAX_CONSECUTIVE_FAILURES,
+    maxStepsPerJob: env.EXPOSURE_MAX_STEPS_PER_JOB,
+    executorModel: env.EXPOSURE_EXECUTOR_MODEL,
+    supervisorModel: env.EXPOSURE_SUPERVISOR_MODEL,
+  }, base);
+}
+
+/** Settings saved from the page win over .env; the Chrome address stays machine-bound in .env. */
+export function exposureConfig(stored: unknown, env: Env = process.env): ExposureConfig {
+  const defaults = defaultSettings(env);
+  const settings = stored && typeof stored === "object" && !Array.isArray(stored) ? parseSettings(stored as Record<string, unknown>, defaults) : defaults;
+  return {
+    ...settings,
     cdpUrl: (env.EXPOSURE_CDP_URL ?? "http://127.0.0.1:9222").replace(/\/+$/, ""),
-    keyword: env.EXPOSURE_KEYWORD?.trim() || "java",
-    pageRatio: number(env.EXPOSURE_PAGE_RATIO, 2 / 3, 0.05, 1),
-    maxPages: Math.floor(number(env.EXPOSURE_MAX_PAGES, 7, 1, 50)),
-    titleBlacklist: blacklist,
-    dailyLimit: Math.floor(number(env.EXPOSURE_DAILY_LIMIT, 150, 1, 1000)),
-    maxConsecutiveFailures: Math.floor(number(env.EXPOSURE_MAX_CONSECUTIVE_FAILURES, 5, 1, 50)),
-    maxStepsPerJob: Math.floor(number(env.EXPOSURE_MAX_STEPS_PER_JOB, 15, 3, 40)),
-    jobDelayMs: number(env.EXPOSURE_JOB_DELAY_SECONDS, 30, 0, 600) * 1000,
-    executorModel: env.EXPOSURE_EXECUTOR_MODEL?.trim() || "gpt-5.6-luna",
-    supervisorModel: env.EXPOSURE_SUPERVISOR_MODEL?.trim() || "gpt-5.6-luna",
-    window: { ...scanWindowFromEnv(env, "EXPOSURE"), enabled: mode !== "off" },
+    jobDelayMs: settings.jobDelaySeconds * 1000,
+    window: {
+      enabled: settings.mode !== "off",
+      days: settings.days,
+      startHour: settings.startHour,
+      endHour: settings.endHour,
+      intervalMs: settings.intervalMinutes * 60_000,
+      timeZone: configuredTimeZone(env.APP_TIME_ZONE),
+    },
   };
 }
 
 /** The search itself is a URL, so no filter control ever has to be clicked. */
-export function searchUrl(keyword: string, page: number) {
-  const params = new URLSearchParams({ q: keyword, "filters.postedDate": "ONE", "filters.employmentType": "CONTRACTS|THIRD_PARTY" });
+export function searchUrl(keyword: string, page: number, postedDate: PostedDate = "ONE", types: readonly EmploymentFilter[] = ["CONTRACTS", "THIRD_PARTY"]) {
+  const params = new URLSearchParams({ q: keyword, "filters.postedDate": postedDate, "filters.employmentType": types.join("|"), "filters.easyApply": "true" });
   if (page > 1) params.set("page", String(page));
   return `https://www.dice.com/jobs?${params}`;
 }
@@ -93,13 +198,15 @@ const statusLines = new Set(["applied", "easy apply"]);
  * List-page decision: only what the card can prove. Whether the job is Easy Apply is settled on the job
  * page from the apply button's link, because a signed-in card no longer shows that badge.
  */
-export function decideCard(card: JobCard, blacklist: readonly string[]): CardDecision {
+export function decideCard(card: JobCard, blacklist: readonly string[], companyBlacklist: readonly string[] = []): CardDecision {
   const title = card.lines[0]?.trim() || "Untitled job";
   const rest = card.lines.slice(1).map((line) => line.trim());
   const company = rest.find((line) => !statusLines.has(line.toLowerCase())) || null;
   if (rest.some((line) => line.toLowerCase() === "applied")) return { apply: false, title, company, reason: "Already applied on Dice." };
   const term = blacklistedTerm(title, blacklist);
   if (term) return { apply: false, title, company, reason: `Title matches blacklist term "${term}".` };
+  const blockedCompany = company ? companyBlacklist.find((name) => company.toLowerCase().includes(name.toLowerCase())) : undefined;
+  if (blockedCompany) return { apply: false, title, company, reason: `Company matches blacklist "${blockedCompany}".` };
   return { apply: true, title, company };
 }
 

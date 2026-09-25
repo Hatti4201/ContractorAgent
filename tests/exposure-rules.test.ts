@@ -5,7 +5,9 @@ import {
   applicationSucceeded,
   blockerOn,
   decideCard,
-  exposureConfigFromEnv,
+  defaultSettings,
+  exposureConfig,
+  parseSettings,
   isSubmitLabel,
   looksLikeIdentityQuestion,
   pagesToVisit,
@@ -15,25 +17,48 @@ import {
   settledByHistory,
 } from "@/services/exposure-rules";
 
-test("the channel is off unless the user turns it on, with rules/exposure.md 1.0 defaults", () => {
-  const config = exposureConfigFromEnv({});
+test("the channel is off unless the user turns it on, with rules/exposure.md 1.1 defaults", () => {
+  const config = exposureConfig(null, {});
   assert.equal(config.mode, "off");
   assert.equal(config.window.enabled, false);
+  assert.deepEqual(config.keywords, ["java"]);
+  assert.equal(config.postedDate, "ONE");
+  assert.deepEqual(config.employmentTypes, ["CONTRACTS", "THIRD_PARTY"]);
   assert.equal(config.maxPages, 7);
   assert.equal(config.dailyLimit, 150);
+  assert.equal(config.perRunLimit, 30);
   assert.equal(config.maxConsecutiveFailures, 5);
   assert.deepEqual(config.titleBlacklist, ["QA", "Test", "SDET"]);
+  assert.deepEqual(config.companyBlacklist, []);
   assert.equal(config.executorModel, "gpt-5.6-luna");
-  assert.equal(config.supervisorModel, "gpt-5.6-luna");
-  assert.equal(exposureConfigFromEnv({ EXPOSURE_MODE: "ON" }).mode, "on");
-  assert.equal(exposureConfigFromEnv({ EXPOSURE_MODE: "yes please" }).mode, "off");
+  assert.equal(exposureConfig(null, { EXPOSURE_MODE: "ON" }).mode, "on");
+  assert.equal(exposureConfig(null, { EXPOSURE_MODE: "yes please" }).mode, "off");
 });
 
-test("the search is the user's Dice filter expressed as a URL", () => {
-  const url = new URL(searchUrl("java", 3));
+test("settings saved on the page win over .env, and bad values fall back instead of breaking a run", () => {
+  const env = { EXPOSURE_MODE: "dryrun", EXPOSURE_DAILY_LIMIT: "80" };
+  const config = exposureConfig({ mode: "on", keywords: ["java", "spring boot"], dailyLimit: 40, startHour: 9, endHour: 17, days: [1, 3] }, env);
+  assert.equal(config.mode, "on");
+  assert.deepEqual(config.keywords, ["java", "spring boot"]);
+  assert.equal(config.dailyLimit, 40);
+  assert.deepEqual([config.window.startHour, config.window.endHour, config.window.days], [9, 17, [1, 3]]);
+  const defaults = defaultSettings(env);
+  const parsed = parseSettings({ mode: "sometimes", dailyLimit: -5, postedDate: "YESTERDAY", employmentTypes: [], keywords: " , ", titleBlacklist: "" }, defaults);
+  assert.equal(parsed.mode, "dryrun");
+  assert.equal(parsed.dailyLimit, 80);
+  assert.equal(parsed.postedDate, "ONE");
+  assert.deepEqual(parsed.employmentTypes, ["CONTRACTS", "THIRD_PARTY"]);
+  assert.deepEqual(parsed.keywords, ["java"]);
+  // An emptied blacklist is a real choice, not a missing value.
+  assert.deepEqual(parsed.titleBlacklist, []);
+});
+
+test("the search is the configured Dice filter expressed as a URL, Easy Apply only", () => {
+  const url = new URL(searchUrl("java", 3, "THREE", ["CONTRACTS", "FULLTIME"]));
   assert.equal(url.searchParams.get("q"), "java");
-  assert.equal(url.searchParams.get("filters.postedDate"), "ONE");
-  assert.equal(url.searchParams.get("filters.employmentType"), "CONTRACTS|THIRD_PARTY");
+  assert.equal(url.searchParams.get("filters.postedDate"), "THREE");
+  assert.equal(url.searchParams.get("filters.employmentType"), "CONTRACTS|FULLTIME");
+  assert.equal(url.searchParams.get("filters.easyApply"), "true");
   assert.equal(url.searchParams.get("page"), "3");
   assert.equal(new URL(searchUrl("java", 1)).searchParams.has("page"), false);
 });
@@ -63,6 +88,7 @@ test("cards: already-applied and blacklisted titles are skipped; Easy Apply is l
   assert.equal(decideCard(card("Java Tester", "Fictional Co"), blacklist).apply, false);
   // A blacklist term inside another word must not knock out a real match.
   assert.equal(decideCard(card("Java Developer - Latest Stack", "Fictional Co"), blacklist).apply, true);
+  assert.equal(decideCard(card("Java Developer", "Fictional Staffing LLC"), blacklist, ["fictional staffing"]).apply, false);
 });
 
 test("history: a dry run never counts as having applied", () => {

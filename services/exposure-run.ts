@@ -16,7 +16,7 @@ import {
   applicationSucceeded,
   blockerOn,
   decideCard,
-  exposureConfigFromEnv,
+  exposureConfig,
   isSubmitLabel,
   looksLikeIdentityQuestion,
   jobUrl,
@@ -66,13 +66,24 @@ export async function recentCounts(database: Database = getPrisma(), now = new D
   return (result: ExposureResult) => rows.find((row) => row.result === result)?._count ?? 0;
 }
 
+/** The last seven days of results, in the chart's result order, stamped with the time they were read. */
+export async function weekOfResults(database: Database = getPrisma(), now = new Date()) {
+  const order = [ExposureResult.APPLIED, ExposureResult.DRY_RUN_READY, ExposureResult.FAILED, ExposureResult.SKIPPED];
+  const rows = await database.exposureApplication.findMany({
+    where: { createdAt: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) } },
+    select: { createdAt: true, result: true },
+  });
+  return { now: now.getTime(), events: rows.map((row) => ({ at: row.createdAt.getTime(), result: order.indexOf(row.result) })) };
+}
+
 async function checkBlocker(tab: CdpTab) {
   const page = await snapshot(tab);
   const blocker = blockerOn(page);
   return { page, blocker };
 }
 
-async function applyToJob(tab: CdpTab, config: ExposureConfig, facts: string | null, guid: string, title: string): Promise<JobOutcome> {
+async function applyToJob(context: RunContext, guid: string, title: string, onStep: (step: number) => Promise<void>): Promise<JobOutcome> {
+  const { tab, config, facts } = context;
   await tab.navigate(jobUrl(guid));
   await waitFor(tab, '[data-testid="apply-button"]');
   const opened = await checkBlocker(tab);
@@ -96,6 +107,9 @@ async function applyToJob(tab: CdpTab, config: ExposureConfig, facts: string | n
   const failed = (reason: string): JobOutcome => ({ result: ExposureResult.FAILED, reason, answers, history, pageExcerpt });
 
   for (let step = 1; step <= config.maxStepsPerJob; step += 1) {
+    // Stopping mid-wizard leaves an unsubmitted form behind, which Dice simply discards.
+    await context.checkStop();
+    await onStep(step);
     const { page, blocker } = await checkBlocker(tab);
     if (blocker) return { result: "BLOCKED", reason: blocker };
     if (applicationSucceeded(page)) return { result: ExposureResult.APPLIED, answers };
@@ -162,60 +176,83 @@ async function record(database: Database, data: { guid: string; title: string; c
 
 export type RunSummary = { applied: number; rehearsed: number; skipped: number; failed: number; stopReason: string | null };
 
-async function runPages(tab: CdpTab, config: ExposureConfig, facts: string | null, summary: RunSummary) {
+/** The Stop button, honoured between steps: the run ends cleanly, not as a failure. */
+class StopRequested extends Error {}
+
+type RunContext = {
+  tab: CdpTab;
+  config: ExposureConfig;
+  facts: string | null;
+  summary: RunSummary;
+  progress: (line: string) => Promise<void>;
+  checkStop: () => Promise<void>;
+};
+
+async function runPages(context: RunContext) {
+  const { tab, config, summary } = context;
   const database = getPrisma();
   let failuresInARow = 0;
-  let totalPages = 1;
+  const seen = new Set<string>();
 
-  for (let pageNumber = 1; pageNumber <= pagesToVisit(totalPages, config.pageRatio, config.maxPages); pageNumber += 1) {
-    await tab.navigate(searchUrl(config.keyword, pageNumber));
-    await waitFor(tab, '[data-testid="job-card"]');
-    const { blocker } = await checkBlocker(tab);
-    if (blocker) throw new Error(blocker);
-    const { cards, pageLabel } = await readCards(tab);
-    if (pageNumber === 1) totalPages = parsePageCount(pageLabel) ?? 1;
+  for (const keyword of config.keywords) {
+    let totalPages = 1;
+    for (let pageNumber = 1; pageNumber <= pagesToVisit(totalPages, config.pageRatio, config.maxPages); pageNumber += 1) {
+      await context.checkStop();
+      await tab.navigate(searchUrl(keyword, pageNumber, config.postedDate, config.employmentTypes));
+      await waitFor(tab, '[data-testid="job-card"]');
+      const { blocker } = await checkBlocker(tab);
+      if (blocker) throw new Error(blocker);
+      const { cards, pageLabel } = await readCards(tab);
+      if (pageNumber === 1) totalPages = parsePageCount(pageLabel) ?? 1;
+      const where = `"${keyword}" · page ${pageNumber} of ${pagesToVisit(totalPages, config.pageRatio, config.maxPages)}`;
+      await context.progress(where);
 
-    for (const card of cards) {
-      // Reaching the daily limit is the plan working, so it ends the run quietly.
-      if (await countedToday(database) >= config.dailyLimit) return;
-      const history = await priorResults(database, card.guid);
-      if (settledByHistory(history, config.mode)) continue;
+      for (const card of cards) {
+        if (seen.has(card.guid)) continue;
+        seen.add(card.guid);
+        await context.checkStop();
+        // Reaching either limit is the plan working, so it ends the run quietly.
+        if (summary.applied + summary.rehearsed >= config.perRunLimit) return;
+        if (await countedToday(database) >= config.dailyLimit) return;
+        if (settledByHistory(await priorResults(database, card.guid), config.mode)) continue;
 
-      const decision = decideCard(card, config.titleBlacklist);
-      if (!decision.apply) {
-        await record(database, { guid: card.guid, title: decision.title, company: decision.company, result: ExposureResult.SKIPPED, reason: decision.reason });
-        summary.skipped += 1;
-        continue;
+        const decision = decideCard(card, config.titleBlacklist, config.companyBlacklist);
+        if (!decision.apply) {
+          await record(database, { guid: card.guid, title: decision.title, company: decision.company, result: ExposureResult.SKIPPED, reason: decision.reason });
+          summary.skipped += 1;
+          continue;
+        }
+
+        const outcome = await applyToJob(context, card.guid, decision.title, (step) => context.progress(`${where} · ${decision.title} · step ${step}`));
+        if (outcome.result === "BLOCKED") throw new Error(outcome.reason);
+
+        if (outcome.result === ExposureResult.FAILED) {
+          failuresInARow += 1;
+          summary.failed += 1;
+          await record(database, { guid: card.guid, title: decision.title, company: decision.company, result: outcome.result, reason: outcome.reason, answers: outcome.answers });
+          if (failuresInARow >= config.maxConsecutiveFailures) throw new Error(`${failuresInARow} applications failed in a row. Last: ${outcome.reason}`);
+          const verdict = await superviseFailure(config.supervisorModel, { jobTitle: decision.title, reason: outcome.reason, history: outcome.history, pageExcerpt: outcome.pageExcerpt, failuresInARow })
+            .catch(() => ({ decision: "skip_job" as const, reason: "Supervisor unavailable." }));
+          if (verdict.decision === "stop_run") throw new Error(`Supervisor stopped the run: ${verdict.reason}`);
+        } else {
+          failuresInARow = 0;
+          if (outcome.result === ExposureResult.SKIPPED) summary.skipped += 1;
+          else if (outcome.result === ExposureResult.APPLIED) summary.applied += 1;
+          else summary.rehearsed += 1;
+          await record(database, {
+            guid: card.guid,
+            title: decision.title,
+            company: decision.company,
+            result: outcome.result,
+            reason: outcome.result === ExposureResult.SKIPPED ? outcome.reason : null,
+            answers: "answers" in outcome ? outcome.answers : undefined,
+          });
+          if (outcome.result === ExposureResult.SKIPPED) continue;
+        }
+        // rules/exposure.md §6: space applications out instead of firing them back to back.
+        await context.progress(`${where} · waiting ${config.jobDelaySeconds}s before the next job`);
+        await pause(config.jobDelayMs);
       }
-
-      const outcome = await applyToJob(tab, config, facts, card.guid, decision.title);
-      if (outcome.result === "BLOCKED") throw new Error(outcome.reason);
-
-      if (outcome.result === ExposureResult.FAILED) {
-        failuresInARow += 1;
-        summary.failed += 1;
-        await record(database, { guid: card.guid, title: decision.title, company: decision.company, result: outcome.result, reason: outcome.reason, answers: outcome.answers });
-        if (failuresInARow >= config.maxConsecutiveFailures) throw new Error(`${failuresInARow} applications failed in a row. Last: ${outcome.reason}`);
-        const verdict = await superviseFailure(config.supervisorModel, { jobTitle: decision.title, reason: outcome.reason, history: outcome.history, pageExcerpt: outcome.pageExcerpt, failuresInARow })
-          .catch(() => ({ decision: "skip_job" as const, reason: "Supervisor unavailable." }));
-        if (verdict.decision === "stop_run") throw new Error(`Supervisor stopped the run: ${verdict.reason}`);
-      } else {
-        failuresInARow = 0;
-        if (outcome.result === ExposureResult.SKIPPED) summary.skipped += 1;
-        else if (outcome.result === ExposureResult.APPLIED) summary.applied += 1;
-        else summary.rehearsed += 1;
-        await record(database, {
-          guid: card.guid,
-          title: decision.title,
-          company: decision.company,
-          result: outcome.result,
-          reason: outcome.result === ExposureResult.SKIPPED ? outcome.reason : null,
-          answers: "answers" in outcome ? outcome.answers : undefined,
-        });
-        if (outcome.result === ExposureResult.SKIPPED) continue;
-      }
-      // rules/exposure.md §6: space applications out instead of firing them back to back.
-      await pause(config.jobDelayMs);
     }
   }
 }
@@ -227,14 +264,18 @@ export function exposureRunning() {
   return Boolean(globalForExposure.exposureRunning);
 }
 
-/** One pass over today's search. Returns null when the channel is off or a run is already going. */
+/** The effective settings: what was saved on the /exposure page, on top of the .env defaults. */
+export async function loadExposureConfig(database: Database = getPrisma()) {
+  return exposureConfig((await exposureState(database)).settings);
+}
+
+/** One pass over the configured searches. Returns null when the channel is off or a run is already going. */
 export async function runExposure(): Promise<RunSummary | null> {
-  const config = exposureConfigFromEnv();
+  const database = getPrisma();
+  const config = await loadExposureConfig(database);
   if (config.mode === "off" || globalForExposure.exposureRunning) return null;
   globalForExposure.exposureRunning = true;
-  const database = getPrisma();
-  await exposureState(database);
-  await database.exposureState.update({ where: { id: STATE_ID }, data: { lastRunAt: new Date() } });
+  await database.exposureState.update({ where: { id: STATE_ID }, data: { lastRunAt: new Date(), stopRequested: false, progress: "Starting" } });
 
   const summary: RunSummary = { applied: 0, rehearsed: 0, skipped: 0, failed: 0, stopReason: null };
   let tab: CdpTab | null = null;
@@ -242,23 +283,33 @@ export async function runExposure(): Promise<RunSummary | null> {
     // Without facts the agent still applies; it just gives up on any fact or identity question.
     const facts = await loadOutreachContext().catch(() => null);
     tab = await CdpTab.open(config.cdpUrl);
-    await runPages(tab, config, facts, summary);
-    await database.exposureState.update({
-      where: { id: STATE_ID },
-      data: { lastSuccessAt: new Date(), consecutiveFailures: 0, lastError: null },
+    await runPages({
+      tab,
+      config,
+      facts,
+      summary,
+      progress: async (line) => { await database.exposureState.update({ where: { id: STATE_ID }, data: { progress: line.slice(0, 300) } }); },
+      checkStop: async () => {
+        const { stopRequested } = await database.exposureState.findUniqueOrThrow({ where: { id: STATE_ID }, select: { stopRequested: true } });
+        if (stopRequested) throw new StopRequested();
+      },
     });
+    await database.exposureState.update({ where: { id: STATE_ID }, data: { lastSuccessAt: new Date(), consecutiveFailures: 0, lastError: null } });
     return summary;
   } catch (error) {
+    if (error instanceof StopRequested) {
+      summary.stopReason = "Stopped from the exposure page.";
+      return summary;
+    }
     const message = (error instanceof Error ? error.message : "The exposure run failed.").slice(0, 500);
     summary.stopReason = message;
     // An unattended run has to stay loud when it stops: Needs Attention shows this until a clean run.
-    await database.exposureState.update({
-      where: { id: STATE_ID },
-      data: { consecutiveFailures: { increment: 1 }, lastError: message },
-    });
+    await database.exposureState.update({ where: { id: STATE_ID }, data: { consecutiveFailures: { increment: 1 }, lastError: message } });
     return summary;
   } finally {
     await tab?.close();
+    await database.exposureState.update({ where: { id: STATE_ID }, data: { progress: null, stopRequested: false } }).catch(() => {});
     globalForExposure.exposureRunning = false;
+    console.log(`Dice exposure (${config.mode}) run: ${summary.applied} applied, ${summary.rehearsed} rehearsed, ${summary.skipped} skipped, ${summary.failed} failed${summary.stopReason ? ` — ${summary.stopReason}` : ""}.`);
   }
 }

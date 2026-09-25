@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { discardIntake } from "@/app/(protected)/intake/actions";
 import { DiscardIntakeCross } from "@/components/delete-job-form";
+import { ExposureCard } from "@/components/exposure-card";
 import { IntakeForm } from "@/components/intake-form";
 import {
   ApplicationStage,
@@ -183,6 +184,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
+      <ExposureCard />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Overview</p>
