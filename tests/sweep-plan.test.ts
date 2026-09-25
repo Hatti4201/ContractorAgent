@@ -41,6 +41,7 @@ test("a queued post's state follows its intake, job and draft", () => {
   const intake = { status: "CONFIRMED" as const, hasPreview: true, stopReason: null, draft };
   assert.equal(sweepItemState({ ...intake, status: "PENDING", hasPreview: false, draft: null }, false).state, "WORKING");
   assert.equal(sweepItemState({ ...intake, status: "PENDING", hasPreview: false, draft: null }, true).state, "NEEDS_YOU");
+  assert.equal(sweepItemState({ ...intake, status: "PENDING", draft: null }, false).state, "READY", "A written email waiting for review is not a problem.");
   assert.equal(sweepItemState({ ...intake, status: "PENDING", stopReason: "Match 30% is below 50%." }, false).detail, "Match 30% is below 50%.");
   assert.equal(sweepItemState(intake, false).state, "IN_OUTLOOK");
   assert.equal(sweepItemState({ ...intake, draft: { ...draft, autoSendState: "SCHEDULED" } }, false).state, "SCHEDULED");

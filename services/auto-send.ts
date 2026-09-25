@@ -1,6 +1,6 @@
-import { ActivityType, AutoSendState, OutlookDraftState, TaskKind } from "@/app/generated/prisma/enums";
+import { ActivityType, AutopilotSetting, AutoSendState, OutlookDraftState, TaskKind } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
-import { autoSendDailyLimit, autoSendDelayMinutes, autoSendPlan, autopilotMode, rankForSending, sendQuota, type AutopilotMode } from "@/services/autopilot";
+import { autoSendDailyLimit, autoSendDelayMinutes, autoSendPlan, modeFromSetting, rankForSending, sendQuota, type AutopilotMode } from "@/services/autopilot";
 import { outlookAccessToken, outlookSendToken } from "@/services/outlook-auth";
 import { approvalIssue, preparedDraft } from "@/services/outlook-draft";
 import { isWithinScanWindow, scanWindowFromEnv } from "@/services/mail-schedule";
@@ -30,8 +30,8 @@ function dueFilter(now: Date) {
  * Marks a draft the autopilot just built for sending, or for the shadow record of when it would have
  * been sent. Only a draft that is really in Outlook and untouched by any earlier plan qualifies.
  */
-export async function scheduleAutoSend(opportunityId: string, mode: AutopilotMode = autopilotMode(), now = new Date()) {
-  const plan = autoSendPlan(mode, now);
+export async function scheduleAutoSend(opportunityId: string, mode?: AutopilotMode, now = new Date()) {
+  const plan = autoSendPlan(mode ?? await currentAutopilotMode(), now);
   if (!plan) return;
   await getPrisma().outreachDraft.updateMany({
     where: { opportunityId, outlookState: OutlookDraftState.CREATED, outlookMessageId: { not: null }, autoSendState: null, sentConfirmedAt: null },
@@ -39,12 +39,25 @@ export async function scheduleAutoSend(opportunityId: string, mode: AutopilotMod
   });
 }
 
-export async function autoSendPaused() {
-  return Boolean((await getPrisma().autopilotControl.findUnique({ where: { id: CONTROL_ID } }))?.sendPaused);
+/** Where the dashboard switch stands, or the environment's AUTOPILOT until it has been used. */
+export async function currentAutopilotMode() {
+  const control = await getPrisma().autopilotControl.findUnique({ where: { id: CONTROL_ID }, select: { mode: true } });
+  return modeFromSetting(control?.mode);
 }
 
-export async function setAutoSendPaused(paused: boolean) {
-  await getPrisma().autopilotControl.upsert({ where: { id: CONTROL_ID }, create: { id: CONTROL_ID, sendPaused: paused }, update: { sendPaused: paused } });
+/**
+ * Moves the switch. Leaving SEND cancels everything still queued to send, so switching away stops
+ * sending at once; those emails stay in Outlook as drafts. Returns how many were cancelled.
+ */
+export async function setAutopilotSetting(setting: AutopilotSetting) {
+  const database = getPrisma();
+  await database.autopilotControl.upsert({ where: { id: CONTROL_ID }, create: { id: CONTROL_ID, mode: setting }, update: { mode: setting } });
+  if (setting === AutopilotSetting.SEND) return 0;
+  const { count } = await database.outreachDraft.updateMany({
+    where: { autoSendState: AutoSendState.SCHEDULED },
+    data: { autoSendState: AutoSendState.CANCELLED, autoSendError: "Automatic sending was switched off; the draft is still in Outlook for you." },
+  });
+  return count;
 }
 
 /** The user keeps the draft and sends it, or not, themselves. */
@@ -161,7 +174,7 @@ export async function sendDueDrafts(task?: TaskHandle, now = new Date()) {
 /** One scheduler tick's worth: nothing, and no task row, unless a send is actually due. */
 export async function autoSendTick(now = new Date()) {
   await recoverStaleSends(now);
-  if (autopilotMode() !== "send" || await autoSendPaused()) return;
+  if (await currentAutopilotMode() !== "send") return;
   if (!await getPrisma().outreachDraft.count({ where: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: dueFilter(now) } })) return;
   try {
     await runTaskNow(
@@ -188,8 +201,8 @@ const overviewSelection = {
 export async function autopilotOverview(now = new Date()) {
   const database = getPrisma();
   const week = new Date(now.getTime() - 7 * DAY_MS);
-  const [paused, sentToday, upcoming, recent, shadow] = await Promise.all([
-    autoSendPaused(),
+  const [mode, sentToday, upcoming, recent, shadow] = await Promise.all([
+    currentAutopilotMode(),
     sentInLastDay(now),
     database.outreachDraft.findMany({
       where: { autoSendState: { in: [AutoSendState.SCHEDULED, AutoSendState.SENDING] } },
@@ -209,8 +222,7 @@ export async function autopilotOverview(now = new Date()) {
     }),
   ]);
   return {
-    mode: autopilotMode(),
-    paused,
+    mode,
     limit: autoSendDailyLimit(),
     delayMinutes: autoSendDelayMinutes(),
     sentToday,

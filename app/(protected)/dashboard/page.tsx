@@ -216,7 +216,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </p>
       )}
 
-      <AutopilotPanel />
+      <AutopilotPanel notice={{ autopilot: value(query, "autopilot"), cancelled: value(query, "cancelled"), autopilotRun: query.autopilotRun === undefined ? undefined : value(query, "autopilotRun") }} />
 
       {beingPrepared.length > 0 && (
         <section className="mt-8">

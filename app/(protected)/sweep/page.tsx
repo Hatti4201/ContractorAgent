@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { runAutopilotOnWaiting } from "@/app/(protected)/dashboard/actions";
 import { reviewSkippedIntake } from "@/app/(protected)/sweep/actions";
 import { SweepPaste, SweepRefresher } from "@/components/sweep-paste";
 import { requireAuth } from "@/lib/auth";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
-import { autopilotMode } from "@/services/autopilot";
+import { currentAutopilotMode } from "@/services/auto-send";
+import { waitingForAutopilot } from "@/services/autopilot-batch";
 import { recentSweeps, skippedByRules, type SweepView } from "@/services/sweep";
 
 type Post = SweepView["posts"][number];
@@ -14,6 +16,7 @@ const stateLabels: Record<string, { label: string; tone: string }> = {
   IN_OUTLOOK: { label: "Draft in Outlook", tone: "bg-sky-100 text-sky-900" },
   WORKING: { label: "Preparing", tone: "bg-slate-100 text-slate-700" },
   NEEDS_YOU: { label: "Needs you", tone: "bg-amber-100 text-amber-900" },
+  READY: { label: "Ready for review", tone: "bg-sky-100 text-sky-900" },
   SKIPPED: { label: "Skipped", tone: "bg-slate-100 text-slate-700" },
 };
 
@@ -87,6 +90,7 @@ function SweepReport({ sweep, latest }: { sweep: SweepView; latest: boolean }) {
     `${count((post) => post.state === "SENT")} sent`,
     `${count((post) => post.state === "SCHEDULED")} sending soon`,
     `${count((post) => post.state === "IN_OUTLOOK")} in Outlook`,
+    `${count((post) => post.state === "READY")} ready for review`,
     `${count(needsYou)} need you`,
     `${count((post) => post.outcome === "SKIPPED" || post.state === "SKIPPED")} skipped by your rules`,
     `${count((post) => post.outcome === "NOT_RELEVANT" || post.outcome === "NOISE")} not for you`,
@@ -101,6 +105,7 @@ function SweepReport({ sweep, latest }: { sweep: SweepView; latest: boolean }) {
       <p className="mt-1 text-sm text-slate-700">{summary}</p>
       {sweep.error && <p className="mt-2 rounded-lg bg-red-50 p-3 text-sm text-red-800">{sweep.error}</p>}
       <Group open={latest} posts={posts.filter(needsYou)} title="Needs you" />
+      <Group open={latest} posts={posts.filter((post) => post.state === "READY")} title="Ready for your review (email written)" />
       <Group open={latest} posts={onTheirWay} showReason={false} title="On their way" />
       <Group posts={posts.filter((post) => post.outcome === "SKIPPED" || post.state === "SKIPPED")} title="Skipped by your rules" />
       <Group posts={posts.filter((post) => post.outcome === "NOT_RELEVANT")} title="Outside your roles" />
@@ -109,11 +114,13 @@ function SweepReport({ sweep, latest }: { sweep: SweepView; latest: boolean }) {
   );
 }
 
-export default async function SweepPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+const modeLabels = { off: "Off", draft: "Drafts only", shadow: "Drafts only", send: "Send" } as const;
+
+export default async function SweepPage({ searchParams }: { searchParams: Promise<{ error?: string; autopilotRun?: string }> }) {
   await requireAuth();
-  const [{ error }, sweeps, skipped] = await Promise.all([searchParams, recentSweeps(), skippedByRules()]);
+  const [{ error, autopilotRun }, sweeps, skipped, mode, waiting] = await Promise.all([searchParams, recentSweeps(), skippedByRules(), currentAutopilotMode(), waitingForAutopilot()]);
   const active = sweeps.some((sweep) => sweep.status === "RUNNING" || sweep.posts.some((post) => post.state === "WORKING" || post.state === "SCHEDULED"));
-  const mode = autopilotMode();
+  const run = autopilotRun === undefined ? null : Number(autopilotRun);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
@@ -123,8 +130,28 @@ export default async function SweepPage({ searchParams }: { searchParams: Promis
       <p className="mt-3 text-sm text-slate-600">
         Every post is screened once: hotlists and candidate posts are dropped, then your rules apply (W2 only in the Bay
         Area or remote; C2C anywhere except local-only; no face-to-face interview outside the Bay Area). Jobs with a
-        recruiter email go through the {mode === "off" ? "review queue (the autopilot is off)" : "autopilot"}; posts without one are listed for you with the author&apos;s profile.
+        recruiter email go through the autopilot as it is set below; posts without one are listed for you with the author&apos;s profile.
       </p>
+      <div className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3 text-sm ${mode === "off" ? "border-amber-300 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
+        <p>
+          Autopilot: <span className="font-semibold">{modeLabels[mode]}</span>
+          {mode === "off" ? " — swept jobs wait for your review instead of becoming drafts." : mode === "send" ? " — jobs that pass are drafted and sent." : " — jobs that pass become Outlook drafts for you to send."}
+        </p>
+        <Link className="font-medium underline" href="/dashboard#autopilot">Change</Link>
+      </div>
+      {mode !== "off" && waiting.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+          <p>{waiting.length} job{waiting.length === 1 ? " is" : "s are"} ready for review from before the autopilot was on.</p>
+          <form action={runAutopilotOnWaiting.bind(null, "/sweep")}>
+            <button className="rounded-lg bg-sky-800 px-3 py-1.5 font-medium text-white hover:bg-sky-900" type="submit">Run the autopilot on them</button>
+          </form>
+        </div>
+      )}
+      {run !== null && (
+        <p className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-800" role="status">
+          {run > 0 ? `The autopilot is working through ${run} waiting job${run === 1 ? "" : "s"}; this page updates as they finish.` : run === -1 ? "The autopilot is already working through the waiting jobs." : "Nothing was run: no job is waiting with a finished email, or the autopilot is off."}
+        </p>
+      )}
       {error && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">That job is no longer skipped.</p>}
 
       <div className="mt-6"><SweepPaste /></div>

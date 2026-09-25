@@ -1,4 +1,5 @@
-import { JobSourceType, OutreachMode } from "@/app/generated/prisma/enums";
+import { AutopilotSetting, JobSourceType, OutreachMode } from "@/app/generated/prisma/enums";
+import type { IntakePreview } from "@/services/intake-pipeline";
 import type { DuplicateMatch, JobCase } from "@/services/job-case";
 import type { MatchReport } from "@/services/match-score";
 import type { OutreachValidation } from "@/services/outreach-agent";
@@ -33,6 +34,23 @@ const modes: readonly AutopilotMode[] = ["off", "draft", "shadow", "send"];
 export function autopilotMode(value = process.env.AUTOPILOT): AutopilotMode {
   const mode = value?.trim().toLowerCase() as AutopilotMode | undefined;
   return mode && modes.includes(mode) ? mode : "off";
+}
+
+/**
+ * The dashboard switch has three positions: off, drafts (built in Outlook, and the time each would
+ * have gone out recorded, which is the shadow trial), and send. Once the user has used it, it decides;
+ * until then AUTOPILOT in the environment does, so an existing setup keeps behaving as before.
+ */
+export function modeFromSetting(setting: AutopilotSetting | null | undefined, env = process.env.AUTOPILOT): AutopilotMode {
+  if (setting === AutopilotSetting.SEND) return "send";
+  if (setting === AutopilotSetting.DRAFT) return "shadow";
+  if (setting === AutopilotSetting.OFF) return "off";
+  return autopilotMode(env);
+}
+
+/** Where the switch stands for a mode; draft and shadow are one position, since shadow only adds a record. */
+export function settingOfMode(mode: AutopilotMode): AutopilotSetting {
+  return mode === "send" ? AutopilotSetting.SEND : mode === "off" ? AutopilotSetting.OFF : AutopilotSetting.DRAFT;
 }
 
 /**
@@ -146,4 +164,12 @@ export function autopilotMatchHold(report: MatchReport | null, threshold = match
   if (report.score === null || report.score >= threshold) return null;
   const missing = report.requirements.filter((item) => item.kind === "skill" && item.verdict === "MISSING").map((item) => item.requirement);
   return `Match ${percent(report.score)} is below ${percent(threshold)}${missing.length ? `; missing ${missing.slice(0, 5).join(", ")}` : ""}.`;
+}
+
+/**
+ * A job the pipeline finished with a complete email, which is all the autopilot needs to take it on
+ * later. A brake means the pipeline itself stopped (no email, no resume), and no rerun changes that.
+ */
+export function readyForAutopilot(preview: Pick<IntakePreview, "body" | "toAddress" | "brake"> | null) {
+  return Boolean(preview?.body && preview.toAddress && !preview.brake);
 }

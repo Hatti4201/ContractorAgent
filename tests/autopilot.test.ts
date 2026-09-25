@@ -12,6 +12,9 @@ import {
   autopilotApplies,
   autopilotDuplicateHold,
   autopilotMode,
+  modeFromSetting,
+  readyForAutopilot,
+  settingOfMode,
   autopilotRoute,
   rankForSending,
   sendQuota,
@@ -190,4 +193,24 @@ test("over the daily limit the best matches are sent and the rest handed back", 
   assert.deepEqual(sending.map((draft) => draft.id), ["d", "b"], "Equal matches go in the order they fell due.");
   assert.deepEqual(overLimit.map((draft) => draft.id), ["a", "c"]);
   assert.deepEqual(rankForSending(due, 0).sending, []);
+});
+
+test("the dashboard switch decides once used; until then the environment does", () => {
+  assert.equal(modeFromSetting(null, "send"), "send", "An existing setup keeps behaving as before.");
+  assert.equal(modeFromSetting(undefined, undefined), "off");
+  assert.equal(modeFromSetting("OFF", "send"), "off", "Switching off beats AUTOPILOT=send.");
+  assert.equal(modeFromSetting("DRAFT", "off"), "shadow", "Drafts only still records when each would have gone out.");
+  assert.equal(modeFromSetting("SEND", "off"), "send");
+  assert.equal(settingOfMode("draft"), "DRAFT");
+  assert.equal(settingOfMode("shadow"), "DRAFT");
+  assert.equal(settingOfMode("off"), "OFF");
+  assert.equal(settingOfMode("send"), "SEND");
+});
+
+test("only a job with a finished email and no pipeline stop can be taken on later", () => {
+  const preview = { body: "Hello", toAddress: "r@vendor.test", brake: null };
+  assert.ok(readyForAutopilot(preview));
+  assert.ok(!readyForAutopilot({ ...preview, brake: "No usable resume matched this role family." }));
+  assert.ok(!readyForAutopilot({ ...preview, body: null }));
+  assert.ok(!readyForAutopilot(null));
 });

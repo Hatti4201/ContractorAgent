@@ -148,6 +148,7 @@ enum TaskKind {
   FOLLOW_UP_SCAN
   FOLLOW_UP_RETRY
   AUTO_SEND
+  AUTOPILOT_BATCH
 }
 
 enum FollowUpEvent {
@@ -499,9 +500,18 @@ model ExposureState {
 }
 
 /// The kill switch for automatic sending, flipped from the dashboard without a restart.
+/// The dashboard's autopilot switch. DRAFT builds Outlook drafts and records when each would have
+/// gone out (the shadow trial); SEND also sends them.
+enum AutopilotSetting {
+  OFF
+  DRAFT
+  SEND
+}
+
 model AutopilotControl {
-  id              String    @id @default("primary")
-  sendPaused      Boolean   @default(false) @map("send_paused")
+  id              String            @id @default("primary")
+  /// Null until the user first uses the switch; AUTOPILOT in the environment decides until then.
+  mode            AutopilotSetting?
   /// When the daily digest last went out (or was attempted); one per local date.
   lastDigestAt    DateTime? @map("last_digest_at")
   lastDigestError String?   @map("last_digest_error")

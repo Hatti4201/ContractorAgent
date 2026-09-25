@@ -2,7 +2,7 @@ import { IntakeStatus, OutreachDraftStatus, OutreachMode } from "@/app/generated
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { applicationDecision, pitchedCase, readStoredPolicy, type StoredPolicy } from "@/services/application-policy";
-import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute } from "@/services/autopilot";
+import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute, readyForAutopilot, type AutopilotMode } from "@/services/autopilot";
 import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
 import { analyzeJobText } from "@/services/job-analyzer";
@@ -18,7 +18,7 @@ import {
   type OutreachInput,
   type OutreachValidation,
 } from "@/services/outreach-agent";
-import { scheduleAutoSend } from "@/services/auto-send";
+import { currentAutopilotMode, scheduleAutoSend } from "@/services/auto-send";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { buildOutlookDraftForJob } from "@/services/outlook-draft";
 import { listOutlookSourceMessages } from "@/services/outlook-graph";
@@ -85,7 +85,7 @@ export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
 
 async function prepareIntake(intakeId: string, task?: TaskHandle) {
   const intake = await getPrisma().jobIntake.findUniqueOrThrow({ where: { id: intakeId } });
-  const autopilot = autopilotApplies();
+  const autopilot = autopilotApplies(await currentAutopilotMode());
 
   await task?.progress("Analyzing the job description");
   const analysis: JobCase = intake.analysis
@@ -106,19 +106,45 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
   await task?.progress("Checking your application rules");
   const policy = await intakePolicy(intakeId, intake.rawText, intake.policy);
   if (!policy) return savePreview(intakeId, stopped("Your application rules could not be checked, so nothing was written. Open the job to decide yourself.", null, null));
-  if (policy.decision.verdict === "SKIP") {
-    await getPrisma().jobIntake.updateMany({
-      where: { id: intakeId, status: IntakeStatus.PENDING },
-      data: {
-        preview: stopped(`Skipped by your application rules: ${policy.decision.reason}`, null, null) as unknown as Prisma.InputJsonValue,
-        ...(autopilot ? { status: IntakeStatus.SKIPPED } : {}),
-      },
-    });
-    return;
-  }
+  if (policy.decision.verdict === "SKIP") return skipIntake(intakeId, policy.decision.reason, autopilot);
   const pitched = pitchedCase(analysis, policy.decision);
   if (pitched !== analysis) await getPrisma().jobIntake.update({ where: { id: intakeId }, data: { analysis: pitched as unknown as Prisma.InputJsonValue } });
   return continueIntake(intakeId, intake, pitched, autopilot, task);
+}
+
+/** With the autopilot on, a job the rules pass on leaves the queue; with it off, it waits with the reason. */
+async function skipIntake(intakeId: string, reason: string, autopilot: boolean) {
+  await getPrisma().jobIntake.updateMany({
+    where: { id: intakeId, status: IntakeStatus.PENDING },
+    data: {
+      preview: stopped(`Skipped by your application rules: ${reason}`, null, null) as unknown as Prisma.InputJsonValue,
+      ...(autopilot ? { status: IntakeStatus.SKIPPED } : {}),
+    },
+  });
+}
+
+/**
+ * Takes a job that was prepared while the autopilot was off, or held by it before, through the
+ * autopilot now, with the email already written: no model call beyond the rules check a job from
+ * before the rules may still need. It goes through the same gates as a fresh one.
+ */
+export async function resumeAutopilot(intakeId: string, task?: TaskHandle) {
+  const mode = await currentAutopilotMode();
+  if (!autopilotApplies(mode)) return;
+  const intake = await getPrisma().jobIntake.findUnique({ where: { id: intakeId } });
+  if (!intake || intake.status !== IntakeStatus.PENDING || !intake.analysis) return;
+  const preview = parseIntakePreview(intake.preview);
+  if (!preview || !readyForAutopilot(preview)) return;
+  const analysis = parseJobCase(intake.analysis);
+
+  const policy = await intakePolicy(intakeId, intake.rawText, intake.policy);
+  if (!policy) return savePreview(intakeId, { ...preview, hold: "Your application rules could not be checked, so the autopilot left this for you." });
+  if (policy.decision.verdict === "SKIP") return skipIntake(intakeId, policy.decision.reason, true);
+  // The email says what the job was when it was written; one the rules now take differently needs a new one.
+  if (pitchedCase(analysis, policy.decision) !== analysis) {
+    return savePreview(intakeId, { ...preview, hold: `Your rules take this as ${policy.decision.pitch}, but the email was written before; open the job to write it again.` });
+  }
+  await runAutopilot(intakeId, analysis, { ...preview, hold: null }, task, mode);
 }
 
 /**
@@ -241,7 +267,7 @@ async function resolveRoute(intake: Parameters<typeof autopilotRoute>[0], recrui
 }
 
 /** Confirms the intake and builds its Outlook draft, or records why it waits for the user instead. */
-async function runAutopilot(intakeId: string, analysis: JobCase, preview: IntakePreview, task?: TaskHandle) {
+async function runAutopilot(intakeId: string, analysis: JobCase, preview: IntakePreview, task?: TaskHandle, mode?: AutopilotMode) {
   await task?.progress("Confirming the job and building the Outlook draft");
   let opportunityId: string;
   try {
@@ -254,7 +280,7 @@ async function runAutopilot(intakeId: string, analysis: JobCase, preview: Intake
   // From here the job exists; a refused or failed Outlook draft records its reason on the draft itself,
   // and only a draft that really reached Outlook is scheduled (or shadow-recorded) for sending.
   try { await buildOutlookDraftForJob(opportunityId); } catch { return; }
-  await scheduleAutoSend(opportunityId);
+  await scheduleAutoSend(opportunityId, mode);
 }
 
 export function parseIntakePreview(value: unknown): IntakePreview | null {

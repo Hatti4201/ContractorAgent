@@ -16,7 +16,7 @@ Resume files and outreach rules stay local because they contain personal informa
 
 ## Phase 7 boundary
 
-Phase 7 uses Microsoft delegated OAuth with `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. `Mail.Send` is requested only while `AUTOPILOT=send` or `DAILY_DIGEST=on` (see Automatic sending and Daily digest); in every other mode the user sends from Outlook. After a send, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
+Phase 7 uses Microsoft delegated OAuth with `Mail.ReadWrite`, encrypted MSAL token-cache persistence, immutable Outlook message IDs, verified New/Reply drafts, and real Resume attachments up to 150 MB. `Mail.Send` is requested only while the autopilot is set to Send or `DAILY_DIGEST=on` (see Automatic sending and Daily digest); in every other mode the user sends from Outlook. After a send, the app verifies the immutable message, recipient, subject, and attachment before recording `OUTREACH_SENT`.
 
 Register `MICROSOFT_REDIRECT_URI` as a **Web** redirect URI in Microsoft Entra and grant delegated `Mail.ReadWrite`; add delegated `Mail.Send` only to use automatic sending. Set all Phase 7 environment values from `.env.example`, apply migrations, then connect from `/outlook`.
 
@@ -45,7 +45,21 @@ are counted and reported on Needs attention, because an unattended scan must not
 
 ## Autopilot
 
-With `AUTOPILOT=draft`, every job goes all the way to a verified Outlook draft with the resume attached,
+The **Autopilot** panel at the top of the dashboard has a three-position switch, and a click takes
+effect at once, with no restart:
+
+| Position | What happens |
+|---|---|
+| **Off** | Every job is analysed and written, then waits for your review |
+| **Drafts only** | Jobs that pass every gate become Outlook drafts; you send them. Each draft also records when it would have been sent (the shadow trial below) |
+| **Send** | As Drafts only, and each draft is sent after the delay, within the daily limit |
+
+Until you first use the switch, `AUTOPILOT` in the environment decides (`draft` and `shadow` both mean
+Drafts only). Jobs prepared while the switch was Off, or held earlier, stay in the queue with their
+email written; **Run the autopilot on them** (on the dashboard and the Sweep page) takes them through
+the same gates now, without writing the emails again.
+
+With the autopilot on, every job goes all the way to a verified Outlook draft with the resume attached,
 and no click: the ones the scan imports from Outlook (with `MAIL_INTAKE_SCAN=on`) and the ones you paste. The pipeline takes the first
 usable resume when several share a role family, and when the validator objects it rewrites the email
 once with the objections as feedback. Non-blocking notes that survive the rewrite are accepted; the
@@ -78,16 +92,18 @@ A job whose text names no recruiter email still waits for you, whichever way it 
 
 ## Automatic sending
 
-`AUTOPILOT` goes `off` → `draft` → `shadow` → `send`, one step at a time:
+Move the switch one step at a time, Off → Drafts only → Send:
 
-- **shadow** builds drafts exactly like `draft`, and records for each one when it would have been sent.
+- **Drafts only** builds the drafts, and records for each one when it would have been sent.
   The Autopilot panel on the dashboard shows, for the last 7 days, how many the autopilot would have
   sent and how many of those you sent yourself. Run it for a week; if you sent nearly all of them and
   rarely changed a word, move on.
-- **send** sends each draft the autopilot built `AUTO_SEND_DELAY_MINUTES` (default 10) after building
-  it, at most `AUTO_SEND_DAILY_LIMIT` (default 20) in any rolling 24 hours. Until then it shows under
-  **About to send** with a **Don't send** link, and **Pause all sending** stops everything without a
-  restart. It sends the draft as it stands in Outlook, so an edit you make there in the window goes too.
+- **Send** sends each draft the autopilot built `AUTO_SEND_DELAY_MINUTES` (default 10) after building
+  it, at most `AUTO_SEND_DAILY_LIMIT` (default 35) in any rolling 24 hours; over the limit the best
+  matches go and the rest stay in Outlook for you. Until then it shows under **About to send** with a
+  **Don't send** link. Moving the switch away from Send cancels everything still queued, and those
+  emails stay in Outlook as drafts. It sends the draft as it stands in Outlook, so an edit you make
+  there in the window goes too.
 
 Right before each send the draft is re-checked: still approved, recipient, resume and private context
 unchanged, and still a draft in Outlook (one you already sent or deleted is left alone). Anything that
@@ -96,9 +112,9 @@ confirmed is reported, not repeated, so nothing goes twice. Sends run on the sch
 tick, so they need `MAIL_SCAN_ENABLED`; outside the scan window only a send that fell due in the last
 hour goes, and anything older waits for the next window rather than reaching a recruiter at night.
 
-To enable it, add delegated `Mail.Send` to the app registration in Microsoft Entra, set `AUTOPILOT=send`
-(or `DAILY_DIGEST=on`), restart, then disconnect and reconnect Outlook so the new permission is granted. Without the grant,
-reading and drafting keep working and only the sends fail, each with that reason.
+Add delegated `Mail.Send` to the app registration in Microsoft Entra once. Choosing **Send** then checks
+that Outlook allows sending; if it does not yet, you are taken to Outlook to grant it, and the switch
+moves to Send when you come back with the permission granted. Declining leaves the switch where it was.
 
 ## LinkedIn bookmarklet
 
@@ -111,7 +127,7 @@ The bookmarklet opens a tab rather than calling the app, because LinkedIn's cont
 scripts from calling other sites. The text travels in the URL fragment, which never reaches a server
 log, and the tab opens with `noopener`. `/capture` submits without a click, so the bookmarklet carries a
 private key derived from `SESSION_SECRET`, and `/api/capture` refuses anything without it: otherwise any
-website could open `/capture` with a made-up post naming its own address, and with `AUTOPILOT=send` your
+website could open `/capture` with a made-up post naming its own address, and with the autopilot set to Send your
 resume would be mailed there. The key is shown only on the signed-in install page, and changing
 `SESSION_SECRET` retires every installed copy. The same post sent twice within a day is refused.
 
