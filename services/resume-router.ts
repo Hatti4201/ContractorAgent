@@ -1,8 +1,11 @@
-import { open } from "node:fs/promises";
-import { extname } from "node:path";
+import { mkdir, open, unlink, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { extname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { resolvePrivateFile } from "@/services/private-file";
 
 export const RESUME_CONFIDENCE_THRESHOLD = 0.7;
+export const MAX_RESUME_SIZE = 25 * 1024 * 1024;
 
 export type ResumeRecord = {
   id: string;
@@ -24,13 +27,41 @@ const signatures: Record<string, (header: Buffer) => boolean> = {
   ".doc": (header) => header.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])),
 };
 
+function resumeSignature(fileName: string) {
+  return signatures[extname(fileName).toLowerCase()];
+}
+
+function resumeStoragePath() {
+  return process.env.RESUME_STORAGE_PATH?.trim() || join(homedir(), ".contractor-agent", "resumes");
+}
+
+export async function saveUploadedResume(file: File) {
+  if (!file.size || file.size > MAX_RESUME_SIZE) return null;
+  const extension = extname(file.name).toLowerCase();
+  const signatureMatches = resumeSignature(file.name);
+  if (!signatureMatches) return null;
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (!signatureMatches(bytes.subarray(0, 8))) return null;
+
+  const directory = resumeStoragePath();
+  const savedPath = join(directory, `${randomUUID()}${extension}`);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await writeFile(savedPath, bytes, { mode: 0o600 });
+  const checked = await checkResumeFile(savedPath);
+  if (!checked.usable || !checked.canonicalPath) {
+    await unlink(savedPath).catch(() => undefined);
+    return null;
+  }
+  return checked;
+}
+
 export async function checkResumeFile(filePath: string) {
   const resolved = await resolvePrivateFile(filePath);
   if (!resolved.usable || !resolved.canonicalPath) return { usable: false, canonicalPath: null, issue: resolved.issue };
   try {
     const canonicalPath = resolved.canonicalPath;
-    const extension = extname(canonicalPath).toLowerCase();
-    const signatureMatches = signatures[extension];
+    const signatureMatches = resumeSignature(canonicalPath);
     if (!signatureMatches) return { usable: false, canonicalPath: null, issue: "Only PDF, DOCX, and DOC resumes are supported.", size: 0 };
 
     const handle = await open(canonicalPath, "r");

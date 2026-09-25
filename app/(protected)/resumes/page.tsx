@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createRoleFamily, deleteResume, registerResume, setResumeActive, setRoleFamilyActive } from "@/app/(protected)/resumes/actions";
 import { DeleteResumeForm } from "@/components/delete-job-form";
+import { ResumeUpload } from "@/components/resume-upload";
 import { getPrisma } from "@/lib/prisma";
 import { checkResumeFile } from "@/services/resume-router";
 import { allRoleFamilies } from "@/services/role-family";
@@ -8,7 +9,7 @@ import { allRoleFamilies } from "@/services/role-family";
 const inputClass = "mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 const errors: Record<string, string> = {
   fields: "Complete every field with a valid value.",
-  file: "The file must be a readable PDF, DOCX, or DOC outside this repository, with contents matching its extension.",
+  file: "Choose a readable PDF, DOCX, or DOC file no larger than 25 MB.",
   duplicate: "That resume name and version already exist.",
   missing: "That registry entry no longer exists.",
   "in-use": "This resume is attached to an outreach draft and cannot be deleted until that draft is removed.",
@@ -23,7 +24,6 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
   const resumes = await getPrisma().resume.findMany({ orderBy: [{ roleFamily: "asc" }, { active: "desc" }, { updatedAt: "desc" }] });
   // Every family, so a deactivated one still shows the resumes filed under it.
   const families = await allRoleFamilies();
-  const activeFamilies = families.filter((family) => family.active);
   const fileChecks = new Map(await Promise.all(resumes.map(async (resume) => [resume.id, await checkResumeFile(resume.filePath)] as const)));
 
   return (
@@ -34,19 +34,6 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
 
       {saved && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">Registry updated.</p>}
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">{errors[error] ?? "Registry update failed."}</p>}
-
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-semibold text-slate-950">Add resume version</h2>
-        <form action={registerResume} className="mt-5 grid gap-5 md:grid-cols-2">
-          {back && <input name="from" type="hidden" value={back} />}
-          <label className="text-sm font-medium text-slate-800">Name <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={200} name="name" required /></label>
-          <label className="text-sm font-medium text-slate-800">Version <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={100} name="version" required /></label>
-          <label className="text-sm font-medium text-slate-800">Role family <span aria-hidden="true" className="text-red-700">*</span><select className={inputClass} name="roleFamily" required>{activeFamilies.map((family) => <option key={family.code} value={family.code}>{family.label}</option>)}</select></label>
-          <label className="text-sm font-medium text-slate-800">Absolute local path <span aria-hidden="true" className="text-red-700">*</span><input className={inputClass} maxLength={4096} name="filePath" placeholder="/private/example.invalid/sample-resume.pdf" required /></label>
-          <label className="flex items-center gap-3 text-sm font-medium text-slate-800 md:col-span-2"><input className="h-4 w-4" name="active" type="checkbox" />Enable now (disables the current active version for this role)</label>
-          <button className="w-fit rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800" type="submit">Register resume</button>
-        </form>
-      </section>
 
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-xl font-semibold text-slate-950">Role families</h2>
@@ -79,7 +66,8 @@ export default async function ResumesPage({ searchParams }: { searchParams: Prom
             const entries = resumes.filter((resume) => resume.roleFamily === role.code);
             return (
               <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" key={role.code}>
-                <div className="flex items-center justify-between gap-3"><h3 className="font-semibold text-slate-950">{role.label}{!role.active && <span className="ml-2 text-xs font-medium text-slate-500">Inactive</span>}</h3><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entries.some((resume) => resume.active && fileChecks.get(resume.id)?.usable) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{entries.some((resume) => resume.active && fileChecks.get(resume.id)?.usable) ? "Ready" : "Needs file"}</span></div>
+                <div className="flex items-center justify-between gap-3"><h3 className="font-semibold text-slate-950">{role.label}{!role.active && <span className="ml-2 text-xs font-medium text-slate-500">Inactive</span>}</h3><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${entries.some((resume) => resume.active && fileChecks.get(resume.id)?.usable) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{entries.some((resume) => resume.active && fileChecks.get(resume.id)?.usable) ? "Ready" : "Needs file"}</span>{role.active && <span className="text-xs text-slate-500">+ to add</span>}</div></div>
+                {role.active && <ResumeUpload action={registerResume} from={back} roleFamily={role.code} roleLabel={role.label} />}
                 {entries.length ? (
                   <ul className="mt-4 space-y-3">
                     {entries.map((resume) => {

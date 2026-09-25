@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildResumeRoute, checkResumeFile } from "../services/resume-router";
+import { buildResumeRoute, checkResumeFile, saveUploadedResume } from "../services/resume-router";
 
 test("resume routing uses one real enabled registry file and requires review below 70%", async () => {
   const directory = await mkdtemp(join(tmpdir(), "contractor-agent-resume-router-"));
@@ -34,6 +34,23 @@ test("resume routing uses one real enabled registry file and requires review bel
     assert.equal((await checkResumeFile(join(directory, "missing.pdf"))).usable, false);
     assert.match((await checkResumeFile(join(process.cwd(), "README.md"))).issue ?? "", /outside the application repository/);
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("uploaded resumes are copied to private storage and validated", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "contractor-agent-resume-upload-"));
+  const previous = process.env.RESUME_STORAGE_PATH;
+  process.env.RESUME_STORAGE_PATH = directory;
+  try {
+    const file = new File([Buffer.from("%PDF-1.7\nuploaded test file")], "selected-resume.pdf");
+    const saved = await saveUploadedResume(file);
+    assert.equal(saved?.usable, true);
+    assert.notEqual(saved?.canonicalPath, null);
+    assert.notEqual(saved?.canonicalPath, join(directory, "selected-resume.pdf"));
+  } finally {
+    if (previous === undefined) delete process.env.RESUME_STORAGE_PATH;
+    else process.env.RESUME_STORAGE_PATH = previous;
     await rm(directory, { recursive: true, force: true });
   }
 });
