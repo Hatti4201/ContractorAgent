@@ -348,7 +348,7 @@ export async function runExposure(): Promise<RunSummary | null> {
     await database.exposureState.update({ where: { id: STATE_ID }, data: { consecutiveFailures: { increment: 1 }, lastError: message } });
     return summary;
   } finally {
-    await tab?.close();
+    tab?.close();
     await database.exposureState.update({ where: { id: STATE_ID }, data: { progress: null, stopRequested: false } }).catch(() => {});
     globalForExposure.exposureRunning = false;
     console.log(`Dice exposure (${config.mode}) run: ${summary.applied} applied, ${summary.rehearsed} rehearsed, ${summary.skipped} skipped, ${summary.failed} failed${summary.stopReason ? ` — ${summary.stopReason}` : ""}.`);

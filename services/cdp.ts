@@ -14,7 +14,7 @@ export class CdpTab {
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Map<string, Set<Listener>>();
 
-  private constructor(private readonly socket: WebSocket, private readonly baseUrl: string, readonly targetId: string) {
+  private constructor(private readonly socket: WebSocket, readonly targetId: string) {
     socket.addEventListener("message", (event) => {
       const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string }; method?: string; params?: Record<string, unknown> };
       if (message.id !== undefined) {
@@ -32,22 +32,35 @@ export class CdpTab {
     });
   }
 
-  /** Opens a fresh tab in the running Chrome. Fails plainly when Chrome is not started for this. */
+  /**
+   * Attaches to the tab already showing in the dedicated window. Creating a tab would make Chrome
+   * activate its window, which on macOS pulls it in front of whatever the user is doing (and out of
+   * the Dock); driving the existing tab never asks for focus. Only if every tab was closed is one
+   * created, which brings the window forward that one time.
+   */
   static async open(baseUrl: string) {
-    let target: { id: string; webSocketDebuggerUrl: string };
+    type Target = { id: string; type: string; url: string; webSocketDebuggerUrl?: string };
+    let target: Target | undefined;
     try {
-      const response = await fetch(`${baseUrl}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(5_000) });
-      if (!response.ok) throw new Error(String(response.status));
-      target = await response.json() as typeof target;
+      const listed = await fetch(`${baseUrl}/json/list`, { signal: AbortSignal.timeout(5_000) });
+      if (!listed.ok) throw new Error(String(listed.status));
+      // Chrome lists the most recently used tab first.
+      target = (await listed.json() as Target[]).find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl && !/^(chrome|devtools|chrome-extension):/.test(entry.url));
+      if (!target) {
+        const created = await fetch(`${baseUrl}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(5_000) });
+        if (!created.ok) throw new Error(String(created.status));
+        target = await created.json() as Target;
+      }
     } catch {
       throw new Error("The exposure Chrome is not running. Start it with `npm run exposure:chrome` and keep it open.");
     }
+    if (!target?.webSocketDebuggerUrl) throw new Error("Could not find a tab in the exposure Chrome.");
     const socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true });
       socket.addEventListener("error", () => reject(new Error("Could not attach to the exposure Chrome tab.")), { once: true });
     });
-    const tab = new CdpTab(socket, baseUrl, target.id);
+    const tab = new CdpTab(socket, target.id);
     // Leaving a half-filled wizard raises "Leave site?", and an open dialog stalls every later
     // navigation. Only that and plain alerts are answered; a confirm (which could mean "submit?") is
     // dismissed, so no dialog can ever push an application through.
@@ -56,6 +69,8 @@ export class CdpTab {
       void tab.send("Page.handleJavaScriptDialog", { accept }).catch(() => {});
     });
     await tab.send("Page.enable");
+    // A covered or minimized window loses focus; pages that check focus should behave as if it had it.
+    await tab.send("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
     return tab;
   }
 
@@ -118,12 +133,12 @@ export class CdpTab {
     await this.send("Input.insertText", { text });
   }
 
-  async close() {
+  /** Detaches only. The tab stays open so the next run can reuse it without raising the window. */
+  close() {
     try {
       this.socket.close();
-      await fetch(`${this.baseUrl}/json/close/${this.targetId}`, { signal: AbortSignal.timeout(5_000) });
     } catch {
-      // The tab may already be gone; nothing depends on closing it.
+      // Already closed; nothing depends on it.
     }
   }
 }

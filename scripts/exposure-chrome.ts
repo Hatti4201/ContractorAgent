@@ -34,8 +34,17 @@ async function main() {
     console.log("Profile copied. If Dice asks you to sign in, do it once in the window that opens.");
   }
 
-  spawn("open", ["-na", "Google Chrome", "--args", `--user-data-dir=${dataDir}`, `--remote-debugging-port=${port}`, "https://www.dice.com/dashboard"], { stdio: "ignore", detached: true }).unref();
-  console.log(`Exposure Chrome starting with remote debugging on 127.0.0.1:${port}. Keep this window open while the channel runs.`);
+  // The three --disable-* flags stop Chrome slowing this window down when it is minimized or covered,
+  // so it can run behind the user's work at full speed. They change performance only, nothing a site sees.
+  const flags = [
+    `--user-data-dir=${dataDir}`,
+    `--remote-debugging-port=${port}`,
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-background-timer-throttling",
+  ];
+  spawn("open", ["-na", "Google Chrome", "--args", ...flags, "https://www.dice.com/dashboard"], { stdio: "ignore", detached: true }).unref();
+  console.log(`Exposure Chrome starting with remote debugging on 127.0.0.1:${port}. Keep this window open (minimized or behind others is fine) while the channel runs.`);
 }
 
 main().catch((error: unknown) => {
