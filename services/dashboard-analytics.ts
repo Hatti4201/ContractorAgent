@@ -29,6 +29,7 @@ export type DashboardOpportunity = {
   recruiter: { id: string; name: string } | null;
   applicationTrack: { currentStage: ApplicationStage } | null;
   activities: Array<{ type: ActivityType; occurredAt: Date }>;
+  matchScore?: number | null;
 };
 
 function includesActivity(types: readonly ActivityType[], type: ActivityType) {
@@ -102,6 +103,21 @@ function performance(
     );
 }
 
+/** The dashboard's pipeline board, left to right; the jobs list filters by the same columns. */
+export const pipelineColumns = [
+  { key: "outreach", label: "Outreach", stages: [ApplicationStage.DISCOVERED, ApplicationStage.OUTREACH_SENT] },
+  { key: "engaged", label: "Engaged", stages: [ApplicationStage.RECRUITER_ENGAGED] },
+  { key: "rtr", label: "RTR", stages: [ApplicationStage.RTR_SIGNED] },
+  { key: "submitted", label: "Submitted", stages: [ApplicationStage.SUBMITTED_TO_CLIENT] },
+  {
+    key: "interview",
+    label: "Interview",
+    stages: [ApplicationStage.INTERVIEW_SCHEDULED, ApplicationStage.INTERVIEW_COMPLETED, ApplicationStage.OFFER],
+  },
+] as const;
+
+export type PipelineColumnKey = (typeof pipelineColumns)[number]["key"];
+
 export function summarizeDashboard(
   opportunities: DashboardOpportunity[],
   range: TimeRange,
@@ -132,17 +148,6 @@ export function summarizeDashboard(
     return { label, numerator, denominator, rate: denominator ? numerator / denominator : null };
   };
 
-  const pipelineDefinitions = [
-    { key: "outreach", label: "Outreach", stages: [ApplicationStage.DISCOVERED, ApplicationStage.OUTREACH_SENT] },
-    { key: "engaged", label: "Engaged", stages: [ApplicationStage.RECRUITER_ENGAGED] },
-    { key: "rtr", label: "RTR", stages: [ApplicationStage.RTR_SIGNED] },
-    { key: "submitted", label: "Submitted", stages: [ApplicationStage.SUBMITTED_TO_CLIENT] },
-    {
-      key: "interview",
-      label: "Interview",
-      stages: [ApplicationStage.INTERVIEW_SCHEDULED, ApplicationStage.INTERVIEW_COMPLETED, ApplicationStage.OFFER],
-    },
-  ] as const;
 
   const details = Object.fromEntries(dashboardMetrics.map((metric) => [
     metric.key,
@@ -186,7 +191,7 @@ export function summarizeDashboard(
       conversion("Outreach → Interview", "outreach", "interviews"),
       conversion("Interview → Offer", "interviews", "offers"),
     ],
-    pipeline: pipelineDefinitions.map((column) => ({
+    pipeline: pipelineColumns.map((column) => ({
       ...column,
       jobs: opportunities.filter((opportunity) =>
         (inRange(opportunity.createdAt) || opportunity.activities.some((activity) => inRange(activity.occurredAt))) &&
