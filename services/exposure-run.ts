@@ -82,7 +82,23 @@ async function checkBlocker(tab: CdpTab) {
   return { page, blocker };
 }
 
+// ponytail: two soft retries per job for a slow page, a re-rendered control or a slow model; raise if Dice gets slower.
+const SOFT_RETRIES = 2;
+
+/**
+ * A slow page or a dropped Chrome answer is one job's failure, recorded so the next run retries it,
+ * never the end of the whole run. Only a Stop and the hard blockers end a run from here.
+ */
 async function applyToJob(context: RunContext, guid: string, title: string, onStep: (step: number) => Promise<void>): Promise<JobOutcome> {
+  try {
+    return await attemptJob(context, guid, title, onStep);
+  } catch (error) {
+    if (error instanceof StopRequested) throw error;
+    return { result: ExposureResult.FAILED, reason: error instanceof Error ? error.message : "The job failed.", answers: [], history: [], pageExcerpt: "" };
+  }
+}
+
+async function attemptJob(context: RunContext, guid: string, title: string, onStep: (step: number) => Promise<void>): Promise<JobOutcome> {
   const { tab, config, facts } = context;
   await tab.navigate(jobUrl(guid));
   await waitFor(tab, '[data-testid="apply-button"]');
@@ -90,7 +106,8 @@ async function applyToJob(context: RunContext, guid: string, title: string, onSt
   if (opened.blocker) return { result: "BLOCKED", reason: opened.blocker };
 
   const button = await readApplyButton(tab);
-  if (!button) return { result: ExposureResult.SKIPPED, reason: "No apply button on the job page." };
+  // The search already asks Dice for Easy Apply only, so a missing button means the page was still loading.
+  if (!button) return { result: ExposureResult.FAILED, reason: "The apply button had not loaded; retried next run.", answers: [], history: [], pageExcerpt: "" };
   // Signed out, the button points at the login page; that must stop the run, not skip every job.
   if (button.href && /login|sign-?in/i.test(button.href)) return { result: "BLOCKED", reason: "Dice is signed out. Sign in again in the exposure Chrome window." };
   if (/^applied$/i.test(button.text)) return { result: ExposureResult.SKIPPED, reason: "Already applied on Dice." };
@@ -104,7 +121,21 @@ async function applyToJob(context: RunContext, guid: string, title: string, onSt
   const history: string[] = [];
   let lastUrl = "";
   let pageExcerpt = "";
-  const failed = (reason: string): JobOutcome => ({ result: ExposureResult.FAILED, reason, answers, history, pageExcerpt });
+  let softRetries = 0;
+  // The last few steps go into the reason, so a failure can be read without re-running it.
+  const failed = (reason: string): JobOutcome => ({
+    result: ExposureResult.FAILED,
+    reason: [reason, ...history.slice(-3)].join(" | ").slice(0, 900),
+    answers,
+    history,
+    pageExcerpt,
+  });
+  /** A transient hiccup: note it, look at the page again, and let the model choose afresh. */
+  const retry = (note: string) => {
+    softRetries += 1;
+    history.push(`(retry: ${note})`);
+    return softRetries <= SOFT_RETRIES;
+  };
 
   for (let step = 1; step <= config.maxStepsPerJob; step += 1) {
     // Stopping mid-wizard leaves an unsubmitted form behind, which Dice simply discards.
@@ -120,12 +151,17 @@ async function applyToJob(context: RunContext, guid: string, title: string, onSt
     try {
       move = await nextStep(config.executorModel, { jobTitle: title, facts, history, page });
     } catch (error) {
-      return failed(error instanceof Error ? error.message : "The executor model failed.");
+      const message = error instanceof Error ? error.message : "The executor model failed.";
+      if (retry(message)) continue;
+      return failed(message);
     }
     if (move.action === "give_up") return failed(`Agent gave up: ${move.note}`);
 
     const target = page.elements.find((element) => element.id === move.target);
-    if (!target) return failed(`Agent chose a control that is not on the page (${move.target}).`);
+    if (!target) {
+      if (retry(`chose control ${move.target}, which is not on the page`)) continue;
+      return failed(`Agent chose a control that is not on the page (${move.target}).`);
+    }
 
     // RESTRICTIONS §4: a fact or identity answer must rest on words the user actually wrote down.
     // Only answering moves count; pressing Next beside a "Work Authorization" heading answers nothing.
@@ -144,7 +180,10 @@ async function applyToJob(context: RunContext, guid: string, title: string, onSt
       else if (move.action === "select") await selectOption(tab, target.id, move.value ?? "");
       else await clickElement(tab, target.id);
     } catch (error) {
-      return failed(error instanceof Error ? error.message : "The page action failed.");
+      // Usually the page re-rendered between reading it and acting on it.
+      const message = error instanceof Error ? error.message : "The page action failed.";
+      if (retry(message)) continue;
+      return failed(message);
     }
 
     if (kind !== "none") {
@@ -198,7 +237,9 @@ async function runPages(context: RunContext) {
     let totalPages = 1;
     for (let pageNumber = 1; pageNumber <= pagesToVisit(totalPages, config.pageRatio, config.maxPages); pageNumber += 1) {
       await context.checkStop();
-      await tab.navigate(searchUrl(keyword, pageNumber, config.postedDate, config.employmentTypes));
+      const url = searchUrl(keyword, pageNumber, config.postedDate, config.employmentTypes);
+      // One retry for a slow search page before the run gives up on it.
+      await tab.navigate(url).catch(async () => { await pause(5_000); await tab.navigate(url); });
       await waitFor(tab, '[data-testid="job-card"]');
       const { blocker } = await checkBlocker(tab);
       if (blocker) throw new Error(blocker);

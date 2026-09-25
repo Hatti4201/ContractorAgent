@@ -122,6 +122,9 @@ test("fact and identity answers must quote the candidate facts verbatim", () => 
   // Fictional placeholder facts; never a real candidate's status.
   const facts = "Work authorization: Example Status Alpha.\nYears of Java experience: 99 (fictional).";
   assert.equal(quoteSupported("Example   Status Alpha", facts), true);
+  const markdownFacts = "**Work Authorization:** Example Status Alpha\n## Years\n99 (fictional)";
+  assert.equal(quoteSupported("Work Authorization: Example Status Alpha", markdownFacts), true);
+  assert.equal(quoteSupported("Work Authorization: Example Status Beta", markdownFacts), false);
   assert.equal(quoteSupported("Example Status Beta", facts), false);
   assert.equal(quoteSupported("", facts), false);
   assert.equal(quoteSupported("Years of Java experience: 99 (fictional).", null), false);

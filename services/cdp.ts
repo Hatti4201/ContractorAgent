@@ -48,6 +48,13 @@ export class CdpTab {
       socket.addEventListener("error", () => reject(new Error("Could not attach to the exposure Chrome tab.")), { once: true });
     });
     const tab = new CdpTab(socket, baseUrl, target.id);
+    // Leaving a half-filled wizard raises "Leave site?", and an open dialog stalls every later
+    // navigation. Only that and plain alerts are answered; a confirm (which could mean "submit?") is
+    // dismissed, so no dialog can ever push an application through.
+    tab.on("Page.javascriptDialogOpening", (params) => {
+      const accept = params.type === "beforeunload" || params.type === "alert";
+      void tab.send("Page.handleJavaScriptDialog", { accept }).catch(() => {});
+    });
     await tab.send("Page.enable");
     return tab;
   }
@@ -65,6 +72,12 @@ export class CdpTab {
       });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
+  }
+
+  on(event: string, listener: Listener) {
+    const listeners = this.listeners.get(event) ?? new Set<Listener>();
+    this.listeners.set(event, listeners);
+    listeners.add(listener);
   }
 
   private once(event: string, timeoutMs: number) {

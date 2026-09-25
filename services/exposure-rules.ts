@@ -252,11 +252,12 @@ export function looksLikeIdentityQuestion(text: string) {
 
 /**
  * A fact or identity answer must quote the candidate facts verbatim, so the model can cite only what
- * the user actually wrote down. Whitespace and case are forgiven; nothing else is.
+ * the user actually wrote down. Whitespace, case and Markdown marks are forgiven; the words are not.
  */
 export function quoteSupported(quote: string | null | undefined, facts: string | null) {
   if (!quote?.trim() || !facts) return false;
-  const normalize = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+  // Markdown emphasis and heading marks are formatting, not words, so the model may drop them.
+  const normalize = (value: string) => value.replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
   const needle = normalize(quote);
   return needle.length >= 3 && normalize(facts).includes(needle);
 }
