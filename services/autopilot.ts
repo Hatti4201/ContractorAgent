@@ -80,9 +80,13 @@ export function autoSendDelayMinutes(value = process.env.AUTO_SEND_DELAY_MINUTES
   return bounded(value, 10, 1, 1440);
 }
 
-/** Sends allowed in any rolling 24 hours, so a restart after a quiet night cannot release a burst. */
+/**
+ * Sends allowed in any rolling 24 hours, so a restart after a quiet night cannot release a burst. A
+ * daily LinkedIn sweep yields more than 20, and far more than this starts to look like bulk mail to
+ * Outlook, which can lock the account.
+ */
 export function autoSendDailyLimit(value = process.env.AUTO_SEND_DAILY_LIMIT) {
-  return bounded(value, 20, 0, 500);
+  return bounded(value, 35, 0, 500);
 }
 
 /** What happens to a draft the autopilot just built: nothing, a shadow record, or a scheduled send. */
@@ -96,6 +100,16 @@ export function sendQuota(limit: number, sentInLastDay: number) {
 }
 
 /**
+ * When more is due than the limit allows, the best matches go and the rest are left in Outlook for
+ * the user at once: by tomorrow, when the quota frees up, a contract post has usually been filled.
+ */
+export function rankForSending<T extends { matchScore: number | null; autoSendAt: Date | null }>(due: T[], quota: number) {
+  const ranked = [...due].sort((left, right) =>
+    (right.matchScore ?? -1) - (left.matchScore ?? -1) || (left.autoSendAt?.getTime() ?? 0) - (right.autoSendAt?.getTime() ?? 0));
+  return { sending: ranked.slice(0, quota), overLimit: ranked.slice(quota) };
+}
+
+/**
  * The first email only has to get the resume in front of the recruiter, so a loose fit is fine. What
  * the email says about the candidate is not: a BLOCK is a wrong recipient, attachment or fabricated
  * fact, and that still waits for the user. A NEEDS_REVIEW left after one rewrite is let through.
@@ -105,17 +119,17 @@ export function autopilotAccepts(validation: OutreachValidation | null) {
 }
 
 /**
- * The same JD text again, or a similar title from the recruiter who already has this role, would put
- * a second email in front of someone who has the first. Another vendor on the same role is a normal
- * channel and goes ahead.
+ * A second email to someone who already has the first is the one duplicate worth stopping: the same
+ * recruiter with the same JD text or a similar title. Another recruiter is another chance to be picked,
+ * even at the same vendor with the same post, so it goes ahead; so does another vendor on the same role.
+ * An exact copy whose recruiter is unknown on either side is held, since it may be that same person.
  */
 export function autopilotDuplicateHold(jobCase: JobCase, matches: DuplicateMatch[]) {
-  const exact = matches.find((match) => match.exact);
-  if (exact) return `The same JD is already tracked as "${exact.title}".`;
   const recruiter = jobCase.recruiterName?.trim().toLowerCase();
-  const sameRecruiter = recruiter
-    ? matches.find((match) => match.recruiter?.trim().toLowerCase() === recruiter && match.reasons.includes("Similar job title"))
-    : undefined;
+  const same = (match: DuplicateMatch) => Boolean(recruiter && match.recruiter?.trim().toLowerCase() === recruiter);
+  const exact = matches.find((match) => match.exact && (same(match) || !recruiter || !match.recruiter));
+  if (exact) return `The same JD is already tracked as "${exact.title}".`;
+  const sameRecruiter = matches.find((match) => same(match) && match.reasons.includes("Similar job title"));
   return sameRecruiter ? `${jobCase.recruiterName} already has a similar job tracked: "${sameRecruiter.title}".` : null;
 }
 

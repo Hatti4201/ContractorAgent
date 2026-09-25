@@ -13,6 +13,7 @@ import {
   autopilotDuplicateHold,
   autopilotMode,
   autopilotRoute,
+  rankForSending,
   sendQuota,
 } from "../services/autopilot";
 import type { DuplicateMatch, JobCase } from "../services/job-case";
@@ -85,7 +86,13 @@ test("a loose fit goes through, a blocking fact does not", () => {
 
 test("a duplicate holds only when it would reach the same recruiter twice", () => {
   assert.equal(autopilotDuplicateHold(jobCase, []), null);
-  assert.match(autopilotDuplicateHold(jobCase, [match({ exact: true, score: 1 })]) ?? "", /same JD/);
+  assert.match(autopilotDuplicateHold(jobCase, [match({ exact: true, score: 1 })]) ?? "", /same JD/, "An exact copy from an unknown recruiter may be the same person.");
+  assert.match(autopilotDuplicateHold(jobCase, [match({ exact: true, score: 1, recruiter: "Example Recruiter" })]) ?? "", /same JD/);
+  assert.equal(
+    autopilotDuplicateHold(jobCase, [match({ exact: true, score: 1, recruiter: "Colleague At The Same Vendor" })]),
+    null,
+    "Another recruiter posting the same JD is another chance to be picked.",
+  );
   assert.match(autopilotDuplicateHold(jobCase, [match({ recruiter: "example recruiter" })]) ?? "", /already has a similar job/);
   assert.equal(autopilotDuplicateHold(jobCase, [match({ recruiter: "Another Vendor Recruiter" })]), null, "Another vendor on one role is a normal channel.");
   assert.equal(autopilotDuplicateHold(jobCase, [match({ recruiter: "Example Recruiter", reasons: ["Same client"] })]), null);
@@ -164,9 +171,23 @@ test("the delay and limit fall back to safe defaults on anything unreadable", ()
   assert.equal(autoSendDelayMinutes("0"), 10, "No window at all is not a delay.");
   assert.equal(autoSendDelayMinutes("15"), 15);
   assert.equal(autoSendDelayMinutes("2.5"), 10);
-  assert.equal(autoSendDailyLimit(undefined), 20);
+  assert.equal(autoSendDailyLimit(undefined), 35);
   assert.equal(autoSendDailyLimit("0"), 0, "Zero is a real choice: send nothing.");
-  assert.equal(autoSendDailyLimit("9999"), 20);
+  assert.equal(autoSendDailyLimit("9999"), 35);
   assert.equal(sendQuota(20, 5), 15);
   assert.equal(sendQuota(20, 25), 0);
+});
+
+test("over the daily limit the best matches are sent and the rest handed back", () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 8, 25, 9, minute));
+  const due = [
+    { id: "a", matchScore: 0.55, autoSendAt: at(0) },
+    { id: "b", matchScore: 0.9, autoSendAt: at(5) },
+    { id: "c", matchScore: null, autoSendAt: at(1) },
+    { id: "d", matchScore: 0.9, autoSendAt: at(2) },
+  ];
+  const { sending, overLimit } = rankForSending(due, 2);
+  assert.deepEqual(sending.map((draft) => draft.id), ["d", "b"], "Equal matches go in the order they fell due.");
+  assert.deepEqual(overLimit.map((draft) => draft.id), ["a", "c"]);
+  assert.deepEqual(rankForSending(due, 0).sending, []);
 });

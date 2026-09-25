@@ -1,12 +1,13 @@
-import { OutreachDraftStatus } from "@/app/generated/prisma/enums";
+import { IntakeStatus, OutreachDraftStatus, OutreachMode } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
-import { OutreachMode } from "@/app/generated/prisma/enums";
+import { applicationDecision, pitchedCase, readStoredPolicy, type StoredPolicy } from "@/services/application-policy";
 import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute } from "@/services/autopilot";
 import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
 import { analyzeJobText } from "@/services/job-analyzer";
 import { assessMatch, readMatchReport, type MatchReport } from "@/services/match-score";
+import { triagePosts } from "@/services/post-triage";
 import { activeRoleFamilies } from "@/services/role-family";
 import { loadOutreachContext } from "@/services/outreach-context";
 import {
@@ -100,6 +101,50 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     data: { analysis: analysis as unknown as Prisma.InputJsonValue },
   });
 
+  // The user's rules come before anything that costs a call: a job they would never take is not
+  // scored or written to, and an autopilot skip leaves the queue, since it needs nothing from them.
+  await task?.progress("Checking your application rules");
+  const policy = await intakePolicy(intakeId, intake.rawText, intake.policy);
+  if (!policy) return savePreview(intakeId, stopped("Your application rules could not be checked, so nothing was written. Open the job to decide yourself.", null, null));
+  if (policy.decision.verdict === "SKIP") {
+    await getPrisma().jobIntake.updateMany({
+      where: { id: intakeId, status: IntakeStatus.PENDING },
+      data: {
+        preview: stopped(`Skipped by your application rules: ${policy.decision.reason}`, null, null) as unknown as Prisma.InputJsonValue,
+        ...(autopilot ? { status: IntakeStatus.SKIPPED } : {}),
+      },
+    });
+    return;
+  }
+  const pitched = pitchedCase(analysis, policy.decision);
+  if (pitched !== analysis) await getPrisma().jobIntake.update({ where: { id: intakeId }, data: { analysis: pitched as unknown as Prisma.InputJsonValue } });
+  return continueIntake(intakeId, intake, pitched, autopilot, task);
+}
+
+/**
+ * The facts a sweep already read come with the intake; anything else, mail included, is read here with
+ * the same screen. Null when they cannot be read, and the job then waits rather than risk a rule.
+ */
+async function intakePolicy(intakeId: string, rawText: string, stored: unknown): Promise<StoredPolicy | null> {
+  const known = readStoredPolicy(stored);
+  if (known) return known;
+  try {
+    const [screened] = await triagePosts([rawText], await activeRoleFamilies());
+    const policy = { facts: screened!.facts, decision: applicationDecision(screened!.facts) };
+    await getPrisma().jobIntake.update({ where: { id: intakeId }, data: { policy: policy as unknown as Prisma.InputJsonValue } });
+    return policy;
+  } catch {
+    return null;
+  }
+}
+
+async function continueIntake(
+  intakeId: string,
+  intake: { sourceType: IntakeSourceFacts["sourceType"]; sourceMessageId: string | null; originalSender: string | null; rawText: string },
+  analysis: JobCase,
+  autopilot: boolean,
+  task?: TaskHandle,
+) {
   // Scored for every intake, so the review screen shows the fit too; a failure only costs the autopilot.
   await task?.progress("Scoring the match against your profile");
   let match: MatchReport | null = null;
@@ -174,6 +219,8 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
   await savePreview(intakeId, preview);
   if (autopilot) await runAutopilot(intakeId, analysis, preview, task);
 }
+
+type IntakeSourceFacts = Parameters<typeof autopilotRoute>[0];
 
 /**
  * The mode is settled before the email is written, because a reply and a new email read differently.
