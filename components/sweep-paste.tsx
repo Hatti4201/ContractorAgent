@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleAlert, CircleX, FileText, Loader, ScanSearch, UserRoundX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ClipboardEvent, type FormEvent } from "react";
 import { clipboardHtmlToText, MAX_SWEEP_LENGTH, splitFeed } from "@/lib/linkedin-feed";
@@ -48,29 +49,47 @@ export function SweepPaste() {
   }
 
   return (
-    <form className="space-y-4" onSubmit={submit}>
-      <label className="block text-sm font-medium text-slate-800">
-        Paste the whole LinkedIn page
-        <textarea
-          className="mt-1.5 h-40 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-mono text-xs outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
-          maxLength={MAX_SWEEP_LENGTH}
-          onChange={(event) => setText(event.target.value)}
-          onPaste={paste}
-          placeholder="In the group, search, filter to Past 24 hours, press Show more results 4–5 times, then Cmd+A, Cmd+C, and paste here."
-          value={text}
-        />
-      </label>
-      {text && (
-        <p className={`text-sm ${posts.length ? "text-slate-700" : "text-amber-900"}`} aria-live="polite">
-          {posts.length
-            ? `${posts.length} posts found${withProfiles < posts.length ? `; ${posts.length - withProfiles} without a profile link` : ""}.`
-            : "No posts found yet. Copy the whole page, not just part of a post."}
-        </p>
-      )}
-      {error && <p aria-live="polite" className="rounded-lg bg-red-50 p-3 text-sm font-medium text-red-800">{error}</p>}
-      <button className="rounded-lg bg-slate-950 px-5 py-3 font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={sending || !posts.length} type="submit">
-        {sending ? "Starting…" : `Sweep ${posts.length || ""} posts`.replace("  ", " ")}
-      </button>
+    <form className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" onSubmit={submit}>
+      <textarea
+        aria-label="Paste the whole LinkedIn page"
+        className="h-24 w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+        maxLength={MAX_SWEEP_LENGTH}
+        onChange={(event) => setText(event.target.value)}
+        onPaste={paste}
+        placeholder="Group → search → Past 24 hours → Show more ×4 → ⌘A ⌘C → paste here"
+        value={text}
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
+        {text && (posts.length
+          ? (
+            <>
+              <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700" title="Posts found">
+                <FileText aria-hidden="true" size={14} />{posts.length}
+              </span>
+              {withProfiles < posts.length && (
+                <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900" title="Posts whose author link was lost in the paste">
+                  <UserRoundX aria-hidden="true" size={14} />{posts.length - withProfiles}
+                </span>
+              )}
+            </>
+          )
+          : (
+            <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900" title="No posts found: copy the whole page, not part of a post">
+              <CircleAlert aria-hidden="true" size={14} />0
+            </span>
+          ))}
+        {error && <span className="flex items-center gap-1 text-sm font-medium text-red-700" title={error}><CircleX aria-hidden="true" size={15} /><span className="max-w-md truncate">{error}</span></span>}
+        <button
+          aria-label={`Sweep ${posts.length} posts`}
+          className="ml-auto flex items-center gap-1.5 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={sending || !posts.length}
+          title="Sweep"
+          type="submit"
+        >
+          {sending ? <Loader aria-hidden="true" className="animate-spin" size={16} /> : <ScanSearch aria-hidden="true" size={16} />}
+          {posts.length || ""}
+        </button>
+      </div>
     </form>
   );
 }
