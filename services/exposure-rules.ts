@@ -86,13 +86,18 @@ export function blacklistedTerm(title: string, blacklist: readonly string[]) {
   return blacklist.find((term) => new RegExp(`\\b${escapeRegExp(term)}`, "i").test(title)) ?? null;
 }
 
-/** A card's lines run title, company, location, then badges such as "Easy Apply" or "Applied". */
+// Status lines Dice mixes into a card. Signed in, "Easy Apply" is hidden and "Applied" sits under the title.
+const statusLines = new Set(["applied", "easy apply"]);
+
+/**
+ * List-page decision: only what the card can prove. Whether the job is Easy Apply is settled on the job
+ * page from the apply button's link, because a signed-in card no longer shows that badge.
+ */
 export function decideCard(card: JobCard, blacklist: readonly string[]): CardDecision {
   const title = card.lines[0]?.trim() || "Untitled job";
-  const company = card.lines[1]?.trim() || null;
-  const badges = card.lines.map((line) => line.trim().toLowerCase());
-  if (badges.includes("applied")) return { apply: false, title, company, reason: "Already applied on Dice." };
-  if (!badges.includes("easy apply")) return { apply: false, title, company, reason: "Not Easy Apply." };
+  const rest = card.lines.slice(1).map((line) => line.trim());
+  const company = rest.find((line) => !statusLines.has(line.toLowerCase())) || null;
+  if (rest.some((line) => line.toLowerCase() === "applied")) return { apply: false, title, company, reason: "Already applied on Dice." };
   const term = blacklistedTerm(title, blacklist);
   if (term) return { apply: false, title, company, reason: `Title matches blacklist term "${term}".` };
   return { apply: true, title, company };

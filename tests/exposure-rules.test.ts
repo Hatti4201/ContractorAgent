@@ -48,17 +48,21 @@ test("two thirds of the pages, capped", () => {
   assert.equal(pagesToVisit(0, 2 / 3, 7), 0);
 });
 
-test("cards: Easy Apply only, already-applied and blacklisted titles are skipped", () => {
+test("cards: already-applied and blacklisted titles are skipped; Easy Apply is left to the job page", () => {
   const blacklist = ["QA", "Test", "SDET"];
-  const card = (title: string, ...badges: string[]) => ({ guid: "g", lines: [title, "Fictional Co", "Remote • Today", ...badges] });
-  assert.equal(decideCard(card("Sr Java Developer", "Easy Apply", "Contract"), blacklist).apply, true);
-  assert.equal(decideCard(card("Sr Java Developer", "Contract"), blacklist).apply, false);
-  assert.equal(decideCard(card("Sr Java Developer", "Easy Apply", "Applied"), blacklist).apply, false);
-  assert.equal(decideCard(card("Senior Software Developer Engineer in Testing (SDET)", "Easy Apply"), blacklist).apply, false);
-  assert.equal(decideCard(card("Java QA Automation Engineer", "Easy Apply"), blacklist).apply, false);
-  assert.equal(decideCard(card("Java Tester", "Easy Apply"), blacklist).apply, false);
+  // Signed-in cards as Dice renders them: no visible "Easy Apply", and "Applied" right under the title.
+  const card = (...lines: string[]) => ({ guid: "g", lines });
+  const open = decideCard(card("Sr Java Developer", "Fictional Co", "Remote • Today", "Third Party, Contract"), blacklist);
+  assert.equal(open.apply, true);
+  assert.equal(open.company, "Fictional Co");
+  const applied = decideCard(card("C# Java Developer", "Applied", "Fictional Co", "Remote • Today"), blacklist);
+  assert.equal(applied.apply, false);
+  assert.equal(applied.company, "Fictional Co");
+  assert.equal(decideCard(card("Senior Software Developer Engineer in Testing (SDET)", "Fictional Co"), blacklist).apply, false);
+  assert.equal(decideCard(card("Java QA Automation Engineer", "Fictional Co"), blacklist).apply, false);
+  assert.equal(decideCard(card("Java Tester", "Fictional Co"), blacklist).apply, false);
   // A blacklist term inside another word must not knock out a real match.
-  assert.equal(decideCard(card("Java Developer - Latest Stack", "Easy Apply"), blacklist).apply, true);
+  assert.equal(decideCard(card("Java Developer - Latest Stack", "Fictional Co"), blacklist).apply, true);
 });
 
 test("history: a dry run never counts as having applied", () => {
