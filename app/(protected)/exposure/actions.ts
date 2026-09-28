@@ -9,9 +9,11 @@ import { getPrisma } from "@/lib/prisma";
 import { parseSettings } from "@/services/exposure-rules";
 import { exposureState, loadExposureConfig, runExposure } from "@/services/exposure-run";
 
-function done(notice?: string) {
+/** The play button also sits on the dashboard card, so it returns to whichever page it was pressed on. */
+function done(notice?: string, formData?: FormData) {
   revalidatePath("/exposure");
   revalidatePath("/dashboard");
+  if (formData?.get("back") === "/dashboard") redirect("/dashboard");
   redirect(notice ? `/exposure?notice=${notice}` : "/exposure");
 }
 
@@ -23,17 +25,23 @@ async function saveSettings(changes: Record<string, unknown>) {
   await getPrisma().exposureState.update({ where: { id: "primary" }, data: { settings: next as unknown as Prisma.InputJsonValue } });
 }
 
-export async function runExposureNow() {
+export async function runExposureNow(formData?: FormData) {
   await requireAuth();
   // A run takes many minutes, so it continues after the response; the page follows its progress.
   after(() => runExposure().then(() => undefined));
-  done();
+  done(undefined, formData);
 }
 
-export async function stopExposure() {
+export async function stopExposure(formData?: FormData) {
   await requireAuth();
   await exposureState();
   await getPrisma().exposureState.update({ where: { id: "primary" }, data: { stopRequested: true } });
+  done(undefined, formData);
+}
+
+export async function setExposureSchedule(enabled: boolean) {
+  await requireAuth();
+  await saveSettings({ scheduleEnabled: enabled });
   done();
 }
 

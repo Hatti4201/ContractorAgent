@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { runExposureNow, saveExposureSettings, setExposureMode, stopExposure } from "@/app/(protected)/exposure/actions";
+import { saveExposureSettings, setExposureMode, setExposureSchedule } from "@/app/(protected)/exposure/actions";
+import { ExposurePlayButton } from "@/components/exposure-play-button";
 import { ExposureResult } from "@/app/generated/prisma/enums";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ExposureChart } from "@/components/exposure-chart";
@@ -20,6 +21,8 @@ const resultStyle: Record<ExposureResult, string> = {
   FAILED: "bg-red-50 text-red-800",
 };
 const resultLabel: Record<ExposureResult, string> = { APPLIED: "Applied", DRY_RUN_READY: "Dry run", FAILED: "Failed", SKIPPED: "Skipped" };
+const modeShort: Record<ExposureMode, string> = { off: "Off", dryrun: "Dry run", on: "Live" };
+const modeTone: Record<ExposureMode, string> = { off: "bg-slate-100 text-slate-600", dryrun: "bg-sky-100 text-sky-800", on: "bg-emerald-100 text-emerald-800" };
 const modeLabel: Record<ExposureMode, string> = { off: "Off", dryrun: "Dry run — stops before Submit", on: "On — submits applications" };
 const employmentLabel: Record<string, string> = { CONTRACTS: "Contract", THIRD_PARTY: "Third Party", FULLTIME: "Full-time", PARTTIME: "Part-time" };
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -50,6 +53,7 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
     chromeReachable(config.cdpUrl),
   ]);
   const running = exposureRunning();
+  const blockedReason = config.mode === "off" ? "Mode is Off: choose Dry run or Live below" : !chrome ? "Dedicated Chrome not running: npm run exposure:chrome" : null;
   const exampleTotal = 10;
 
   return (
@@ -69,28 +73,39 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
 
       {/* Status and controls */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <dl className="grid gap-4 text-sm sm:grid-cols-4">
-          <div><dt className="text-slate-500">Mode</dt><dd className="mt-1 font-semibold text-slate-950">{modeLabel[config.mode]}</dd></div>
-          <div><dt className="text-slate-500">Chrome</dt><dd className={`mt-1 font-semibold ${chrome ? "text-emerald-800" : "text-red-800"}`}>{chrome ? "Connected" : "Not running — npm run exposure:chrome"}</dd></div>
-          <div><dt className="text-slate-500">Last run</dt><dd className="mt-1 font-semibold text-slate-950">{running ? "Running now" : state.lastRunAt ? formatDateTime(state.lastRunAt) : "Never"}</dd></div>
-          <div><dt className="text-slate-500">Last 24 hours</dt><dd className="mt-1 font-semibold text-slate-950">{count(ExposureResult.APPLIED) + count(ExposureResult.DRY_RUN_READY)} of {config.dailyLimit} used</dd></div>
-        </dl>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <ExposurePlayButton blockedReason={blockedReason} running={running} stopping={state.stopRequested} />
 
-        {running && (
-          <div className="mt-5 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" aria-live="polite">
-            <p className="font-semibold">Running{state.stopRequested ? " — stopping after this step" : ""}</p>
-            <p className="mt-1">{state.progress ?? "Starting"}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${modeTone[config.mode]}`} title="Mode">{modeShort[config.mode]}</span>
+              <span className="inline-flex items-center gap-1.5 text-slate-700" title={chrome ? "Dedicated Chrome connected" : "Dedicated Chrome not running: npm run exposure:chrome"}>
+                <span aria-hidden className={`h-2 w-2 rounded-full ${chrome ? "bg-emerald-500" : "bg-red-500"}`} />Chrome
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-slate-700" title="Applied or dry-run in the last 24 hours, of the daily limit">
+                <svg aria-hidden className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" strokeLinecap="round" /></svg>
+                {count(ExposureResult.APPLIED) + count(ExposureResult.DRY_RUN_READY)} / {config.dailyLimit}
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-slate-700" title="Last run">
+                <svg aria-hidden className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                {state.lastRunAt ? formatDateTime(state.lastRunAt) : "Never"}
+              </span>
+              {/* The schedule switch: a clock that is dark when the hourly runs are on, grey and struck through when paused. */}
+              <form action={setExposureSchedule.bind(null, !config.scheduleEnabled)}>
+                <button
+                  aria-label={config.scheduleEnabled ? "Hourly runs on: pause them" : "Hourly runs paused: turn them on"}
+                  aria-pressed={config.scheduleEnabled}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${config.scheduleEnabled ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-400 line-through"}`}
+                  title={config.scheduleEnabled ? `Hourly runs on (${config.startHour}:00–${config.endHour}:00). Click to pause them.` : "Hourly runs paused. Click to turn them on."}
+                  type="submit"
+                >
+                  <svg aria-hidden className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" strokeLinecap="round" /></svg>
+                  {config.startHour}–{config.endHour}
+                </button>
+              </form>
+            </div>
+            {running && <p aria-live="polite" className="mt-2 truncate text-sm text-sky-900">{state.stopRequested ? "Stopping after this step · " : ""}{state.progress ?? "Starting"}</p>}
           </div>
-        )}
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <form action={runExposureNow}>
-            <button className="rounded-lg bg-blue-700 px-4 py-2.5 font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300" disabled={config.mode === "off" || running || !chrome} type="submit">Run now</button>
-          </form>
-          <form action={stopExposure}>
-            <button className="rounded-lg border border-red-300 bg-white px-4 py-2.5 font-medium text-red-800 hover:border-red-600 disabled:cursor-not-allowed disabled:opacity-40" disabled={!running || state.stopRequested} type="submit">Stop</button>
-          </form>
-          {config.mode === "off" && <span className="text-sm text-slate-500">Choose a mode below to enable runs.</span>}
         </div>
 
         <form action={setExposureMode} className="mt-6 border-t border-slate-100 pt-5">

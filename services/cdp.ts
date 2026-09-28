@@ -43,10 +43,11 @@ export class CdpTab {
   }
 
   /**
-   * Attaches to the tab already showing in the dedicated window. Creating a tab would make Chrome
-   * activate its window, which on macOS pulls it in front of whatever the user is doing (and out of
-   * the Dock); driving the existing tab never asks for focus. Only if every tab was closed is one
-   * created, which brings the window forward that one time.
+   * Attaches to a Dice tab, never to any other tab the user opened in this Chrome (links clicked
+   * elsewhere can land here). On macOS, Chrome raises its window when a tab is created through
+   * /json/new, when any dialog shows, and when a tab is activated, which also un-minimizes the
+   * window (all measured). So the Dice tab is driven where it is, visible or not: the dry runs
+   * worked in a minimized window. Only if no Dice tab exists is one created, in the background.
    */
   static async open(baseUrl: string) {
     type Target = { id: string; type: string; url: string; webSocketDebuggerUrl?: string };
@@ -55,12 +56,8 @@ export class CdpTab {
       const listed = await fetch(`${baseUrl}/json/list`, { signal: AbortSignal.timeout(5_000) });
       if (!listed.ok) throw new Error(String(listed.status));
       // Chrome lists the most recently used tab first.
-      target = (await listed.json() as Target[]).find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl && !/^(chrome|devtools|chrome-extension):/.test(entry.url));
-      if (!target) {
-        const created = await fetch(`${baseUrl}/json/new?about:blank`, { method: "PUT", signal: AbortSignal.timeout(5_000) });
-        if (!created.ok) throw new Error(String(created.status));
-        target = await created.json() as Target;
-      }
+      target = (await listed.json() as Target[]).find((entry) => entry.type === "page" && entry.webSocketDebuggerUrl && /^https:\/\/(www\.)?dice\.com\//.test(entry.url));
+      if (!target) target = await findTarget(baseUrl, String((await browserCall(baseUrl, "Target.createTarget", { url: "https://www.dice.com/dashboard", background: true })).targetId));
     } catch {
       throw new Error("The exposure Chrome is not running. Start it with `npm run exposure:chrome` and keep it open.");
     }
@@ -159,6 +156,35 @@ export class CdpTab {
 
 export function pause(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function findTarget(baseUrl: string, id: string) {
+  const pages = await (await fetch(`${baseUrl}/json/list`, { signal: AbortSignal.timeout(5_000) })).json() as { id: string; type: string; url: string; webSocketDebuggerUrl?: string }[];
+  return pages.find((page) => page.id === id);
+}
+
+/** One command on the browser-wide endpoint (Target.*), which a tab's own connection cannot send. */
+async function browserCall(baseUrl: string, method: string, params: Record<string, unknown>) {
+  const { webSocketDebuggerUrl } = await (await fetch(`${baseUrl}/json/version`, { signal: AbortSignal.timeout(5_000) })).json() as { webSocketDebuggerUrl: string };
+  const socket = new WebSocket(webSocketDebuggerUrl);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", () => reject(new Error("Could not reach the exposure Chrome.")), { once: true });
+    });
+    return await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Chrome did not answer ${method} in time.`)), 10_000);
+      socket.addEventListener("message", (event) => {
+        const message = JSON.parse(String(event.data)) as { id?: number; result?: Record<string, unknown>; error?: { message: string } };
+        if (message.id !== 1) return;
+        clearTimeout(timer);
+        if (message.error) reject(new Error(message.error.message)); else resolve(message.result ?? {});
+      });
+      socket.send(JSON.stringify({ id: 1, method, params }));
+    });
+  } finally {
+    socket.close();
+  }
 }
 
 /** Whether the dedicated Chrome is up; the page shows this before anyone presses Run. */

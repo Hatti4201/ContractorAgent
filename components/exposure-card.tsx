@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ExposureResult } from "@/app/generated/prisma/enums";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { ExposurePlayButton } from "@/components/exposure-play-button";
+import { chromeReachable } from "@/services/cdp";
 import { exposureRunning, exposureState, loadExposureConfig, recentCounts } from "@/services/exposure-run";
 
 const modeLabel = { off: "Off", dryrun: "Dry run", on: "On" } as const;
@@ -8,6 +10,7 @@ const modeLabel = { off: "Off", dryrun: "Dry run", on: "On" } as const;
 /** Dashboard summary of the Dice exposure channel; all controls live on /exposure. */
 export async function ExposureCard() {
   const [state, config, count] = await Promise.all([exposureState(), loadExposureConfig(), recentCounts()]);
+  const chrome = await chromeReachable(config.cdpUrl);
   const running = exposureRunning();
   const stopped = state.consecutiveFailures > 0;
   const tone = stopped ? "border-red-200 bg-red-50" : running ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white";
@@ -16,7 +19,16 @@ export async function ExposureCard() {
     <section aria-labelledby="exposure-card" className={`mb-8 rounded-2xl border p-5 shadow-sm ${tone}`}>
       <AutoRefresh active={running} />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-950" id="exposure-card">Dice exposure</h2>
+        <div className="flex items-center gap-3">
+          <ExposurePlayButton
+            back="/dashboard"
+            blockedReason={config.mode === "off" ? "Mode is Off: set it on /exposure" : !chrome ? "Dedicated Chrome not running" : null}
+            running={running}
+            size="small"
+            stopping={state.stopRequested}
+          />
+          <h2 className="text-lg font-semibold text-slate-950" id="exposure-card">Dice exposure</h2>
+        </div>
         <span className="text-sm font-medium text-slate-700">{modeLabel[config.mode]}{running ? " · running" : ""}</span>
       </div>
       {running && <p className="mt-2 text-sm text-sky-950">{state.progress ?? "Starting"}</p>}

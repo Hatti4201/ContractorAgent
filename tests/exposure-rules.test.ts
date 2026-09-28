@@ -138,3 +138,12 @@ test("identity questions are recognised by their wording, not by the model's lab
   assert.equal(looksLikeIdentityQuestion("Are you willing to work onsite 3 days a week?"), false);
   assert.equal(looksLikeIdentityQuestion("Years of Java experience"), false);
 });
+
+test("pausing the schedule stops only the hourly runs, not the mode", () => {
+  const paused = exposureConfig({ mode: "dryrun", scheduleEnabled: false }, {});
+  assert.equal(paused.mode, "dryrun");
+  assert.equal(paused.window.enabled, false);
+  assert.equal(exposureConfig({ mode: "dryrun" }, {}).window.enabled, true);
+  assert.equal(exposureConfig({ mode: "off", scheduleEnabled: true }, {}).window.enabled, false);
+  assert.equal(parseSettings({ scheduleEnabled: "no" }, defaultSettings({})).scheduleEnabled, true);
+});
