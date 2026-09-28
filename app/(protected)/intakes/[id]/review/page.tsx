@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { ArrowLeft, Copy, FileText, Gauge, Hand, Info, Loader, OctagonAlert, Paperclip, TriangleAlert } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { confirmIntake, confirmIntakeWithDraft } from "@/app/(protected)/jobs/actions";
 import { EmploymentType, IntakeStatus, type OutreachMode } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { MatchReportSection } from "@/components/match-report";
+import { SweepRefresher } from "@/components/sweep-paste";
 import { matchThreshold } from "@/services/autopilot";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
@@ -29,10 +31,12 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
 
   if (!intake.analysis) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Preparing this job</h1>
-        <Link className="mt-6 inline-block font-medium text-emerald-700 underline" href="/jobs">Back to jobs</Link>
+      <div className="mx-auto flex max-w-3xl items-center justify-center gap-3 px-6 py-16 text-slate-500">
+        {/* The analysis lands on its own; look again every few seconds rather than asking for a reload. */}
+        <SweepRefresher active />
+        <Link aria-label="Back to jobs" className="rounded-lg p-1.5 hover:bg-slate-100 hover:text-slate-900" href="/jobs" title="Back to jobs"><ArrowLeft aria-hidden="true" size={18} /></Link>
+        <Loader aria-hidden="true" className="animate-spin" size={20} />
+        <span className="text-sm" role="status">Preparing</span>
       </div>
     );
   }
@@ -94,79 +98,87 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
     : null;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
-      <Link className="text-sm font-medium text-emerald-700 underline" href="/intake">← New analysis</Link>
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Add job</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">AI job analysis</h1>
-        </div>
-        <p className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Confidence {Math.round(jobCase.confidence * 100)}%</p>
+    <div className="mx-auto max-w-5xl px-6 py-8">
+      <div className="flex flex-wrap items-center gap-2">
+        <Link aria-label="New analysis" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900" href="/intake" title="New analysis"><ArrowLeft aria-hidden="true" size={18} /></Link>
+        <h1 className="min-w-0 truncate text-xl font-semibold text-slate-950" title={jobCase.title ?? undefined}>{jobCase.title ?? "Untitled job"}</h1>
+        <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600" title="Analysis confidence">
+          <Gauge aria-hidden="true" size={13} />{Math.round(jobCase.confidence * 100)}%
+        </span>
+        {files.length > 0 && (
+          <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600" title={`Attachments: ${files.join(", ")}`}>
+            <Paperclip aria-hidden="true" size={13} />{files.length}
+          </span>
+        )}
       </div>
 
-      {files.length > 0 && <p className="mt-8 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-700"><span className="font-medium">Attachments:</span> {files.join(", ")}</p>}
-
       {preview?.hold && (
-        <p className="mt-8 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-950" role="status">
-          The autopilot left this job for you: {preview.hold}
+        <p className="mt-4 flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-950" role="status" title={`The autopilot left this job for you: ${preview.hold}`}>
+          <Hand aria-hidden="true" className="shrink-0" size={16} /><span className="sm:truncate">{preview.hold}</span>
         </p>
       )}
 
       {preview && <MatchReportSection report={preview.match} threshold={matchThreshold()} />}
 
       {openWarnings.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-xl font-semibold text-slate-950">Warnings</h2>
-          <ul className="mt-4 grid gap-3 md:grid-cols-2">
-            {openWarnings.map((warning, index) => (
-              <li className={`rounded-xl border p-4 text-sm ${warning.severity === "CONFLICT" ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50"}`} key={`${warning.field}-${index}`}>
-                <p className="font-semibold">{formatEnum(warning.severity)} · {formatEnum(warning.field)}</p>
-                <p className="mt-1 text-slate-700">{warning.message}</p>
-                {warning.evidence && <p className="mt-2 text-xs text-slate-500">Source: “{warning.evidence}”</p>}
+        <ul aria-label="Warnings" className="mt-4 space-y-2">
+          {openWarnings.map((warning, index) => {
+            const conflict = warning.severity === "CONFLICT";
+            const Icon = conflict ? OctagonAlert : TriangleAlert;
+            return (
+              <li className={`flex items-start gap-2 rounded-xl border px-4 py-2 text-sm ${conflict ? "border-red-300 bg-red-50 text-red-950" : "border-amber-300 bg-amber-50 text-amber-950"}`} key={`${warning.field}-${index}`} title={warning.evidence ? `Source: “${warning.evidence}”` : undefined}>
+                <Icon aria-label={formatEnum(warning.severity)} className="mt-0.5 shrink-0" size={15} />
+                <span><span className="font-semibold">{formatEnum(warning.field)}</span> · {warning.message}</span>
               </li>
-            ))}
-          </ul>
-        </section>
+            );
+          })}
+        </ul>
       )}
 
-      {notes.length > 0 && (
-        <details className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-800">What the analysis also noticed ({notes.length})</summary>
-          <ul className="mt-3 space-y-2 text-sm text-slate-700">
-            {notes.map((warning, index) => (
-              <li key={`${warning.field}-${index}`}><span className="font-medium text-slate-950">{formatEnum(warning.field)}:</span> {warning.message}</li>
-            ))}
-          </ul>
-        </details>
+      {(notes.length > 0 || duplicates.length > 0) && (
+        <div className="mt-4 flex flex-wrap items-start gap-2">
+          {notes.length > 0 && (
+            <details className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-slate-600 [&::-webkit-details-marker]:hidden" title="What the analysis also noticed">
+                <Info aria-hidden="true" size={15} />{notes.length}
+              </summary>
+              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                {notes.map((warning, index) => (
+                  <li key={`${warning.field}-${index}`}><span className="font-medium text-slate-950">{formatEnum(warning.field)}</span> · {warning.message}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {duplicates.length > 0 && (
+            <details className={`min-w-0 flex-1 rounded-xl border bg-white px-3 py-2 ${duplicates.some((match) => match.exact) ? "border-amber-300" : "border-slate-200"}`}>
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-slate-600 [&::-webkit-details-marker]:hidden" title="Other channels for this role">
+                <Copy aria-hidden="true" size={15} />{duplicates.length}
+              </summary>
+              <ul className="mt-2 space-y-1.5">
+                {duplicates.map((match) => (
+                  <li className="flex items-center gap-2 text-sm" key={match.id} title={match.reasons.join(" · ")}>
+                    <Link className="min-w-0 truncate font-medium text-slate-900 hover:text-emerald-700" href={`/jobs/${match.id}`}>{match.title}</Link>
+                    <span className="min-w-0 truncate text-xs text-slate-500">{[match.vendor, match.recruiter, match.client, match.rate].filter(Boolean).join(" · ")}</span>
+                    {match.stage && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{formatEnum(match.stage)}</span>}
+                    <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${match.exact ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600"}`} title={match.exact ? "Identical JD text" : "Similarity"}>
+                      {match.exact ? "=" : `${Math.round(match.score * 100)}%`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       )}
 
-      {duplicates.length > 0 && (
-      <details className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <summary className="cursor-pointer text-lg font-semibold text-slate-950">Other channels for this role ({duplicates.length})</summary>
-        {duplicates.length ? (
-          <ul className="mt-4 space-y-3">
-            {duplicates.map((match) => (
-              <li className={`rounded-xl border bg-white p-4 ${match.exact ? "border-amber-300" : "border-slate-200"}`} key={match.id}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Link className="font-semibold text-emerald-700 underline" href={`/jobs/${match.id}`}>{match.title}</Link>
-                  <span className={`text-sm font-semibold ${match.exact ? "text-amber-900" : "text-slate-600"}`}>{match.exact ? "Identical JD text" : `${Math.round(match.score * 100)}% match`}</span>
-                </div>
-                <p className="mt-1 text-sm text-slate-700">{match.vendor ?? "Vendor unknown"} · {match.recruiter ?? "Recruiter unknown"} · {match.stage ? formatEnum(match.stage) : "Not tracked"}</p>
-                <p className="mt-1 text-sm text-slate-600">{match.client ?? "Client unknown"}{match.rate ? ` · ${match.rate}` : ""}</p>
-                <p className="mt-2 text-xs text-slate-500">{match.reasons.join(" · ")}</p>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </details>
-      )}
-
-      <div className="mt-8">
+      <div className="mt-4">
         <JobCaseReviewForm confirmAction={confirm} confirmAndDraftAction={confirmAndDraft} duplicateAction={markDuplicate} hasExactDuplicate={duplicates.some((match) => match.exact)} straightThrough={straightThrough} employerCopy={employerCopy} threads={threads.length ? threads : null} threadRequired={replyRequired} canWrite={!preview?.subject && Boolean(jobCase.recruiterEmail)} jobCase={jobCase} preview={preview} recruiterLinkedin={detectRecruiterProfile(intake.rawText)} sourceMessageId={intake.sourceMessageId} resumes={resumes} roleFamilies={roleFamilies} source={{ sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt }} />
       </div>
 
-      <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6">
-        <summary className="cursor-pointer font-semibold text-slate-950">Original source text and evidence</summary>
+      <details className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-slate-700 [&::-webkit-details-marker]:hidden" title="Original source text and evidence">
+          <FileText aria-hidden="true" size={16} />Source
+        </summary>
         <pre className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{intake.rawText}</pre>
         {jobCase.evidence.length > 0 && (
           <ul className="mt-5 space-y-2 border-t border-slate-200 pt-5 text-sm text-slate-700">

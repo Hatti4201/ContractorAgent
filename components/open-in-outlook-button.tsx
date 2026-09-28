@@ -1,7 +1,8 @@
 "use client";
 
+import { Loader } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type MouseEvent } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 
 /**
  * Opens the tab inside the click itself, before anything is awaited. A tab opened this way is one
@@ -13,12 +14,18 @@ export function OpenInOutlookButton({
   children,
   open = true,
   tone = "primary",
+  icon,
+  title,
 }: {
   action: (formData: FormData) => Promise<{ url: string | null; href?: string | null }>;
   children: string;
   /** False builds the draft and leaves it in Outlook, for a batch the user opens later in one trip. */
   open?: boolean;
   tone?: "primary" | "secondary";
+  /** Rendered before the label; a server page passes an element, since a component cannot cross over. */
+  icon?: ReactNode;
+  /** The full meaning, for the tooltip and screen readers, when the visible label is a word or two. */
+  title?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -48,12 +55,15 @@ export function OpenInOutlookButton({
 
   return (
     <button
-      className={`rounded-lg px-5 py-3 font-medium disabled:cursor-wait disabled:opacity-60 ${tone === "primary" ? "bg-emerald-700 text-white hover:bg-emerald-800" : "border border-slate-400 bg-white text-slate-800 hover:border-slate-600"}`}
+      aria-label={title}
+      className={`flex items-center gap-2 rounded-lg px-5 py-3 font-medium disabled:cursor-wait disabled:opacity-60 ${tone === "primary" ? "bg-emerald-700 text-white hover:bg-emerald-800" : "border border-slate-400 bg-white text-slate-800 hover:border-slate-600"}`}
       disabled={busy}
       onClick={run}
+      title={title}
       type="button"
     >
-      {busy ? "Creating the draft…" : children}
+      {busy ? <Loader aria-hidden="true" className="animate-spin" size={16} /> : icon}
+      {busy && !icon ? "Creating the draft…" : children}
     </button>
   );
 }
