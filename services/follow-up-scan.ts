@@ -24,7 +24,7 @@ import {
 import { isDigestMessage } from "@/services/digest";
 import { runIntakePipeline } from "@/services/intake-pipeline";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
-import { applyFollowUp, followUpAutoEnabled, shouldApplyFollowUp } from "@/services/follow-up-auto";
+import { applyAutomatically, followUpAutoEnabled, followUpAutoStageEnabled } from "@/services/follow-up-auto";
 import type { TaskHandle } from "@/services/tasks";
 
 // ponytail: ten analyses per scan bounds one run; anything skipped has no row yet, so the next scan retries it.
@@ -164,7 +164,7 @@ export async function scanFollowUps(task?: TaskHandle) {
     })).map((row) => row.outlookMessageId));
 
     const scanMode = intakeScanMode();
-    const autoFollowUp = followUpAutoEnabled();
+    const switches = { fields: followUpAutoEnabled(), stage: followUpAutoStageEnabled() };
     let applied = 0;
     let classified = 0;
     let imported = 0;
@@ -195,12 +195,10 @@ export async function scanFollowUps(task?: TaskHandle) {
       try {
         const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
         const created = await database.followUpSuggestion.create({ data: suggestionData(message, opportunity, analysis) });
-        // RESTRICTIONS 1.2: the follow-up fields may move on a confident, unambiguous match; the
-        // Stage this email also proposes stays pending until the user accepts it.
-        if (autoFollowUp && shouldApplyFollowUp(created)) {
-          await database.$transaction((transaction) => applyFollowUp(transaction, created.id, { ...created, opportunityId: created.opportunityId! }, message.receivedAt));
-          applied += 1;
-        }
+        // RESTRICTIONS 1.7: on a confident, unambiguous match the follow-up fields and a forward Stage
+        // may move; a terminal Stage, or anything less certain, stays pending for the user.
+        const outcome = await database.$transaction((transaction) => applyAutomatically(transaction, created, switches));
+        if (outcome.fields || outcome.stage) applied += 1;
       } catch {
         await database.followUpSuggestion.create({ data: {
           outlookMessageId: message.id,

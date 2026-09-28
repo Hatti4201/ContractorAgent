@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { generateOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
-import { addActivity, completeAttention, deleteJob, selectResume, updateJob, updateJobCase } from "@/app/(protected)/jobs/actions";
+import { addActivity, completeAttention, deleteJob, selectResume, undoAutoStageChange, updateJob, updateJobCase } from "@/app/(protected)/jobs/actions";
+import { parseAutoStageChange } from "@/services/follow-up-auto";
 import { DeleteJobForm } from "@/components/delete-job-form";
 import { GenerateOutreachButton } from "@/components/generate-outreach-button";
 import { MatchReportSection } from "@/components/match-report";
@@ -288,6 +289,10 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
                     <p className="text-sm font-semibold text-emerald-800">{formatEnum(activity.type)}</p>
                     <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{activity.description}</p>
                     <time className="mt-2 block text-xs text-slate-500" dateTime={activity.occurredAt.toISOString()}>{formatDateTime(activity.occurredAt)}</time>
+                    {activity.type === "STAGE_CHANGED"
+                      && parseAutoStageChange(activity.description)?.to === job.applicationTrack?.currentStage
+                      && !job.activities.some((other) => other.type === "CORRECTION" && other.description.includes(activity.id))
+                      && <form action={undoAutoStageChange.bind(null, job.id, activity.id)}><button className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-100" type="submit">Undo this stage change</button></form>}
                   </li>
                 ))}
               </ol>
