@@ -5,6 +5,7 @@ import { applicationDecision, pitchedCase, readStoredPolicy, type StoredPolicy }
 import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute, readyForAutopilot, type AutopilotMode } from "@/services/autopilot";
 import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
 import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
+import { deletedBefore } from "@/services/job-delete";
 import { analyzeJobText } from "@/services/job-analyzer";
 import { assessMatch, readMatchReport, type MatchReport } from "@/services/match-score";
 import { triagePosts } from "@/services/post-triage";
@@ -100,6 +101,20 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
     where: { id: intakeId },
     data: { analysis: analysis as unknown as Prisma.InputJsonValue },
   });
+
+  // A job the user deleted stays deleted: the same JD from the same recruiter leaves the queue, whether
+  // the autopilot is on or not. After the analysis, so "Review anyway" on the Sweep page still opens it.
+  const deleted = await deletedBefore(intake.fingerprint, intake.rawText, analysis.recruiterEmail);
+  if (deleted) {
+    await getPrisma().jobIntake.updateMany({
+      where: { id: intakeId, status: IntakeStatus.PENDING },
+      data: {
+        status: IntakeStatus.SKIPPED,
+        preview: stopped(`You deleted this job before ("${deleted.title}").`, null, null) as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return;
+  }
 
   // The user's rules come before anything that costs a call: a job they would never take is not
   // scored or written to, and an autopilot skip leaves the queue, since it needs nothing from them.

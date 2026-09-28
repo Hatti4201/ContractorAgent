@@ -31,6 +31,9 @@ import { buildAttentionItems, configuredTimeZone } from "@/services/attention";
 import { queuedIntakes } from "@/services/intake-queue";
 import { checkSentDraftsNow, scanMailNow } from "@/app/(protected)/dashboard/actions";
 import { listDraftsAwaitingOutlook, listUnsentDrafts } from "@/services/outreach-pipeline";
+import { deleteJob } from "@/app/(protected)/jobs/actions";
+import { DeleteJobIcon } from "@/components/delete-job-form";
+import { deletedNotice } from "@/lib/delete-notice";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -171,6 +174,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
   const selectedMetric = dashboardMetrics.find((metric) => metric.key === filters.metric)!;
   // Only our own redirect writes this, so anything that is not a plain id is ignored rather than linked.
+  const deletion = deletedNotice(query.deleted);
   const sentJobId = typeof query.sent === "string" && /^[a-z0-9]+$/i.test(query.sent) ? query.sent : null;
 
   const activeFilters = [filters.role, filters.vendor, filters.recruiter, filters.stage, filters.employment].filter(Boolean).length;
@@ -213,6 +217,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <div className="mx-auto max-w-6xl px-6 py-8">
       {query.error === "missing" && <Toast clear={["error"]} text="Already confirmed or discarded" tone="warn" />}
       {sentJobId && <Toast clear={["sent"]} text="Sent · archived" />}
+      {deletion && <Toast clear={["deleted"]} text={deletion.text} tone={deletion.tone} />}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 md:flex-1">
@@ -321,15 +326,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 {column.jobs.slice(0, PIPELINE_PREVIEW).map((job) => {
                   const dot = matchDot(job.matchScore);
                   return (
-                    <li key={job.id}>
+                    <li className="group relative" key={job.id}>
                       <Link
                         className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 hover:border-emerald-500"
                         href={pipelineHref(column.key, job.id)}
                         title={[job.client ?? "Client not set", job.matchScore != null ? `${Math.round(job.matchScore * 100)}% match` : null].filter(Boolean).join(" · ")}
                       >
                         {dot && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />}
-                        <span className="truncate text-sm font-medium text-slate-900">{job.title}</span>
+                        <span className={`truncate text-sm font-medium text-slate-900 ${column.key === "outreach" ? "pr-5" : ""}`}>{job.title}</span>
                       </Link>
+                      {/* An outreach the user no longer wants goes from here, without opening the job. */}
+                      {column.key === "outreach" && <DeleteJobIcon action={deleteJob.bind(null, job.id, "/dashboard")} placement="corner" title={job.title} />}
                     </li>
                   );
                 })}
