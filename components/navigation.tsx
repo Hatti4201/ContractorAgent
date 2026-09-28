@@ -1,31 +1,22 @@
 import Image from "next/image";
-import { HomeLink, NavigationLinks, type NavigationItem } from "@/components/navigation-links";
+import { LogOut } from "lucide-react";
+import { HomeLink, NavigationLinks } from "@/components/navigation-links";
 
 export function Navigation({ logoutAction, attentionCount, intakeCount }: { logoutAction: () => Promise<void>; attentionCount: number; intakeCount: number }) {
-  const items: NavigationItem[] = [
-    { href: "/intake", label: "Add job", accent: true, badge: intakeCount || undefined },
-    { href: "/sweep", label: "LinkedIn Sweep" },
-    { href: "/needs-attention", label: "Needs attention", badge: attentionCount || undefined },
-    { href: "/jobs", label: "Jobs" },
-    { href: "/recruiters", label: "Recruiters" },
-    { href: "/exposure", label: "Exposure" },
-    // Everything past here is setup rather than daily work.
-    { href: "/resumes", label: "Resumes", divider: true },
-    { href: "/outlook", label: "Outlook" },
-  ];
-
   return (
     <header className="border-b border-slate-200 bg-white">
-      <nav aria-label="Primary navigation" className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
-        <div className="flex items-center gap-4">
+      <nav aria-label="Primary navigation" className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-2 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2">
           <HomeLink>
-            <Image alt="" height={32} priority src="/mark.svg" width={32} />
-            Contractor Agent
+            <Image alt="" height={30} priority src="/mark.svg" width={30} />
+            <span className="hidden lg:inline">Contractor Agent</span>
           </HomeLink>
-          <NavigationLinks items={items} />
+          <NavigationLinks counts={{ intake: intakeCount, attention: attentionCount }} />
         </div>
-        <form action={logoutAction}>
-          <button className="text-sm font-medium text-slate-600 hover:text-slate-950" type="submit">Sign out</button>
+        <form action={logoutAction} className="shrink-0">
+          <button aria-label="Sign out" className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-950" title="Sign out" type="submit">
+            <LogOut aria-hidden="true" size={18} />
+          </button>
         </form>
       </nav>
     </header>
