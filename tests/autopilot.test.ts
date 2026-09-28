@@ -13,7 +13,9 @@ import {
   autopilotDuplicateHold,
   autopilotMode,
   modeFromSetting,
+  parseAutopilotSettings,
   readyForAutopilot,
+  resolveAutopilotSettings,
   settingOfMode,
   autopilotRoute,
   rankForSending,
@@ -174,11 +176,31 @@ test("the delay and limit fall back to safe defaults on anything unreadable", ()
   assert.equal(autoSendDelayMinutes("0"), 10, "No window at all is not a delay.");
   assert.equal(autoSendDelayMinutes("15"), 15);
   assert.equal(autoSendDelayMinutes("2.5"), 10);
-  assert.equal(autoSendDailyLimit(undefined), 35);
+  assert.equal(autoSendDailyLimit(undefined), 50);
   assert.equal(autoSendDailyLimit("0"), 0, "Zero is a real choice: send nothing.");
-  assert.equal(autoSendDailyLimit("9999"), 35);
+  assert.equal(autoSendDailyLimit("9999"), 50);
   assert.equal(sendQuota(20, 5), 15);
   assert.equal(sendQuota(20, 25), 0);
+});
+
+test("the page's saved numbers win, one by one, over the environment", () => {
+  const env = { MATCH_THRESHOLD: "60", AUTO_SEND_DELAY_MINUTES: "20", AUTO_SEND_DAILY_LIMIT: "40" };
+  assert.deepEqual(resolveAutopilotSettings(null, env), { threshold: 0.6, delayMinutes: 20, dailyLimit: 40 });
+  assert.deepEqual(resolveAutopilotSettings(null, {}), { threshold: 0.5, delayMinutes: 10, dailyLimit: 50 });
+  assert.deepEqual(
+    resolveAutopilotSettings({ matchThreshold: 0.3, sendDelayMinutes: null, dailySendLimit: null }, env),
+    { threshold: 0.3, delayMinutes: 20, dailyLimit: 40 },
+    "Saving the threshold alone leaves the others to the environment.",
+  );
+  assert.equal(resolveAutopilotSettings({ matchThreshold: 0, sendDelayMinutes: 5, dailySendLimit: 0 }, env).threshold, 0, "Zero is a real threshold, not unset.");
+});
+
+test("the settings form takes whole numbers in range and names the first one that is not", () => {
+  assert.deepEqual(parseAutopilotSettings({ threshold: "30", delayMinutes: "10", dailyLimit: "50" }), { threshold: 0.3, delayMinutes: 10, dailyLimit: 50 });
+  assert.deepEqual(parseAutopilotSettings({ threshold: "101", delayMinutes: "10", dailyLimit: "50" }), { error: "threshold" });
+  assert.deepEqual(parseAutopilotSettings({ threshold: "30", delayMinutes: "0", dailyLimit: "50" }), { error: "delay" });
+  assert.deepEqual(parseAutopilotSettings({ threshold: "30", delayMinutes: "10", dailyLimit: "2.5" }), { error: "limit" });
+  assert.deepEqual(parseAutopilotSettings({ threshold: "", delayMinutes: "10", dailyLimit: "50" }), { error: "threshold" });
 });
 
 test("over the daily limit the best matches are sent and the rest handed back", () => {

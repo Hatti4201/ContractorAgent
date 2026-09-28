@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { discardIntake } from "@/app/(protected)/intake/actions";
 import { ExposureCard } from "@/components/exposure-card";
-import { AutopilotPanel } from "@/components/autopilot-panel";
+import { AutopilotChip } from "@/components/autopilot-panel";
 import { PendingStrip, type PendingItem } from "@/components/pending-strip";
 import { PerformanceTable } from "@/components/performance-table";
 import { Toast } from "@/components/toast";
@@ -215,8 +215,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {sentJobId && <Toast clear={["sent"]} text="Sent · archived" />}
 
       <div className="flex flex-wrap items-center gap-3">
-        <div className="w-full min-w-0 md:w-auto md:flex-1">
-          <AutopilotPanel notice={{ autopilot: value(query, "autopilot"), cancelled: value(query, "cancelled"), autopilotRun: query.autopilotRun === undefined ? undefined : value(query, "autopilotRun") }} />
+        <div className="min-w-0 md:flex-1">
+          <AutopilotChip />
         </div>
         <div className="flex items-center gap-2 max-md:ml-auto">
           <Link aria-label={`Needs attention: ${attentionCount}`} className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold ${attentionCount ? "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-500" : "border-slate-200 bg-white text-slate-400"}`} href="/needs-attention" title="Needs attention">

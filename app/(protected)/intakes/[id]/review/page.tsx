@@ -6,7 +6,7 @@ import { EmploymentType, IntakeStatus, type OutreachMode } from "@/app/generated
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { MatchReportSection } from "@/components/match-report";
 import { SweepRefresher } from "@/components/sweep-paste";
-import { matchThreshold } from "@/services/autopilot";
+import { currentMatchThreshold } from "@/services/auto-send";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview } from "@/services/intake-pipeline";
@@ -118,7 +118,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
         </p>
       )}
 
-      {preview && <MatchReportSection report={preview.match} threshold={matchThreshold()} />}
+      {preview && <MatchReportSection report={preview.match} threshold={await currentMatchThreshold()} />}
 
       {openWarnings.length > 0 && (
         <ul aria-label="Warnings" className="mt-4 space-y-2">

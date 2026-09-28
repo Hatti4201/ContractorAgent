@@ -45,8 +45,8 @@ are counted and reported on Needs attention, because an unattended scan must not
 
 ## Autopilot
 
-The **Autopilot** panel at the top of the dashboard has a three-position switch, and a click takes
-effect at once, with no restart:
+The **Autopilot** page (the robot icon in the navigation; the dashboard shows its state and links there)
+has a three-position switch, and a click takes effect at once, with no restart:
 
 | Position | What happens |
 |---|---|
@@ -54,10 +54,21 @@ effect at once, with no restart:
 | **Drafts only** | Jobs that pass every gate become Outlook drafts; you send them. Each draft also records when it would have been sent (the shadow trial below) |
 | **Send** | As Drafts only, and each draft is sent after the delay, within the daily limit |
 
+The same page sets the three numbers the autopilot works to, saved in the database and in effect at
+once:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Match ≥** | 50% | The lowest match score the autopilot takes on; below it the job waits for you |
+| **Delay** | 10 min | Between building a draft and sending it: the window to cancel in |
+| **Daily limit** | 50 | Emails sent automatically in any rolling 24 hours |
+
 Until you first use the switch, `AUTOPILOT` in the environment decides (`draft` and `shadow` both mean
-Drafts only). Jobs prepared while the switch was Off, or held earlier, stay in the queue with their
-email written; **Run the autopilot on them** (on the dashboard and the Sweep page) takes them through
-the same gates now, without writing the emails again.
+Drafts only); until you first save the numbers, `MATCH_THRESHOLD`, `AUTO_SEND_DELAY_MINUTES` and
+`AUTO_SEND_DAILY_LIMIT` do. Jobs prepared while the switch was Off, or held earlier, stay in the queue
+with their email written. Turning the switch to Drafts only or Send, or saving the numbers while it is
+on, takes them through the gates again at once, without writing the emails again; **Run the autopilot
+on them** (▶ on the Autopilot and Sweep pages) does the same on demand.
 
 With the autopilot on, every job goes all the way to a verified Outlook draft with the resume attached,
 and no click: the ones the scan imports from Outlook (with `MAIL_INTAKE_SCAN=on`) and the ones you paste. The pipeline takes the first
@@ -74,7 +85,7 @@ queue. In place of the review path's 70% analysis-confidence gate, the autopilot
 score decide.
 
 The autopilot holds instead, and the source stays under **Waiting for your review** with the reason,
-when there is no recruiter email, no usable resume, no job title, the match is below `MATCH_THRESHOLD`
+when there is no recruiter email, no usable resume, no job title, the match is below the threshold
 (default 50%), the context itself states a conflict with an eligibility requirement, the same JD (or a
 similar title from the same recruiter) is already tracked, or a BLOCK issue — wrong recipient or attachment, or a claim
 about the candidate the approved context does not support — survives the rewrite.
@@ -95,11 +106,11 @@ A job whose text names no recruiter email still waits for you, whichever way it 
 Move the switch one step at a time, Off → Drafts only → Send:
 
 - **Drafts only** builds the drafts, and records for each one when it would have been sent.
-  The Autopilot panel on the dashboard shows, for the last 7 days, how many the autopilot would have
+  The Autopilot page shows, for the last 7 days, how many the autopilot would have
   sent and how many of those you sent yourself. Run it for a week; if you sent nearly all of them and
   rarely changed a word, move on.
-- **Send** sends each draft the autopilot built `AUTO_SEND_DELAY_MINUTES` (default 10) after building
-  it, at most `AUTO_SEND_DAILY_LIMIT` (default 35) in any rolling 24 hours; over the limit the best
+- **Send** sends each draft the autopilot built the delay (default 10 minutes) after building
+  it, at most the daily limit (default 50) in any rolling 24 hours; over the limit the best
   matches go and the rest stay in Outlook for you. Until then it shows under **About to send** with a
   **Don't send** link. Moving the switch away from Send cancels everything still queued, and those
   emails stay in Outlook as drafts. It sends the draft as it stands in Outlook, so an edit you make
@@ -140,7 +151,7 @@ With `DAILY_DIGEST=on` the app emails you once per scan day, at `DIGEST_HOUR` (b
 window closes): what the autopilot sent, what it did not send and why, jobs waiting for your input with
 their hold reasons, drafts waiting in Outlook for you, recruiter replies to review, and a warning when the
 scan keeps failing. Every item links back into the app (`APP_URL`, or the origin of the Outlook callback).
-A day with nothing to report sends nothing. **Email digest now** on the dashboard's Autopilot panel sends
+A day with nothing to report sends nothing. **Email digest now** on the Autopilot page sends
 one on demand.
 
 It goes to the connected mailbox unless `DIGEST_TO` names another address, and needs delegated

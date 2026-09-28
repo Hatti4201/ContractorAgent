@@ -18,7 +18,7 @@ import {
   type OutreachInput,
   type OutreachValidation,
 } from "@/services/outreach-agent";
-import { currentAutopilotMode, scheduleAutoSend } from "@/services/auto-send";
+import { currentAutopilotMode, currentMatchThreshold, scheduleAutoSend } from "@/services/auto-send";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { buildOutlookDraftForJob } from "@/services/outlook-draft";
 import { listOutlookSourceMessages } from "@/services/outlook-graph";
@@ -223,7 +223,7 @@ async function continueIntake(
   // Nobody is waiting to fix a rejected email, so the autopilot hands the auditor's reasons back to
   // the writer once. What still fails after that is left for the user, and a job the match already
   // holds back is not worth the second call.
-  if (autopilot && !autopilotMatchHold(match) && validation.status !== "PASS") {
+  if (autopilot && !autopilotMatchHold(match, await currentMatchThreshold()) && validation.status !== "PASS") {
     await task?.progress("Rewriting the draft to fix the validation issues");
     content = await generateOutreachContent(input, {}, { previous: content, issues: validation.issues });
     validation = await validateOutreachContent(input, content);

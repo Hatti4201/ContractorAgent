@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Ban, FilePen, Mail, Pause, Play, RotateCcw, Send, type LucideIcon } from "lucide-react";
-import { runAutopilotOnWaiting } from "@/app/(protected)/dashboard/actions";
+import { runAutopilotOnWaiting } from "@/app/(protected)/autopilot/actions";
 import { reviewSkippedIntake } from "@/app/(protected)/sweep/actions";
 import { SweepPaste, SweepRefresher } from "@/components/sweep-paste";
 import { SweepCard, type SweepCardView, type SweepGroup } from "@/components/sweep-report";
@@ -86,9 +86,9 @@ export default async function SweepPage({ searchParams }: { searchParams: Promis
 
       <div className="mb-3 flex items-center gap-2">
         <Link
-          aria-label={`Autopilot: ${label}. Change it on the dashboard`}
+          aria-label={`Autopilot: ${label}. Open the autopilot page`}
           className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold ${tone}`}
-          href="/dashboard#autopilot"
+          href="/autopilot"
           title={mode === "off" ? "Autopilot off: swept jobs wait for your review. Click to change" : "Autopilot · click to change"}
         >
           <ModeIcon aria-hidden="true" size={14} />{label}

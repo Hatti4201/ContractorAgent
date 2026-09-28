@@ -10,6 +10,7 @@ import {
 } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 import { autopilotAccepts, autopilotDuplicateHold, autopilotMatchHold } from "@/services/autopilot";
+import { currentMatchThreshold } from "@/services/auto-send";
 import { resolveContacts } from "@/services/contacts";
 import { employerCcSetting } from "@/services/employer";
 import type { IntakePreview } from "@/services/intake-pipeline";
@@ -99,7 +100,7 @@ export class AutopilotHold extends Error {}
  */
 export async function autoConfirmIntake(intakeId: string, analysis: JobCase, preview: IntakePreview) {
   if (!analysis.title) throw new AutopilotHold("The analysis found no job title.");
-  const matchHold = autopilotMatchHold(preview.match);
+  const matchHold = autopilotMatchHold(preview.match, await currentMatchThreshold());
   if (matchHold) throw new AutopilotHold(matchHold);
   if (!preview.resumeId || !preview.mode || !preview.toAddress || !preview.subject || !preview.body) {
     throw new AutopilotHold("The pipeline did not produce a complete email.");

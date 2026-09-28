@@ -4,7 +4,7 @@ import { getPrisma } from "@/lib/prisma";
 import { autopilotApplies, readyForAutopilot } from "@/services/autopilot";
 import { currentAutopilotMode } from "@/services/auto-send";
 import { parseIntakePreview, resumeAutopilot } from "@/services/intake-pipeline";
-import { startTask } from "@/services/tasks";
+import { startTask, TaskBusyError } from "@/services/tasks";
 
 // Each job is an Outlook draft upload, not a model call; a few at a time keep Graph comfortable.
 const CONCURRENCY = 3;
@@ -28,7 +28,7 @@ export async function startAutopilotOnWaiting(defer: (run: () => Promise<void>) 
   const ids = await waitingForAutopilot();
   if (!ids.length) return 0;
   await startTask(
-    { kind: TaskKind.AUTOPILOT_BATCH, label: `Running the autopilot on ${ids.length} waiting job${ids.length === 1 ? "" : "s"}`, subjectId: "autopilot-batch", href: "/dashboard#autopilot" },
+    { kind: TaskKind.AUTOPILOT_BATCH, label: `Running the autopilot on ${ids.length} waiting job${ids.length === 1 ? "" : "s"}`, subjectId: "autopilot-batch", href: "/autopilot" },
     async (task) => {
       let done = 0;
       await pooled(ids, CONCURRENCY, async (id) => {
@@ -41,4 +41,17 @@ export async function startAutopilotOnWaiting(defer: (run: () => Promise<void>) 
     defer,
   );
   return ids.length;
+}
+
+/**
+ * The same, after the switch or the threshold moved: what waited under the old setting may pass now,
+ * so it goes without a second click. -1 when a batch is already running, which covers these jobs too.
+ */
+export async function rerunWaiting(defer: (run: () => Promise<void>) => void) {
+  try {
+    return await startAutopilotOnWaiting(defer);
+  } catch (error) {
+    if (error instanceof TaskBusyError) return -1;
+    throw error;
+  }
 }
