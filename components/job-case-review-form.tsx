@@ -1,3 +1,4 @@
+import { Check, Clock, Copy, ExternalLink, FileText, Mail, OctagonX, PenLine, Reply, ShieldAlert, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
 import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
 import type { JobSourceType } from "@/app/generated/prisma/enums";
 import type { IntakePreview } from "@/services/intake-pipeline";
@@ -50,83 +51,84 @@ export function JobCaseReviewForm({
   canWrite: boolean;
 }) {
   return (
-    <form action={confirmAction} className="space-y-8">
+    <form action={confirmAction} className="space-y-4">
       {preview?.brake && (
-        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">
-          No email was drafted: {preview.brake}
+        <p className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900" title={`No email was drafted: ${preview.brake}`}>
+          <OctagonX aria-hidden="true" className="shrink-0" size={16} /><span className="sm:truncate">{preview.brake}</span>
         </p>
       )}
 
       {preview?.subject && preview.body && (
-        <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6">
-          <legend className="px-2 text-lg font-semibold text-slate-950">Outreach email</legend>
-          {preview.validation && (
-            <div className={`rounded-xl border p-4 text-sm md:col-span-2 ${preview.validation.status === "PASS" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
-              <p className="font-semibold">Validator: {preview.validation.status === "PASS" ? "Every statement is supported" : "Needs review before approval"}</p>
-              {preview.validation.issues.length > 0 && (
-                <ul className="mt-2 list-disc space-y-1 pl-5">
-                  {preview.validation.issues.map((issue, index) => <li key={`${issue.field}-${index}`}>{formatEnum(issue.field)}: {issue.message}</li>)}
-                </ul>
-              )}
-            </div>
+        <fieldset className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5">
+          <legend className="flex items-center gap-2 px-2 text-base font-semibold text-slate-950">
+            <Mail aria-hidden="true" size={17} />Email
+            {preview.validation && (preview.validation.status === "PASS"
+              ? <span aria-label="Validator: every statement is supported" role="img" title="Every statement is supported"><ShieldCheck aria-hidden="true" className="text-emerald-600" size={17} /></span>
+              : <span aria-label="Validator: needs review before approval" role="img" title="Needs review before approval"><ShieldAlert aria-hidden="true" className="text-amber-600" size={17} /></span>)}
+          </legend>
+          {preview.validation && preview.validation.status !== "PASS" && preview.validation.issues.length > 0 && (
+            <ul className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              {preview.validation.issues.map((issue, index) => <li key={`${issue.field}-${index}`}><span className="font-semibold">{formatEnum(issue.field)}</span> · {issue.message}</li>)}
+            </ul>
           )}
           <label className="text-sm font-medium text-slate-800">To<input className={inputClass} defaultValue={preview.toAddress ?? ""} maxLength={320} name="draftToAddress" type="email" /></label>
           {threads && (
-            <fieldset className="md:col-span-2">
-              <legend className="text-sm font-medium text-slate-800">Reply into</legend>
+            <fieldset>
+              <legend className="flex items-center gap-1.5 text-sm font-medium text-slate-800"><Reply aria-hidden="true" size={15} />Reply into</legend>
               {!threadRequired && (
-                <label className="mt-2 flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm">
-                  <input className="mt-1" defaultChecked name="replySourceMessageId" type="radio" value="" />
-                  <span className="font-medium text-slate-950">Start a new email instead</span>
+                <label className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <input defaultChecked name="replySourceMessageId" type="radio" value="" />
+                  <span className="font-medium text-slate-950">New email</span>
                 </label>
               )}
               {threads.length ? (
                 <div className="mt-2 space-y-2">
                   {threads.map((message) => (
-                    <label className="flex items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm" key={message.id}>
-                      <input className="mt-1" defaultChecked={message.id === sourceMessageId} name="replySourceMessageId" required={threadRequired} type="radio" value={message.id} />
-                      <span>
-                        <span className="font-medium text-slate-950">{message.subject}</span>
-                        <span className="mt-0.5 block text-xs text-slate-500">{message.receivedDateTime.slice(0, 16).replace("T", " ")}</span>
-                      </span>
+                    <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm" key={message.id}>
+                      <input defaultChecked={message.id === sourceMessageId} name="replySourceMessageId" required={threadRequired} type="radio" value={message.id} />
+                      <span className="min-w-0 truncate font-medium text-slate-950" title={message.subject}>{message.subject}</span>
+                      <span className="ml-auto shrink-0 text-xs text-slate-500">{message.receivedDateTime.slice(5, 16).replace("T", " ")}</span>
                     </label>
                   ))}
                 </div>
-              ) : <p className="mt-2 text-sm text-amber-900">No recent Inbox message from this recruiter was found, so the reply thread has to be picked on the job page after confirming.</p>}
+              ) : (
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-900" title="No recent Inbox message from this recruiter was found; pick the thread on the job page after confirming.">
+                  <Reply aria-hidden="true" size={14} />No thread found
+                </p>
+              )}
             </fieldset>
           )}
           {employerCopy && (
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-800 md:col-span-2">
+            <label className="flex items-center gap-2 text-sm text-slate-800" title={`Copy ${employerCopy.address} on this email`}>
               <input defaultChecked={employerCopy.defaultOn} name="copyEmployer" type="checkbox" value="true" />
-              Copy {employerCopy.address} on this email
+              <Users aria-hidden="true" className="text-slate-500" size={15} />Cc {employerCopy.address}
             </label>
           )}
           <label className="text-sm font-medium text-slate-800">Subject<input className={inputClass} defaultValue={preview.subject} maxLength={300} name="draftSubject" /></label>
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">
+          <label className="text-sm font-medium text-slate-800">
             Body
-            <textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={preview.body} maxLength={10_000} name="draftBody" rows={16} />
+            <textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={preview.body} maxLength={10_000} name="draftBody" rows={10} />
           </label>
         </fieldset>
       )}
 
-      <fieldset className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-6">
-        <legend className="px-2 text-lg font-semibold text-slate-950">Resume</legend>
+      <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800" title="Resume to attach">
+        <FileText aria-label="Resume" className="shrink-0 text-slate-500" size={17} />
         {resumes.length ? (
-          <label className="text-sm font-medium text-slate-800 md:col-span-2">
-            Attachment
-            <select className={inputClass} defaultValue={preview?.resumeId ?? ""} name="resumeId">
-              <option value="">Decide automatically from the confirmed role family</option>
-              {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.name} · {resume.version} · {formatEnum(resume.roleFamily)}</option>)}
-            </select>
-          </label>
-        ) : <p className="text-sm text-slate-600">No active resume is registered yet.</p>}
-      </fieldset>
+          <select className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" defaultValue={preview?.resumeId ?? ""} name="resumeId">
+            <option value="">Auto (by role family)</option>
+            {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.name} · {resume.version} · {formatEnum(resume.roleFamily)}</option>)}
+          </select>
+        ) : <span className="text-slate-500">No active resume</span>}
+      </label>
 
-      <details className="rounded-2xl border border-slate-200 bg-white p-6">
-        <summary className="cursor-pointer text-lg font-semibold text-slate-950">Source, facts and requirements</summary>
+      <details className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-slate-700 [&::-webkit-details-marker]:hidden" title="Source, facts, recruiter and hard requirements">
+          <SlidersHorizontal aria-hidden="true" size={16} />Details
+        </summary>
         <div className="mt-5 space-y-8">
       <fieldset className="grid gap-5 md:grid-cols-2">
-        <legend className="px-2 text-lg font-semibold text-slate-950">Source</legend>
+        <legend className="px-2 text-base font-semibold text-slate-950">Source</legend>
         <label className="text-sm font-medium text-slate-800">
           Source type
           <select className={inputClass} defaultValue={source.sourceType} name="sourceType">
@@ -144,7 +146,7 @@ export function JobCaseReviewForm({
       </fieldset>
 
       <fieldset className="grid gap-5 md:grid-cols-2">
-        <legend className="px-2 text-lg font-semibold text-slate-950">Confirmed opportunity facts</legend>
+        <legend className="px-2 text-base font-semibold text-slate-950">Confirmed opportunity facts</legend>
         <label className="text-sm font-medium text-slate-800">
           Job title <span aria-hidden="true" className="text-red-700">*</span>
           <input className={inputClass} defaultValue={jobCase.title ?? ""} maxLength={200} name="title" required />
@@ -180,7 +182,7 @@ export function JobCaseReviewForm({
       </fieldset>
 
       <fieldset className="grid gap-5 md:grid-cols-2">
-        <legend className="px-2 text-lg font-semibold text-slate-950">Recruiter</legend>
+        <legend className="px-2 text-base font-semibold text-slate-950">Recruiter</legend>
         <label className="text-sm font-medium text-slate-800">Name<input className={inputClass} defaultValue={jobCase.recruiterName ?? ""} maxLength={200} name="recruiterName" /></label>
         <label className="text-sm font-medium text-slate-800">Email<input className={inputClass} defaultValue={jobCase.recruiterEmail ?? ""} maxLength={320} name="recruiterEmail" type="email" /></label>
         <label className="text-sm font-medium text-slate-800">Phone<input className={inputClass} defaultValue={jobCase.recruiterPhone ?? ""} maxLength={80} name="recruiterPhone" type="tel" /></label>
@@ -188,7 +190,7 @@ export function JobCaseReviewForm({
       </fieldset>
 
       <fieldset className="grid gap-5 md:grid-cols-2">
-        <legend className="px-2 text-lg font-semibold text-slate-950">Hard requirements</legend>
+        <legend className="px-2 text-base font-semibold text-slate-950">Hard requirements</legend>
         <label className="text-sm font-medium text-slate-800">Visa / work authorization<input className={inputClass} defaultValue={jobCase.visaRequirement ?? ""} maxLength={500} name="visaRequirement" /></label>
         <label className="text-sm font-medium text-slate-800">Local candidate<input className={inputClass} defaultValue={jobCase.localRequirement ?? ""} maxLength={500} name="localRequirement" /></label>
         <label className="text-sm font-medium text-slate-800">Relocation<input className={inputClass} defaultValue={jobCase.relocationRequirement ?? ""} maxLength={500} name="relocationRequirement" /></label>
@@ -200,19 +202,26 @@ export function JobCaseReviewForm({
       <div className="flex flex-wrap gap-3">
         {straightThrough && (
           <>
-            <OpenInOutlookButton action={confirmAndDraftAction}>Confirm and open the Outlook draft</OpenInOutlookButton>
-            <OpenInOutlookButton action={confirmAndDraftAction} open={false} tone="secondary">Confirm and build it for later</OpenInOutlookButton>
+            <OpenInOutlookButton action={confirmAndDraftAction} icon={<ExternalLink aria-hidden="true" size={16} />} title="Confirm and open the Outlook draft">Outlook</OpenInOutlookButton>
+            <OpenInOutlookButton action={confirmAndDraftAction} icon={<Clock aria-hidden="true" size={16} />} open={false} title="Confirm and build the Outlook draft for later" tone="secondary">Later</OpenInOutlookButton>
           </>
         )}
-        <button className={straightThrough
-          ? "rounded-lg border border-slate-400 bg-white px-5 py-3 font-medium text-slate-800 hover:border-slate-600"
-          : "rounded-lg bg-emerald-700 px-5 py-3 font-medium text-white hover:bg-emerald-800"} type="submit">
-          {preview?.subject ? "Confirm and create job with draft" : canWrite ? "Confirm and write the email" : "Confirm and create opportunity"}
-        </button>
+        {(() => {
+          const [label, tip, Icon] = preview?.subject
+            ? ["Confirm", "Confirm and create the job with this draft", Check]
+            : canWrite ? ["Write", "Confirm and write the email", PenLine] : ["Confirm", "Confirm and create the opportunity", Check];
+          return (
+            <button aria-label={tip} className={`flex items-center gap-2 rounded-lg px-5 py-3 font-medium ${straightThrough
+              ? "border border-slate-400 bg-white text-slate-800 hover:border-slate-600"
+              : "bg-emerald-700 text-white hover:bg-emerald-800"}`} title={tip} type="submit">
+              <Icon aria-hidden="true" size={16} />{label}
+            </button>
+          );
+        })()}
         {/* A second vendor on one role is a normal channel; only the same JD text twice is a duplicate. */}
         {hasExactDuplicate && (
-          <button className="rounded-lg border border-amber-400 bg-amber-50 px-5 py-3 font-medium text-amber-950 hover:border-amber-600" formAction={duplicateAction} type="submit">
-            Same posting again — create and mark duplicate
+          <button aria-label="Same posting again: create it and mark it a duplicate" className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-5 py-3 font-medium text-amber-950 hover:border-amber-600" formAction={duplicateAction} title="Same posting again: create it and mark it a duplicate" type="submit">
+            <Copy aria-hidden="true" size={16} />Duplicate
           </button>
         )}
       </div>
