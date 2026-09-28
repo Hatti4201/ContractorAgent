@@ -104,11 +104,44 @@ export function autoSendDelayMinutes(value = process.env.AUTO_SEND_DELAY_MINUTES
  * Outlook, which can lock the account.
  */
 export function autoSendDailyLimit(value = process.env.AUTO_SEND_DAILY_LIMIT) {
-  return bounded(value, 35, 0, 500);
+  return bounded(value, 50, 0, 500);
+}
+
+export type AutopilotSettings = { threshold: number; delayMinutes: number; dailyLimit: number };
+type StoredSettings = { matchThreshold: number | null; sendDelayMinutes: number | null; dailySendLimit: number | null };
+
+/**
+ * What the Autopilot page saved, each value on its own: one the user has not set yet still comes from
+ * the environment, so saving the threshold alone does not silently reset the limit.
+ */
+export function resolveAutopilotSettings(stored: StoredSettings | null, env: Record<string, string | undefined> = process.env): AutopilotSettings {
+  return {
+    threshold: stored?.matchThreshold ?? matchThreshold(env.MATCH_THRESHOLD),
+    delayMinutes: stored?.sendDelayMinutes ?? autoSendDelayMinutes(env.AUTO_SEND_DELAY_MINUTES),
+    dailyLimit: stored?.dailySendLimit ?? autoSendDailyLimit(env.AUTO_SEND_DAILY_LIMIT),
+  };
+}
+
+/**
+ * The Autopilot page's form, as whole numbers: the threshold in percent. Anything out of range is
+ * refused with the field's name, never clamped, since a silently changed limit is worse than a retry.
+ */
+export function parseAutopilotSettings(form: { threshold: string; delayMinutes: string; dailyLimit: string }): AutopilotSettings | { error: string } {
+  const whole = (value: string, low: number, high: number) => {
+    const number = Number(value.trim());
+    return value.trim() && Number.isInteger(number) && number >= low && number <= high ? number : null;
+  };
+  const threshold = whole(form.threshold, 0, 100);
+  const delayMinutes = whole(form.delayMinutes, 1, 1440);
+  const dailyLimit = whole(form.dailyLimit, 0, 500);
+  if (threshold === null) return { error: "threshold" };
+  if (delayMinutes === null) return { error: "delay" };
+  if (dailyLimit === null) return { error: "limit" };
+  return { threshold: threshold / 100, delayMinutes, dailyLimit };
 }
 
 /** What happens to a draft the autopilot just built: nothing, a shadow record, or a scheduled send. */
-export function autoSendPlan(mode: AutopilotMode, now: Date, delayMinutes = autoSendDelayMinutes()) {
+export function autoSendPlan(mode: AutopilotMode, now: Date, delayMinutes: number) {
   if (mode !== "shadow" && mode !== "send") return null;
   return { state: mode === "send" ? "SCHEDULED" as const : "SHADOW" as const, at: new Date(now.getTime() + delayMinutes * 60_000) };
 }

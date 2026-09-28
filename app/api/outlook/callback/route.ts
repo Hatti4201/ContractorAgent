@@ -1,7 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
+import { after } from "next/server";
 import { AutopilotSetting } from "@/app/generated/prisma/enums";
 import { setAutopilotSetting } from "@/services/auto-send";
+import { rerunWaiting } from "@/services/autopilot-batch";
 import { completeOutlookAuthorization, outlookSendToken } from "@/services/outlook-auth";
 
 export const dynamic = "force-dynamic";
@@ -36,12 +38,14 @@ export async function GET(request: Request) {
   }
   if (forSending) {
     // Switched on only when Outlook really granted it; declining the permission leaves the switch alone.
-    const back = new URL("/dashboard", request.url);
-    back.hash = "autopilot";
+    const back = new URL("/autopilot", request.url);
     try {
       await outlookSendToken();
       await setAutopilotSetting(AutopilotSetting.SEND);
       back.searchParams.set("autopilot", "send");
+      // As from the switch itself: the jobs already waiting go through the autopilot now.
+      const run = await rerunWaiting(after).catch(() => 0);
+      if (run) back.searchParams.set("autopilotRun", String(run));
     } catch {
       back.searchParams.set("autopilot", "send-refused");
     }

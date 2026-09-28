@@ -512,6 +512,13 @@ model AutopilotControl {
   id              String            @id @default("primary")
   /// Null until the user first uses the switch; AUTOPILOT in the environment decides until then.
   mode            AutopilotSetting?
+  /// Set on the Autopilot page; each is null until first saved, and the environment decides until then.
+  /// The fit a job needs, 0 to 1.
+  matchThreshold  Float?    @map("match_threshold")
+  /// Minutes between building a draft and sending it: the window to cancel in.
+  sendDelayMinutes Int?     @map("send_delay_minutes")
+  /// Sends allowed in any rolling 24 hours.
+  dailySendLimit  Int?      @map("daily_send_limit")
   /// When the daily digest last went out (or was attempted); one per local date.
   lastDigestAt    DateTime? @map("last_digest_at")
   lastDigestError String?   @map("last_digest_error")

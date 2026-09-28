@@ -1,6 +1,6 @@
 import { ActivityType, AutopilotSetting, AutoSendState, OutlookDraftState, TaskKind } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
-import { autoSendDailyLimit, autoSendDelayMinutes, autoSendPlan, modeFromSetting, rankForSending, sendQuota, type AutopilotMode } from "@/services/autopilot";
+import { autoSendPlan, modeFromSetting, rankForSending, resolveAutopilotSettings, sendQuota, type AutopilotMode, type AutopilotSettings } from "@/services/autopilot";
 import { outlookAccessToken, outlookSendToken } from "@/services/outlook-auth";
 import { approvalIssue, preparedDraft } from "@/services/outlook-draft";
 import { isWithinScanWindow, scanWindowFromEnv } from "@/services/mail-schedule";
@@ -31,7 +31,7 @@ function dueFilter(now: Date) {
  * been sent. Only a draft that is really in Outlook and untouched by any earlier plan qualifies.
  */
 export async function scheduleAutoSend(opportunityId: string, mode?: AutopilotMode, now = new Date()) {
-  const plan = autoSendPlan(mode ?? await currentAutopilotMode(), now);
+  const plan = autoSendPlan(mode ?? await currentAutopilotMode(), now, (await autopilotSettings()).delayMinutes);
   if (!plan) return;
   await getPrisma().outreachDraft.updateMany({
     where: { opportunityId, outlookState: OutlookDraftState.CREATED, outlookMessageId: { not: null }, autoSendState: null, sentConfirmedAt: null },
@@ -43,6 +43,30 @@ export async function scheduleAutoSend(opportunityId: string, mode?: AutopilotMo
 export async function currentAutopilotMode() {
   const control = await getPrisma().autopilotControl.findUnique({ where: { id: CONTROL_ID }, select: { mode: true } });
   return modeFromSetting(control?.mode);
+}
+
+/** The threshold, delay and daily limit as saved on the Autopilot page, or the environment's until then. */
+export async function autopilotSettings() {
+  const control = await getPrisma().autopilotControl.findUnique({
+    where: { id: CONTROL_ID },
+    select: { matchThreshold: true, sendDelayMinutes: true, dailySendLimit: true },
+  });
+  return resolveAutopilotSettings(control);
+}
+
+export async function currentMatchThreshold() {
+  return (await autopilotSettings()).threshold;
+}
+
+/**
+ * Saves the page's numbers. Returns the threshold before the save, so the caller can tell whether a
+ * lower bar lets jobs the autopilot held back through now.
+ */
+export async function saveAutopilotSettings(settings: AutopilotSettings) {
+  const before = await currentMatchThreshold();
+  const data = { matchThreshold: settings.threshold, sendDelayMinutes: settings.delayMinutes, dailySendLimit: settings.dailyLimit };
+  await getPrisma().autopilotControl.upsert({ where: { id: CONTROL_ID }, create: { id: CONTROL_ID, ...data }, update: data });
+  return { previousThreshold: before };
 }
 
 /**
@@ -92,7 +116,7 @@ async function recoverStaleSends(now: Date) {
  */
 export async function sendDueDrafts(task?: TaskHandle, now = new Date()) {
   const database = getPrisma();
-  const limit = autoSendDailyLimit();
+  const { dailyLimit: limit, delayMinutes } = await autopilotSettings();
   const quota = sendQuota(limit, await sentInLastDay(now));
   const scheduled = await database.outreachDraft.findMany({
     where: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: dueFilter(now) },
@@ -159,7 +183,7 @@ export async function sendDueDrafts(task?: TaskHandle, now = new Date()) {
     await database.$transaction([
       database.outreachDraft.update({ where: { id }, data: { autoSendState: AutoSendState.SENT, autoSentAt: new Date(), autoSendError: null } }),
       database.activity.create({
-        data: { opportunityId, type: ActivityType.NOTE, description: `Sent automatically by the autopilot after the ${autoSendDelayMinutes()}-minute window.` },
+        data: { opportunityId, type: ActivityType.NOTE, description: `Sent automatically by the autopilot after the ${delayMinutes}-minute window.` },
       }),
     ]);
     sent += 1;
@@ -178,7 +202,7 @@ export async function autoSendTick(now = new Date()) {
   if (!await getPrisma().outreachDraft.count({ where: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: dueFilter(now) } })) return;
   try {
     await runTaskNow(
-      { kind: TaskKind.AUTO_SEND, label: "Sending the autopilot's emails", subjectId: "auto-send", href: "/dashboard#autopilot" },
+      { kind: TaskKind.AUTO_SEND, label: "Sending the autopilot's emails", subjectId: "auto-send", href: "/autopilot" },
       (task) => sendDueDrafts(task, now).then(() => undefined),
     );
   } catch (error) {
@@ -201,8 +225,9 @@ const overviewSelection = {
 export async function autopilotOverview(now = new Date()) {
   const database = getPrisma();
   const week = new Date(now.getTime() - 7 * DAY_MS);
-  const [mode, sentToday, upcoming, recent, shadow] = await Promise.all([
+  const [mode, settings, sentToday, upcoming, recent, shadow] = await Promise.all([
     currentAutopilotMode(),
+    autopilotSettings(),
     sentInLastDay(now),
     database.outreachDraft.findMany({
       where: { autoSendState: { in: [AutoSendState.SCHEDULED, AutoSendState.SENDING] } },
@@ -223,8 +248,9 @@ export async function autopilotOverview(now = new Date()) {
   ]);
   return {
     mode,
-    limit: autoSendDailyLimit(),
-    delayMinutes: autoSendDelayMinutes(),
+    limit: settings.dailyLimit,
+    delayMinutes: settings.delayMinutes,
+    threshold: settings.threshold,
     sentToday,
     upcoming,
     recent,

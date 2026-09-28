@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Briefcase, FileText, Mail, Plus, Radar, ScanSearch, TriangleAlert, Users, type LucideIcon } from "lucide-react";
+import { Bot, Briefcase, FileText, Mail, Plus, Radar, ScanSearch, TriangleAlert, Users, type LucideIcon } from "lucide-react";
 
 export type NavigationCounts = { intake: number; attention: number };
 
@@ -12,6 +12,7 @@ type Item = { href: string; label: string; icon: LucideIcon; badge?: keyof Navig
 const items: Item[] = [
   { href: "/intake", label: "Add job", icon: Plus, accent: true, badge: "intake" },
   { href: "/sweep", label: "Sweep", icon: ScanSearch },
+  { href: "/autopilot", label: "Autopilot", icon: Bot },
   { href: "/needs-attention", label: "Attention", icon: TriangleAlert, badge: "attention" },
   { href: "/jobs", label: "Jobs", icon: Briefcase },
   { href: "/recruiters", label: "Recruiters", icon: Users },
