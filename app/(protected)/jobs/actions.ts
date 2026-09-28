@@ -25,6 +25,7 @@ import { jobCaseFactChanges, jobFingerprint, parseJobCase, readJobCaseFacts, rea
 import { activeRoleFamilies } from "@/services/role-family";
 import { profileUrl, resolveContacts } from "@/services/contacts";
 import { createOpportunityFromIntake } from "@/services/intake-confirm";
+import { parseAutoStageChange, undoAutoStageDescription } from "@/services/follow-up-auto";
 import { employerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -258,6 +259,25 @@ export async function addActivity(id: string, formData: FormData) {
   const occurredAt = dateTimeValue(formData.get("occurredAt"));
 
   await getPrisma().activity.create({ data: { opportunityId: id, type, description, occurredAt } });
+  revalidatePath("/dashboard");
+  revalidatePath("/needs-attention");
+  revalidatePath(`/jobs/${id}`);
+}
+
+/** Reverses one automatic Stage move, as RESTRICTIONS 1.7 §4 requires, by adding a CORRECTION and keeping the original. */
+export async function undoAutoStageChange(id: string, activityId: string) {
+  await requireAuth();
+  await getPrisma().$transaction(async (database) => {
+    const activity = await database.activity.findFirst({ where: { id: activityId, opportunityId: id, type: ActivityType.STAGE_CHANGED } });
+    const change = activity && parseAutoStageChange(activity.description);
+    if (!change) throw new Error("Only an automatic stage change can be undone here.");
+    const undone = await database.activity.count({ where: { opportunityId: id, type: ActivityType.CORRECTION, description: { contains: activityId } } });
+    if (undone) throw new Error("This stage change was already undone.");
+    // Only while the stage is still the one the scan set; a later move is the user's and stays.
+    const moved = await database.applicationTrack.updateMany({ where: { opportunityId: id, currentStage: change.to }, data: { currentStage: change.from } });
+    if (moved.count !== 1) throw new Error("The stage has changed since; edit it on this page instead.");
+    await database.activity.create({ data: { opportunityId: id, type: ActivityType.CORRECTION, description: undoAutoStageDescription(activityId, change) } });
+  });
   revalidatePath("/dashboard");
   revalidatePath("/needs-attention");
   revalidatePath(`/jobs/${id}`);

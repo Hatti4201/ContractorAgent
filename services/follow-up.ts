@@ -192,7 +192,7 @@ const eventStage: Partial<Record<FollowUpEvent, ApplicationStage>> = {
   ROLE_CLOSED: ApplicationStage.ROLE_CLOSED,
 };
 
-const stageRank: Partial<Record<ApplicationStage, number>> = {
+export const stageRank: Partial<Record<ApplicationStage, number>> = {
   DISCOVERED: 0,
   OUTREACH_SENT: 1,
   RECRUITER_ENGAGED: 2,
