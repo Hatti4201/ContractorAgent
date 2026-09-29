@@ -1,3 +1,6 @@
+# Fixed, so building from the deploy worktree replaces this same container instead of starting a second one.
+name: contractjobagent
+
 services:
   contract-agent:
     build:
