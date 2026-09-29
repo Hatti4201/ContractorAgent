@@ -2,15 +2,16 @@ import "dotenv/config";
 import { ActivityType, ApplicationStage } from "@/app/generated/prisma/enums";
 import { disconnectDatabase, getPrisma, splitSchema } from "@/lib/prisma";
 
-// Fictional starter data for a coding-agent worktree's schema in the development database.
+// Fictional starter data for a coding-agent worktree's schema in contractor_agent_dev.
 // It refuses anything that is not a worktree schema, so it can never write into production.
 
 const stages = [ApplicationStage.DISCOVERED, ApplicationStage.OUTREACH_SENT, ApplicationStage.INTERVIEW_SCHEDULED];
 
 async function main() {
-  const { schema } = splitSchema(process.env.DATABASE_URL ?? "");
-  if (!schema?.startsWith("agent_") || !/:55433\//.test(process.env.DATABASE_URL ?? "")) {
-    throw new Error("Refusing to seed: DATABASE_URL is not a worktree schema in the development database (port 55433, ?schema=agent_...).");
+  const { connectionString, schema } = splitSchema(process.env.DATABASE_URL ?? "");
+  const databaseName = connectionString ? new URL(connectionString).pathname : "";
+  if (!schema?.startsWith("agent_") || databaseName !== "/contractor_agent_dev") {
+    throw new Error("Refusing to seed: DATABASE_URL is not a worktree schema in contractor_agent_dev (?schema=agent_...).");
   }
   const database = getPrisma();
   if (await database.opportunity.count()) {

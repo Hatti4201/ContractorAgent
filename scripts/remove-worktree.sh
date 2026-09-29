@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Removes a coding agent's worktree and drops its schema in the development database.
+# Removes a coding agent's worktree and drops its schema in contractor_agent_dev.
 # Refuses a worktree with uncommitted changes, and keeps a branch that is not merged into main.
 #
 #   ./scripts/remove-worktree.sh <name>
@@ -19,7 +19,8 @@ if [ -d "$dir" ]; then
   fi
   git -C "$main_dir" worktree remove "$dir"
 fi
-docker exec contractor-agent-dev-db psql -q -U contractor_dev -d contractor_agent_dev -c "SET client_min_messages TO warning; DROP SCHEMA IF EXISTS \"$schema\" CASCADE;"
+db_user=$(node -e 'require("dotenv").config({ path: process.argv[1], quiet: true }); console.log(decodeURIComponent(new URL(process.env.DATABASE_URL).username))' "$main_dir/.env")
+docker exec contractor-agent-db psql -q -U "$db_user" -d contractor_agent_dev -c "SET client_min_messages TO warning; DROP SCHEMA IF EXISTS \"$schema\" CASCADE;"
 
 git -C "$main_dir" fetch --quiet origin main
 if git -C "$main_dir" branch --merged origin/main | grep -qx "  feature/$name"; then
