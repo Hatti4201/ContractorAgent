@@ -1,4 +1,5 @@
-# Fixed, so building from the deploy worktree replaces this same container instead of starting a second one.
+# The whole app is this one group: the app and its one database container. The name is fixed, so building
+# from the deploy worktree replaces these same containers instead of starting a second set.
 name: contractjobagent
 
 services:
@@ -30,4 +31,31 @@ services:
       - ${DOCKER_EXTRA_RESUME_DIR:-${HOME}/.contractor-agent/resumes}:${DOCKER_EXTRA_RESUME_DIR:-${HOME}/.contractor-agent/resumes}:ro
       - ${OUTREACH_CONTEXT_PATH}:${OUTREACH_CONTEXT_PATH}:ro
 
+    depends_on:
+      db:
+        condition: service_healthy
+
     restart: unless-stopped
+
+  # The one database container. It holds contractor_agent (production) and contractor_agent_dev (one
+  # schema per coding-agent worktree, CLAUDE.md §17). Published on the Mac's loopback so scripts reach it.
+  db:
+    image: postgres:18
+    container_name: contractor-agent-db
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-q"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  # The existing data volume, created before compose managed this container. External, so compose never
+  # creates or deletes it: not even `docker compose down -v` can remove the data.
+  pgdata:
+    external: true
+    name: contractor_agent_pgdata
