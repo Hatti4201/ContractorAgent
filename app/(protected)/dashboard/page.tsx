@@ -34,6 +34,7 @@ import { listDraftsAwaitingOutlook, listUnsentDrafts } from "@/services/outreach
 import { deleteJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobIcon } from "@/components/delete-job-form";
 import { deletedNotice } from "@/lib/delete-notice";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -219,21 +220,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {sentJobId && <Toast clear={["sent"]} text="Sent · archived" />}
       {deletion && <Toast clear={["deleted"]} text={deletion.text} tone={deletion.tone} />}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className={`${labelScope.bar} flex flex-wrap items-center gap-3`}>
         <div className="min-w-0 md:flex-1">
           <AutopilotChip />
         </div>
         <div className="flex items-center gap-2 max-md:ml-auto">
-          <Link aria-label={`Needs attention: ${attentionCount}`} className={`flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold ${attentionCount ? "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-500" : "border-slate-200 bg-white text-slate-400"}`} href="/needs-attention" title="Needs attention">
+          <Link aria-label={`Needs attention: ${attentionCount}`} className={`relative flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold ${attentionCount ? "border-amber-300 bg-amber-50 text-amber-900 hover:border-amber-500" : "border-slate-200 bg-white text-slate-400"}`} href="/needs-attention">
             <TriangleAlert aria-hidden="true" size={17} /> {attentionCount}
+            <HoverLabel scope="bar" text="待处理" />
           </Link>
           <form action={scanMailNow}>
-            <button aria-label="Scan mail now" className="rounded-xl border border-slate-200 bg-white p-2.5 text-blue-700 hover:border-blue-500" title="Scan mail now" type="submit">
+            <button aria-label="Scan mail now" className="relative rounded-xl border border-slate-200 bg-white p-2.5 text-blue-700 hover:border-blue-500" type="submit">
               <MailSearch aria-hidden="true" size={18} />
+              <HoverLabel scope="bar" text="扫邮件" />
             </button>
           </form>
-          <Link aria-label="Add a job" className="rounded-xl bg-slate-950 p-2.5 text-white hover:bg-slate-800" href="/intake" title="Add a job">
+          <Link aria-label="Add a job" className="relative rounded-xl bg-slate-950 p-2.5 text-white hover:bg-slate-800" href="/intake">
             <Plus aria-hidden="true" size={18} />
+            <HoverLabel scope="bar" text="加岗位" />
           </Link>
         </div>
       </div>
@@ -242,7 +246,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
       <div className="mt-6"><ExposureCard /></div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className={`${labelScope.bar} mt-2 flex flex-wrap items-center gap-2`}>
         {timeRanges.map((range) => (
           <Link
             aria-current={filters.range === range ? "page" : undefined}
@@ -254,8 +258,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           </Link>
         ))}
         <details className="relative ml-auto" open={activeFilters > 0}>
-          <summary aria-label="Filters" className="flex cursor-pointer list-none items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-600 hover:border-slate-500 [&::-webkit-details-marker]:hidden" title="Filters">
+          <summary aria-label="Filters" className="relative flex cursor-pointer list-none items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-600 hover:border-slate-500 [&::-webkit-details-marker]:hidden">
             <Filter aria-hidden="true" size={14} />
+            <HoverLabel scope="bar" text="筛选" />
             {activeFilters > 0 && <span className="rounded-full bg-slate-950 px-1.5 text-xs text-white">{activeFilters}</span>}
           </summary>
           <form className="absolute right-0 z-20 mt-2 grid w-72 gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg" method="get">
@@ -273,8 +278,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </select>
             ))}
             <div className="flex items-center justify-end gap-2">
-              <Link aria-label="Reset filters" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" href="/dashboard" title="Reset"><RotateCcw aria-hidden="true" size={15} /></Link>
-              <button aria-label="Apply filters" className="rounded-lg bg-slate-950 p-1.5 text-white" title="Apply" type="submit"><Filter aria-hidden="true" size={15} /></button>
+              <Link aria-label="Reset filters" className="flex items-center gap-1 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" href="/dashboard"><RotateCcw aria-hidden="true" size={15} /><HoverLabel scope="bar" text="重置" variant="inline" /></Link>
+              <button aria-label="Apply filters" className="flex items-center gap-1 rounded-lg bg-slate-950 p-1.5 text-white" type="submit"><Filter aria-hidden="true" size={15} /><HoverLabel scope="bar" text="应用" variant="inline" /></button>
             </div>
           </form>
         </details>
@@ -326,13 +331,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 {column.jobs.slice(0, PIPELINE_PREVIEW).map((job) => {
                   const dot = matchDot(job.matchScore);
                   return (
-                    <li className="group relative" key={job.id}>
+                    <li className={`${labelScope.row} group relative hover:z-10 focus-within:z-10`} key={job.id}>
                       <Link
                         className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 hover:border-emerald-500"
                         href={pipelineHref(column.key, job.id)}
                         title={[job.client ?? "Client not set", job.matchScore != null ? `${Math.round(job.matchScore * 100)}% match` : null].filter(Boolean).join(" · ")}
                       >
                         {dot && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />}
+                        {job.matchScore != null && <HoverLabel scope="row" text={`匹配 ${Math.round(job.matchScore * 100)}%`} variant="inline" />}
                         <span className={`truncate text-sm font-medium text-slate-900 ${column.key === "outreach" ? "pr-5" : ""}`}>{job.title}</span>
                       </Link>
                       {/* An outreach the user no longer wants goes from here, without opening the job. */}
@@ -342,8 +348,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 })}
               </ul>
               {hidden > 0 && (
-                <Link aria-label={`All ${column.jobs.length} ${column.label} jobs`} className="mt-1.5 flex items-center justify-end gap-1 px-1.5 text-sm font-semibold text-slate-500 hover:text-slate-950" href={`/jobs?stage=${column.key}`} title="See all">
-                  +{hidden} <ArrowRight aria-hidden="true" size={14} />
+                <Link aria-label={`All ${column.jobs.length} ${column.label} jobs`} className={`${labelScope.row} mt-1.5 flex items-center justify-end gap-1 px-1.5 text-sm font-semibold text-slate-500 hover:text-slate-950`} href={`/jobs?stage=${column.key}`}>
+                  +{hidden} <ArrowRight aria-hidden="true" size={14} /><HoverLabel scope="row" text="看全部" variant="inline" />
                 </Link>
               )}
               {!column.jobs.length && <p className="py-3 text-center text-sm text-slate-300">—</p>}
@@ -358,8 +364,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             {(() => { const Icon = metricLook[filters.metric].icon; return <Icon aria-hidden="true" className="text-slate-500" size={18} />; })()}
             {selectedMetric.label}
           </h2>
-          <Link aria-label="All jobs" className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-950" href="/jobs" title="See all">
-            <ArrowRight aria-hidden="true" size={17} />
+          <Link aria-label="All jobs" className={`${labelScope.row} flex items-center gap-1 rounded-lg p-1 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-950`} href="/jobs">
+            <HoverLabel scope="row" text="看全部" variant="inline" /><ArrowRight aria-hidden="true" size={17} />
           </Link>
         </div>
         <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -374,8 +380,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </ul>
           ) : <p className="p-4 text-center text-sm text-slate-300">—</p>}
           {details.length > DETAILS_PREVIEW + 1 && (
-            <Link className="flex items-center justify-center gap-1 border-t border-slate-100 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-950" href="/jobs" title="See all">
-              +{details.length - DETAILS_PREVIEW} <ArrowRight aria-hidden="true" size={14} />
+            <Link className={`${labelScope.row} flex items-center justify-center gap-1 border-t border-slate-100 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-950`} href="/jobs">
+              +{details.length - DETAILS_PREVIEW} <ArrowRight aria-hidden="true" size={14} /><HoverLabel scope="row" text="看全部" variant="inline" />
             </Link>
           )}
         </div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 
 export type PerformanceRowView = { id: string; name: string; href: string; values: number[] };
 
@@ -26,8 +27,8 @@ export function PerformanceTable({ title, icon, columns, rows, more }: {
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">{icon}{title}</h2>
         {more && (
-          <Link aria-label={`All ${title.toLowerCase()}`} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-950" href={more} title="See all">
-            <ArrowRight aria-hidden="true" size={17} />
+          <Link aria-label={`All ${title.toLowerCase()}`} className={`${labelScope.row} flex items-center gap-1 rounded-lg p-1 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-950`} href={more}>
+            <HoverLabel scope="row" text="看全部" variant="inline" /><ArrowRight aria-hidden="true" size={17} />
           </Link>
         )}
       </div>
@@ -52,8 +53,9 @@ export function PerformanceTable({ title, icon, columns, rows, more }: {
         ) : <p className="p-4 text-center text-sm text-slate-400">—</p>}
       </div>
       {hidden > 0 && (
-        <button className="mt-1 ml-auto flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-950" onClick={() => setAll(!all)} title={all ? "Show fewer" : "Show all"} type="button">
+        <button aria-label={all ? "Show fewer" : "Show all"} className={`${labelScope.row} mt-1 ml-auto flex items-center gap-1 text-sm font-semibold text-slate-500 hover:text-slate-950`} onClick={() => setAll(!all)} type="button">
           {all ? <ChevronUp aria-hidden="true" size={15} /> : <>+{hidden} <ChevronDown aria-hidden="true" size={15} /></>}
+          <HoverLabel scope="row" text={all ? "收起" : "展开"} variant="inline" />
         </button>
       )}
     </section>
