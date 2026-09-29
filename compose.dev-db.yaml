@@ -1,0 +1,21 @@
+# The development database for coding-agent worktrees (CLAUDE.md §17). Never the production one:
+# a separate container on its own port, holding only fictional seed data, one schema per worktree.
+# Started by scripts/new-worktree.sh, which also creates the password file it reads.
+name: contractor-agent-dev
+
+services:
+  dev-db:
+    image: postgres:18
+    container_name: contractor-agent-dev-db
+    environment:
+      POSTGRES_USER: contractor_dev
+      POSTGRES_DB: contractor_agent_dev
+      POSTGRES_PASSWORD: ${DEV_DB_PASSWORD:?run scripts/new-worktree.sh, which creates it}
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - dev-db-data:/var/lib/postgresql
+    restart: unless-stopped
+
+volumes:
+  dev-db-data:
