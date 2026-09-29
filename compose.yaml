@@ -1,0 +1,12 @@
+services:
+  contract-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: contract-job-agent
+
+    ports:
+      - "3008:3008"
+
+    restart: unless-stopped
