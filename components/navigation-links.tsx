@@ -3,23 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bot, Briefcase, FileText, Mail, Plus, Radar, ScanSearch, TriangleAlert, Users, type LucideIcon } from "lucide-react";
+import { HoverLabel } from "@/components/hover-label";
 
 export type NavigationCounts = { intake: number; attention: number };
 
-type Item = { href: string; label: string; icon: LucideIcon; badge?: keyof NavigationCounts; accent?: boolean; divider?: boolean };
+/** `short` is the label that appears under the icon while the pointer is over the bar. */
+type Item = { href: string; label: string; short: string; icon: LucideIcon; badge?: keyof NavigationCounts; accent?: boolean; divider?: boolean };
 
 // Icons are chosen here, in the client component, because a component cannot be handed across from the server.
 const items: Item[] = [
-  { href: "/intake", label: "Add job", icon: Plus, accent: true, badge: "intake" },
-  { href: "/sweep", label: "Sweep", icon: ScanSearch },
-  { href: "/autopilot", label: "Autopilot", icon: Bot },
-  { href: "/needs-attention", label: "Attention", icon: TriangleAlert, badge: "attention" },
-  { href: "/jobs", label: "Jobs", icon: Briefcase },
-  { href: "/recruiters", label: "Recruiters", icon: Users },
-  { href: "/exposure", label: "Exposure", icon: Radar },
+  { href: "/intake", label: "Add job", short: "加岗位", icon: Plus, accent: true, badge: "intake" },
+  { href: "/sweep", label: "Sweep", short: "扫帖", icon: ScanSearch },
+  { href: "/autopilot", label: "Autopilot", short: "自动", icon: Bot },
+  { href: "/needs-attention", label: "Attention", short: "待处理", icon: TriangleAlert, badge: "attention" },
+  { href: "/jobs", label: "Jobs", short: "岗位", icon: Briefcase },
+  { href: "/recruiters", label: "Recruiters", short: "招聘人", icon: Users },
+  { href: "/exposure", label: "Exposure", short: "曝光", icon: Radar },
   // Everything past here is setup rather than daily work.
-  { href: "/resumes", label: "Resumes", icon: FileText, divider: true },
-  { href: "/outlook", label: "Outlook", icon: Mail },
+  { href: "/resumes", label: "Resumes", short: "简历", icon: FileText, divider: true },
+  { href: "/outlook", label: "Outlook", short: "邮箱", icon: Mail },
 ];
 
 // A section is current when the path is that route or anything under it, so a job detail page still
@@ -29,14 +31,16 @@ export function isCurrent(pathname: string, href: string) {
 }
 
 /**
- * Icons, with the word shown only for the page you are on, so the bar never wraps; every other word
- * is the tooltip. On a phone the row scrolls instead of disappearing.
+ * Icons, with the word shown only for the page you are on, so the bar never wraps; while the pointer
+ * is anywhere over the bar, every other icon shows its short Chinese label beneath it. On a phone the
+ * row scrolls instead of disappearing.
  */
 export function NavigationLinks({ counts }: { counts: NavigationCounts }) {
   const pathname = usePathname();
 
   return (
-    <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto text-sm font-medium">
+    // Scrolls only on a phone: a scrolling row would clip the labels that hang below it.
+    <div className="flex min-w-0 items-center gap-0.5 text-sm font-medium max-sm:overflow-x-auto">
       {items.map((item) => {
         const current = isCurrent(pathname, item.href);
         const count = item.badge ? counts[item.badge] : 0;
@@ -55,9 +59,9 @@ export function NavigationLinks({ counts }: { counts: NavigationCounts }) {
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-950"
               }`}
               href={item.href}
-              title={item.label}
             >
               <Icon aria-hidden="true" size={18} />
+              {!current && <HoverLabel scope="nav" text={item.short} />}
               {current && <span className="max-sm:hidden">{item.label}</span>}
               {count > 0 && (
                 <span className={`rounded-full px-1.5 text-xs font-semibold leading-5 ${item.badge === "attention" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{count}</span>
@@ -76,13 +80,13 @@ export function HomeLink({ children }: { children: React.ReactNode }) {
     <Link
       aria-current={isCurrent(pathname, "/dashboard") ? "page" : undefined}
       aria-label="Dashboard"
-      className={`flex shrink-0 items-center gap-3 rounded-lg px-2 py-1.5 font-semibold transition-colors ${
+      className={`relative flex shrink-0 items-center gap-3 rounded-lg px-2 py-1.5 font-semibold transition-colors ${
         isCurrent(pathname, "/dashboard") ? "bg-slate-100 text-slate-950" : "text-slate-950 hover:bg-slate-50"
       }`}
       href="/dashboard"
-      title="Dashboard"
     >
       {children}
+      <HoverLabel scope="nav" text="首页" />
     </Link>
   );
 }

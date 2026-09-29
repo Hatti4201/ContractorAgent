@@ -3,6 +3,7 @@
 import { CircleAlert, CircleX, FileText, Loader, ScanSearch, UserRoundX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ClipboardEvent, type FormEvent } from "react";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 import { clipboardHtmlToText, MAX_SWEEP_LENGTH, splitFeed } from "@/lib/linkedin-feed";
 
 /**
@@ -59,35 +60,38 @@ export function SweepPaste() {
         placeholder="Group → search → Past 24 hours → Show more ×4 → ⌘A ⌘C → paste here"
         value={text}
       />
-      <div className="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
+      <div className={`${labelScope.bar} mt-2 flex flex-wrap items-center gap-2`} aria-live="polite">
         {text && (posts.length
           ? (
             <>
-              <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700" title="Posts found">
+              <span aria-label={`Posts found: ${posts.length}`} className="relative flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700">
                 <FileText aria-hidden="true" size={14} />{posts.length}
+                <HoverLabel scope="bar" text="帖子数" />
               </span>
               {withProfiles < posts.length && (
-                <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900" title="Posts whose author link was lost in the paste">
+                <span aria-label={`Posts whose author link was lost in the paste: ${posts.length - withProfiles}`} className="relative flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900">
                   <UserRoundX aria-hidden="true" size={14} />{posts.length - withProfiles}
+                  <HoverLabel scope="bar" text="缺链接" />
                 </span>
               )}
             </>
           )
           : (
-            <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900" title="No posts found: copy the whole page, not part of a post">
+            <span aria-label="No posts found: copy the whole page, not part of a post" className="relative flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-900" title="Copy the whole page, not part of a post">
               <CircleAlert aria-hidden="true" size={14} />0
+              <HoverLabel scope="bar" text="没找到帖" />
             </span>
           ))}
         {error && <span className="flex items-center gap-1 text-sm font-medium text-red-700" title={error}><CircleX aria-hidden="true" size={15} /><span className="max-w-md truncate">{error}</span></span>}
         <button
           aria-label={`Sweep ${posts.length} posts`}
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="relative ml-auto flex items-center gap-1.5 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           disabled={sending || !posts.length}
-          title="Sweep"
           type="submit"
         >
           {sending ? <Loader aria-hidden="true" className="animate-spin" size={16} /> : <ScanSearch aria-hidden="true" size={16} />}
           {posts.length || ""}
+          <HoverLabel scope="bar" text="开始扫帖" />
         </button>
       </div>
     </form>

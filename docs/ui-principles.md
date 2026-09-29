@@ -17,4 +17,11 @@ as possible. Apply these to every UI change, new or touched:
    expanded in place.
 6. **No page titles or intro paragraphs that repeat what the navigation already says.**
 
+7. **Icons explain themselves on hover, at once.** Each icon carries a 2–4 character Chinese label
+   (`HoverLabel`, in `components/hover-label.tsx`) that appears the instant the pointer enters its
+   block and disappears when it leaves: a whole bar at a time (navigation, count bars), one row at a
+   time in lists. It floats below the icon, so nothing moves; where icons sit too close for that (the
+   actions at the end of a list row), it appears beside each icon instead (`variant="inline"`). Do not
+   rely on `title` for this; the browser delays it by about a second.
+
 Every icon-only control still needs an `aria-label`, so the page stays usable with a screen reader.

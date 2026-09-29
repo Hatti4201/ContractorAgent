@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Ban, FilePen, Mail, Pause, Play, RotateCcw, Send, type LucideIcon } from "lucide-react";
 import { runAutopilotOnWaiting } from "@/app/(protected)/autopilot/actions";
 import { reviewSkippedIntake } from "@/app/(protected)/sweep/actions";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 import { SweepPaste, SweepRefresher } from "@/components/sweep-paste";
 import { SweepCard, type SweepCardView, type SweepGroup } from "@/components/sweep-report";
 import { Toast } from "@/components/toast";
@@ -84,24 +85,24 @@ export default async function SweepPage({ searchParams }: { searchParams: Promis
       {notice && <Toast clear={["autopilotRun"]} text={notice.text} tone={notice.tone} />}
       {error && <Toast clear={["error"]} text="No longer skipped" tone="warn" />}
 
-      <div className="mb-3 flex items-center gap-2">
+      <div className={`${labelScope.bar} mb-3 flex items-center gap-2`}>
         <Link
           aria-label={`Autopilot: ${label}. Open the autopilot page`}
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold ${tone}`}
+          className={`relative flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-semibold ${tone}`}
           href="/autopilot"
-          title={mode === "off" ? "Autopilot off: swept jobs wait for your review. Click to change" : "Autopilot · click to change"}
         >
           <ModeIcon aria-hidden="true" size={14} />{label}
+          <HoverLabel scope="bar" text="自动" />
         </Link>
         {mode !== "off" && waiting.length > 0 && (
           <form action={runAutopilotOnWaiting.bind(null, "/sweep")}>
             <button
               aria-label={`Run the autopilot on ${waiting.length} jobs waiting with a finished email`}
-              className="flex items-center gap-1.5 rounded-full bg-sky-700 px-3 py-1 text-sm font-semibold text-white hover:bg-sky-800"
-              title={`Run the autopilot on ${waiting.length} jobs waiting with a finished email`}
+              className="relative flex items-center gap-1.5 rounded-full bg-sky-700 px-3 py-1 text-sm font-semibold text-white hover:bg-sky-800"
               type="submit"
             >
               <Play aria-hidden="true" size={13} />{waiting.length}
+              <HoverLabel scope="bar" text="运行" />
             </button>
           </form>
         )}
@@ -115,20 +116,22 @@ export default async function SweepPage({ searchParams }: { searchParams: Promis
 
       {skipped.length > 0 && (
         <details className="mt-6">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-slate-600 [&::-webkit-details-marker]:hidden" title="Skipped by your rules this week, from every source">
+          <summary aria-label={`Skipped by your rules this week: ${skipped.length}`} className={`${labelScope.bar} relative flex w-fit cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-slate-600 [&::-webkit-details-marker]:hidden`}>
             <Ban aria-hidden="true" size={15} />{skipped.length}<span className="font-normal text-slate-400">· 7d</span>
+            <HoverLabel scope="bar" text="本周跳过" />
           </summary>
           <ul className="mt-2 space-y-1.5">
             {skipped.map((item) => {
               const tag = shortReason(item.reason);
               return (
-                <li className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2" key={item.id}>
+                <li className={`${labelScope.row} flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2`} key={item.id}>
                   <Mail aria-hidden="true" className="shrink-0 text-slate-300" size={14} />
                   <span className="min-w-0 truncate text-sm font-medium text-slate-900" title={`${formatEnum(item.sourceType)}${item.recruiter ? ` · ${item.recruiter}` : ""} · ${formatDateTime(item.at)}`}>{item.title}</span>
                   {tag && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600" title={item.reason ?? undefined}>{tag.label}</span>}
                   <form action={reviewSkippedIntake.bind(null, item.id)} className="ml-auto shrink-0">
-                    <button aria-label={`Review ${item.title} anyway`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" title="Review anyway" type="submit">
+                    <button aria-label={`Review ${item.title} anyway`} className="flex items-center gap-1 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900" type="submit">
                       <RotateCcw aria-hidden="true" size={15} />
+                      <HoverLabel scope="row" text="再审阅" variant="inline" />
                     </button>
                   </form>
                 </li>
