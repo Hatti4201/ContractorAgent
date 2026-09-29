@@ -6,6 +6,7 @@ import {
   Send, ShieldAlert, TriangleAlert, UserRound, Users, Briefcase, Copy, CircleHelp, type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 import type { ReasonKind } from "@/services/sweep-plan";
 
 export type SweepGroup = "needs" | "ready" | "working" | "outlook" | "soon" | "sent" | "skipped" | "not";
@@ -36,15 +37,16 @@ export type SweepCardView = {
   posts: SweepPostView[];
 };
 
-export const groups: Record<SweepGroup, { icon: LucideIcon; tone: string; tip: string }> = {
-  needs: { icon: TriangleAlert, tone: "text-amber-600", tip: "Needs you" },
-  ready: { icon: Eye, tone: "text-sky-600", tip: "Email written, waiting for your review" },
-  working: { icon: Loader, tone: "text-slate-500", tip: "Preparing" },
-  outlook: { icon: MailOpen, tone: "text-blue-600", tip: "Draft in Outlook" },
-  soon: { icon: Clock, tone: "text-emerald-600", tip: "Sending soon" },
-  sent: { icon: Send, tone: "text-emerald-700", tip: "Sent" },
-  skipped: { icon: Ban, tone: "text-slate-500", tip: "Skipped by your rules" },
-  not: { icon: EyeOff, tone: "text-slate-400", tip: "Not for you: hotlists, candidates, other roles" },
+/** `short` shows under the count while the pointer is over the bar; `tip` is read by screen readers. */
+export const groups: Record<SweepGroup, { icon: LucideIcon; tone: string; tip: string; short: string }> = {
+  needs: { icon: TriangleAlert, tone: "text-amber-600", tip: "Needs you", short: "需处理" },
+  ready: { icon: Eye, tone: "text-sky-600", tip: "Email written, waiting for your review", short: "待审阅" },
+  working: { icon: Loader, tone: "text-slate-500", tip: "Preparing", short: "处理中" },
+  outlook: { icon: MailOpen, tone: "text-blue-600", tip: "Draft in Outlook", short: "草稿" },
+  soon: { icon: Clock, tone: "text-emerald-600", tip: "Sending soon", short: "待发送" },
+  sent: { icon: Send, tone: "text-emerald-700", tip: "Sent", short: "已发送" },
+  skipped: { icon: Ban, tone: "text-slate-500", tip: "Skipped by your rules", short: "已跳过" },
+  not: { icon: EyeOff, tone: "text-slate-400", tip: "Not for you: hotlists, candidates, other roles", short: "不相关" },
 };
 const order: SweepGroup[] = ["needs", "ready", "working", "outlook", "soon", "sent", "skipped", "not"];
 
@@ -57,7 +59,7 @@ function PostRow({ post }: { post: SweepPostView }) {
   const [showPost, setShowPost] = useState(false);
   const TagIcon = post.tag ? tagIcons[post.tag.kind] : null;
   return (
-    <li className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+    <li className={`${labelScope.row} rounded-lg border border-slate-200 bg-white px-3 py-2`}>
       <div className="flex items-center gap-2">
         {post.href
           ? <Link className="min-w-0 truncate text-sm font-medium text-slate-900 hover:text-emerald-700" href={post.href} title={post.title}>{post.title}</Link>
@@ -68,15 +70,19 @@ function PostRow({ post }: { post: SweepPostView }) {
           </span>
         )}
         {post.match != null && post.tag?.kind !== "match" && (
-          <span className="shrink-0 text-xs font-semibold text-slate-500" title="Match">{Math.round(post.match * 100)}%</span>
+          <span aria-label={`Match ${Math.round(post.match * 100)}%`} className="flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-500">
+            {Math.round(post.match * 100)}%<HoverLabel scope="row" text="匹配度" variant="inline" />
+          </span>
         )}
+        {/* The row's actions sit too close for floating labels, so theirs appear beside each icon. */}
         <span className="ml-auto flex shrink-0 items-center gap-0.5 text-slate-400">
           {post.profileUrl
-            ? <a aria-label={`${post.author} on LinkedIn`} className="rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={post.profileUrl} rel="noreferrer" target="_blank" title={post.author}><UserRound aria-hidden="true" size={15} /></a>
-            : <span className="p-1" title={post.author}><UserRound aria-hidden="true" size={15} /></span>}
-          {post.email && <a aria-label={`Email ${post.email}`} className="rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={`mailto:${post.email}`} title={post.email}><Mail aria-hidden="true" size={15} /></a>}
-          <button aria-expanded={showPost} aria-label="Show the post" className={`rounded p-1 hover:bg-slate-100 hover:text-slate-900 ${showPost ? "text-slate-900" : ""}`} onClick={() => setShowPost(!showPost)} title="Show the post" type="button">
+            ? <a aria-label={`${post.author} on LinkedIn`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={post.profileUrl} rel="noreferrer" target="_blank" title={post.author}><UserRound aria-hidden="true" size={15} /><HoverLabel scope="row" text="发帖人" variant="inline" /></a>
+            : <span aria-label={post.author} className="flex items-center gap-1 p-1" title={post.author}><UserRound aria-hidden="true" size={15} /><HoverLabel scope="row" text="发帖人" variant="inline" /></span>}
+          {post.email && <a aria-label={`Email ${post.email}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={`mailto:${post.email}`} title={post.email}><Mail aria-hidden="true" size={15} /><HoverLabel scope="row" text="发邮件" variant="inline" /></a>}
+          <button aria-expanded={showPost} aria-label="Show the post" className={`flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900 ${showPost ? "text-slate-900" : ""}`} onClick={() => setShowPost(!showPost)} type="button">
             <FileText aria-hidden="true" size={15} />
+            <HoverLabel scope="row" text="原帖" variant="inline" />
           </button>
         </span>
       </div>
@@ -93,38 +99,41 @@ export function SweepCard({ sweep, latest }: { sweep: SweepCardView; latest: boo
 
   return (
     <section aria-label={`Sweep ${sweep.when}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className={`${labelScope.bar} flex flex-wrap items-center gap-1.5`}>
         <span className="mr-1 text-sm font-semibold text-slate-800">{sweep.when}</span>
-        <span className="mr-1 flex items-center gap-1 text-xs text-slate-400" title="Posts pasted">
+        <span aria-label={`Posts pasted: ${sweep.postCount}`} className="relative mr-1 flex items-center gap-1 text-xs text-slate-400">
           <FileText aria-hidden="true" size={13} />{sweep.postCount}
+          <HoverLabel scope="bar" text="帖子数" />
         </span>
         {sweep.running && (
-          <span className="flex items-center gap-1 text-xs text-slate-500" title="Working">
+          <span aria-label="Working" className="relative flex items-center gap-1 text-xs text-slate-500">
             <Loader aria-hidden="true" className="animate-spin" size={13} />{sweep.progress}
+            <HoverLabel scope="bar" text="处理中" />
           </span>
         )}
         {order.map((group) => {
           const count = byGroup[group].length;
           if (!count) return null;
-          const { icon: Icon, tone, tip } = groups[group];
+          const { icon: Icon, tone, tip, short } = groups[group];
           const active = open === group;
           return (
             <button
               aria-label={`${tip}: ${count}`}
               aria-pressed={active}
-              className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-semibold ${active ? "border-slate-900 bg-white text-slate-950" : "border-transparent bg-white/60 text-slate-700 hover:border-slate-300"}`}
+              className={`relative flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-semibold ${active ? "border-slate-900 bg-white text-slate-950" : "border-transparent bg-white/60 text-slate-700 hover:border-slate-300"}`}
               key={group}
               onClick={() => setOpen(active ? null : group)}
-              title={tip}
               type="button"
             >
               <Icon aria-hidden="true" className={tone} size={14} />{count}
+              <HoverLabel scope="bar" text={short} />
             </button>
           );
         })}
         {sweep.repeats > 0 && (
-          <span className="ml-auto flex items-center gap-1 text-xs text-slate-400" title="Seen in an earlier sweep, skipped">
+          <span aria-label={`Seen in an earlier sweep, skipped: ${sweep.repeats}`} className="relative ml-auto flex items-center gap-1 text-xs text-slate-400">
             <Repeat aria-hidden="true" size={13} />{sweep.repeats}
+            <HoverLabel scope="bar" text="重复" />
           </span>
         )}
       </div>
