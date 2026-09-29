@@ -1,11 +1,39 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
+
+const deleteWarning = (title: string) =>
+  `Delete “${title}”?\n\nIts timeline goes, its email is not sent, and its unsent Outlook draft is deleted too. The same JD from the same recruiter will not come back in. This cannot be undone.`;
+
+/**
+ * The job's delete as an icon. "corner" sits over a card and shows on hover, focus, or a touch screen,
+ * like the queue's ✕; "inline" stands in a page header.
+ */
+export function DeleteJobIcon({ action, title, placement = "inline" }: { action: () => Promise<void>; title: string; placement?: "inline" | "corner" }) {
+  return (
+    <form action={action} className={placement === "corner" ? "absolute right-1 top-1/2 -translate-y-1/2" : undefined} onSubmit={(event) => {
+      if (!window.confirm(deleteWarning(title))) event.preventDefault();
+    }}>
+      <button
+        aria-label={`Delete ${title}`}
+        className={placement === "corner"
+          ? "rounded-md bg-white p-1 text-red-600 opacity-0 hover:bg-red-50 focus-visible:opacity-100 group-hover:opacity-100 max-sm:opacity-100"
+          : "rounded-lg border border-red-200 bg-white p-2 text-red-600 hover:border-red-400 hover:bg-red-50"}
+        title="Delete job"
+        type="submit"
+      >
+        <Trash2 aria-hidden="true" size={placement === "corner" ? 14 : 17} />
+      </button>
+    </form>
+  );
+}
+
 export function DeleteJobForm({ action }: { action: () => Promise<void> }) {
   return (
     <form
       action={action}
       onSubmit={(event) => {
-        if (!window.confirm("Delete this job and its complete timeline? This cannot be undone.")) {
+        if (!window.confirm(deleteWarning("this job"))) {
           event.preventDefault();
         }
       }}

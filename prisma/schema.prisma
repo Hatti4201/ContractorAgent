@@ -565,3 +565,19 @@ model SweepPost {
   @@index([sweepId])
   @@map("sweep_posts")
 }
+
+/**
+ * A job the user deleted. The same JD from the same recruiter is skipped when it comes in again, so a
+ * job thrown away does not return with the next sweep or the next forward of the same post.
+ */
+model DeletedJob {
+  id             String   @id @default(cuid())
+  jdFingerprint  String   @map("jd_fingerprint")
+  /// Null when the job had no recruiter email; the JD alone then decides.
+  recruiterEmail String?  @map("recruiter_email")
+  title          String
+  deletedAt      DateTime @default(now()) @map("deleted_at")
+
+  @@index([jdFingerprint])
+  @@map("deleted_jobs")
+}

@@ -90,6 +90,7 @@ export function shortReason(text: string | null | undefined): { kind: ReasonKind
   if (/Eligibility conflict/i.test(text)) return { kind: "eligibility", label: "Eligibility" };
   if (/resume|role family/i.test(text)) return { kind: "resume", label: "Resume" };
   if (/already tracked|already has a similar job/i.test(text)) return { kind: "duplicate", label: "Duplicate" };
+  if (/You deleted this job/i.test(text)) return { kind: "duplicate", label: "Deleted" };
   if (/validation/i.test(text)) return { kind: "email-check", label: "Email check" };
   if (/failed|could not/i.test(text)) return { kind: "failed", label: "Failed" };
   if (/written and waits for your review/i.test(text)) return { kind: "review", label: "Review" };

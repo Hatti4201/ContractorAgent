@@ -30,6 +30,7 @@ import { employerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
+import { deleteJob as deleteJobEverywhere, JobSendingError, type OutlookCleanup } from "@/services/job-delete";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const outdatedOutreachValidation = {
@@ -495,11 +496,22 @@ export async function selectResume(id: string, resumeId: string) {
   redirect(`/jobs/${id}#resume-router`);
 }
 
-export async function deleteJob(id: string) {
+/**
+ * Deletes the job, its queued send and its unsent Outlook draft, and remembers it so the same JD from
+ * the same recruiter does not come back in. Returns to the list it was deleted from.
+ */
+export async function deleteJob(id: string, returnTo = "/jobs") {
   await requireAuth();
-  await getPrisma().opportunity.delete({ where: { id } });
+  const back = returnTo === "/dashboard" ? "/dashboard" : "/jobs";
+  let outlook: OutlookCleanup;
+  try {
+    ({ outlook } = await deleteJobEverywhere(id));
+  } catch (error) {
+    if (!(error instanceof JobSendingError)) throw error;
+    redirect(`/jobs/${id}/outreach?deleteBlocked=sending`);
+  }
   revalidatePath("/dashboard");
   revalidatePath("/needs-attention");
   revalidatePath("/jobs");
-  redirect("/jobs");
+  redirect(`${back}?deleted=${outlook}`);
 }

@@ -5,13 +5,16 @@ import { formatDate, formatEnum } from "@/lib/job-values";
 import { X } from "lucide-react";
 import { pipelineColumns } from "@/services/dashboard-analytics";
 import { hiddenMatches, listJobs, searchJobs, type ListedJob, type Snippet } from "@/services/job-search";
+import { Toast } from "@/components/toast";
+import { deletedNotice } from "@/lib/delete-notice";
 
 const inputClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100";
 
-export default async function JobsPage({ searchParams }: { searchParams: Promise<{ q?: string; stage?: string }> }) {
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ q?: string; stage?: string; deleted?: string }> }) {
   await requireAuth();
-  const { q, stage } = await searchParams;
+  const { q, stage, deleted } = await searchParams;
+  const deletion = deletedNotice(deleted);
   const term = (typeof q === "string" ? q : "").trim().slice(0, 200);
   // A dashboard pipeline column's "+N →" lands here filtered to that column.
   const column = term ? undefined : pipelineColumns.find((item) => item.key === stage);
@@ -23,6 +26,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
+      {deletion && <Toast clear={["deleted"]} text={deletion.text} tone={deletion.tone} />}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Jobs</p>
