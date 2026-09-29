@@ -29,3 +29,6 @@
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+
+# A coding-agent worktree's dev-server port (scripts/new-worktree.sh)
+/.dev-port

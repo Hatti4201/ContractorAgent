@@ -1,0 +1,33 @@
+# Type check, lint and unit tests on every pull request and every push to main.
+# Runs on GitHub's own machines with no secrets and no database: the unit tests need neither. It never
+# deploys; the Mac pulls main itself (scripts/deploy-setup.sh), so no runner ever sits on the Mac.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The client is generated, not committed; generating needs no database.
+      - run: npx prisma generate
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3008",
+    "dev:wt": "next dev -p $(cat .dev-port 2>/dev/null || echo 3101)",
     "build": "next build",
     "start": "next start -p 3008",
     "lint": "eslint",
@@ -24,7 +25,8 @@
     "db:check:intake-queue": "tsx scripts/check-intake-queue.ts",
     "ai:check:phase4": "tsx scripts/check-phase4-ai.ts",
     "ai:check:phase6": "tsx scripts/check-phase6-ai.ts",
-    "exposure:chrome": "tsx scripts/exposure-chrome.ts"
+    "exposure:chrome": "tsx scripts/exposure-chrome.ts",
+    "db:seed:dev": "tsx scripts/seed-dev.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.4.3",
