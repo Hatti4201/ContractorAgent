@@ -1,0 +1,23 @@
+node_modules
+.next
+.next-agent
+.git
+*.log
+tsconfig.tsbuildinfo
+app/generated
+
+# Secrets are passed in at run time through compose's env_file, never copied into the image.
+.env
+.env.local
+
+# Local private files that must never end up in an image (CLAUDE.md §6).
+rules
+skills
+resumes
+docs/local
+.claude
+AGENTS.md
+CLAUDE.md
+REQUIREMENTS.md
+RESTRICTIONS.md
+ROADMAP.md

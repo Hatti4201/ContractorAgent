@@ -1,0 +1,30 @@
+services:
+  contract-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: contract-job-agent
+
+    ports:
+      - "3008:3008"
+
+    # The same private settings the app uses on the Mac; they are read at run time, never baked into the image.
+    env_file:
+      - path: .env
+        required: true
+      - path: .env.local
+        required: false
+
+    environment:
+      # Uploaded resumes are stored under this path, so it has to be the Mac's path, not the container's home.
+      RESUME_STORAGE_PATH: ${RESUME_STORAGE_PATH:-${HOME}/.contractor-agent/resumes}
+
+    # Resumes and the outreach context are stored in the database as absolute Mac paths, so they are
+    # mounted at those same paths. DOCKER_EXTRA_RESUME_DIR covers resumes registered from another folder.
+    volumes:
+      - ${RESUME_STORAGE_PATH:-${HOME}/.contractor-agent/resumes}:${RESUME_STORAGE_PATH:-${HOME}/.contractor-agent/resumes}
+      - ${DOCKER_EXTRA_RESUME_DIR:-${HOME}/.contractor-agent/resumes}:${DOCKER_EXTRA_RESUME_DIR:-${HOME}/.contractor-agent/resumes}:ro
+      - ${OUTREACH_CONTEXT_PATH}:${OUTREACH_CONTEXT_PATH}:ro
+
+    restart: unless-stopped
