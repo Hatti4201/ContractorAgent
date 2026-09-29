@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Bot, CircleCheck, CircleSlash, CircleX, Clock, FilePen, Ghost, History, Hourglass, Mail, Pause, Play, Send } from "lucide-react";
 import { cancelScheduledSend, chooseAutopilot, runAutopilotOnWaiting, sendDigestNow } from "@/app/(protected)/autopilot/actions";
 import { AutopilotSwitch } from "@/components/autopilot-switch";
+import { HoverLabel } from "@/components/hover-label";
 import { Toast } from "@/components/toast";
 import { formatDateTime } from "@/lib/job-values";
 import { settingOfMode } from "@/services/autopilot";
@@ -178,21 +179,21 @@ export async function AutopilotChip() {
       aria-label={`Autopilot: ${label}. Open the autopilot page`}
       className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold hover:shadow-sm ${tone}`}
       href="/autopilot"
-      title="Autopilot"
     >
-      <Bot aria-hidden="true" size={18} />
-      <span className="flex items-center gap-1"><Icon aria-hidden="true" size={15} />{label}</span>
-      <span className="flex items-center gap-1 font-medium opacity-80" title="Match threshold"><span aria-hidden="true">≥</span>{Math.round(overview.threshold * 100)}%</span>
+      <span className="relative"><Bot aria-hidden="true" size={18} /><HoverLabel scope="bar" text="自动" /></span>
+      <span className="relative flex items-center gap-1"><Icon aria-hidden="true" size={15} />{label}<HoverLabel scope="bar" text="模式" /></span>
+      <span className="relative flex items-center gap-1 font-medium opacity-80"><span aria-hidden="true">≥</span>{Math.round(overview.threshold * 100)}%<HoverLabel scope="bar" text="门槛" /></span>
       {overview.mode === "send" && (
-        <span className="flex items-center gap-1 font-medium opacity-80" title={`Sent in the last 24 hours, of ${overview.limit}`}>
+        <span className="relative flex items-center gap-1 font-medium opacity-80">
           <Send aria-hidden="true" size={13} />{overview.sentToday}/{overview.limit}
+          <HoverLabel scope="bar" text="今日已发" />
         </span>
       )}
       {overview.upcoming.length > 0 && (
-        <span className="flex items-center gap-1 font-medium opacity-80" title="About to send"><Clock aria-hidden="true" size={13} />{overview.upcoming.length}</span>
+        <span className="relative flex items-center gap-1 font-medium opacity-80"><Clock aria-hidden="true" size={13} />{overview.upcoming.length}<HoverLabel scope="bar" text="待发送" /></span>
       )}
       {waiting.length > 0 && (
-        <span className="flex items-center gap-1 font-medium opacity-80" title="Waiting with a finished email"><Hourglass aria-hidden="true" size={13} />{waiting.length}</span>
+        <span className="relative flex items-center gap-1 font-medium opacity-80"><Hourglass aria-hidden="true" size={13} />{waiting.length}<HoverLabel scope="bar" text="等待中" /></span>
       )}
     </Link>
   );
