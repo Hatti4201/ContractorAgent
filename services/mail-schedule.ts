@@ -26,7 +26,7 @@ export function scanWindowFromEnv(env: Partial<Record<string, string>> = process
     days: days.length ? [...new Set(days)] : [1, 2, 3, 4, 5],
     startHour: number(env.MAIL_SCAN_START_HOUR, 6, 0, 23),
     endHour: number(env.MAIL_SCAN_END_HOUR, 15, 0, 23),
-    intervalMs: number(env.MAIL_SCAN_INTERVAL_MINUTES, 60, 5, 1440) * 60_000,
+    intervalMs: number(env.MAIL_SCAN_INTERVAL_MINUTES, 5, 5, 1440) * 60_000,
     timeZone: configuredTimeZone(env.APP_TIME_ZONE),
   };
 }

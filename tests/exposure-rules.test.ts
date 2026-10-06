@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ExposureResult } from "@/app/generated/prisma/enums";
+import { exposureDayStart } from "@/services/exposure-run";
 import {
   applicationSucceeded,
   blockerOn,
@@ -33,6 +34,13 @@ test("the channel is off unless the user turns it on, with rules/exposure.md 1.1
   assert.equal(config.executorModel, "gpt-5.6-luna");
   assert.equal(exposureConfig(null, { EXPOSURE_MODE: "ON" }).mode, "on");
   assert.equal(exposureConfig(null, { EXPOSURE_MODE: "yes please" }).mode, "off");
+});
+
+test("the Dice daily limit resets at 5:00 AM in the configured timezone", () => {
+  const beforeReset = exposureDayStart(new Date("2026-10-02T11:59:59Z"), "America/Los_Angeles");
+  const afterReset = exposureDayStart(new Date("2026-10-02T12:00:00Z"), "America/Los_Angeles");
+  assert.equal(beforeReset.toISOString(), "2026-10-01T12:00:00.000Z");
+  assert.equal(afterReset.toISOString(), "2026-10-02T12:00:00.000Z");
 });
 
 test("settings saved on the page win over .env, and bad values fall back instead of breaking a run", () => {

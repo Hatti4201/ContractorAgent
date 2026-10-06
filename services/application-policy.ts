@@ -84,7 +84,13 @@ export function applicationDecision(facts: PolicyFacts): PolicyDecision {
   if (facts.remote && !facts.localOnly) {
     return { verdict: "APPLY", reason: "Fully remote.", pitch: onlyW2 ? "W2" : onlyC2C ? "C2C" : null };
   }
-  // Outside the Bay Area only C2C is taken, and a job naming no arrangement is asked as C2C.
+  if (!facts.locations.length) {
+    return { verdict: "APPLY", reason: "Location not stated.", pitch: onlyW2 ? "W2" : onlyC2C ? "C2C" : null };
+  }
+  // An unstated arrangement is still worth sending: ask whether the recruiter can do W2 or C2C.
+  // Only an explicit W2/full-time/1099 offer is rejected outside the Bay Area.
+  if (!offers.size) return { verdict: "APPLY", reason: `Contract type not stated in ${where}; ask whether W2 or C2C.`, pitch: null };
+  // Outside the Bay Area only explicit C2C is taken.
   if (offers.size && !offers.has("C2C")) {
     return { verdict: "SKIP", reason: `${[...offers].map((item) => label[item]).join("/")} only, in ${where}: outside the Bay Area you take C2C only.`, pitch: null };
   }

@@ -1,6 +1,7 @@
 import { JobSourceType } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 import { jobFingerprint } from "@/services/job-case";
+import { openAiError } from "@/services/job-analyzer";
 import { inboxIntakeText, readOutlookInboxMessage, type OutlookInboxMessage } from "@/services/outlook-graph";
 
 /** Off unless the user turned it on, which FR-01 requires; dryrun records decisions without importing. */
@@ -111,7 +112,7 @@ export async function classifyInboxMessage(message: { fromAddress: string; subje
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`OpenAI scan decision failed with status ${response.status}.`);
+  if (!response.ok) throw new Error(openAiError("scan decision", response.status));
   const output = responseText(await response.json() as unknown);
   if (!output) throw new Error("OpenAI returned no structured scan decision.");
   try { return parseScanDecision(JSON.parse(output)); } catch { throw new Error("OpenAI returned an invalid structured scan decision."); }

@@ -26,7 +26,7 @@ import { activeRoleFamilies } from "@/services/role-family";
 import { profileUrl, resolveContacts } from "@/services/contacts";
 import { createOpportunityFromIntake } from "@/services/intake-confirm";
 import { parseAutoStageChange, undoAutoStageDescription } from "@/services/follow-up-auto";
-import { employerCcSetting } from "@/services/employer";
+import { currentEmployerCcSetting } from "@/services/employer";
 import { parseIntakePreview } from "@/services/intake-pipeline";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
 import { buildResumeRoute, checkResumeFile } from "@/services/resume-router";
@@ -373,7 +373,7 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
           toAddress: draft.toAddress,
           // A C2C engagement copies the employer by default; it stays visible and clearable on review.
           // The address itself is never model-supplied; the review screen only decides whether to use it.
-          ccAddress: formData.get("copyEmployer") === "true" ? employerCcSetting().address : null,
+          ccAddress: formData.get("copyEmployer") === "true" ? (await currentEmployerCcSetting()).address : null,
           subject: draft.subject,
           body: draft.body,
           attachmentResumeId: selectedResumeId,

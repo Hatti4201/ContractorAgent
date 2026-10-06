@@ -31,6 +31,18 @@ export type JobCase = {
   evidence: Array<{ field: string; quote: string }>;
 };
 
+/** A missing model title is recoverable: use the JD's labelled role, then a role-family label. */
+export function inferJobTitle(rawText: string, roleFamily: string | null = null) {
+  const lines = rawText.split(/\r?\n/).map((line) => line.replace(/^[\s>*#-]+/, "").trim()).filter(Boolean);
+  const labelled = lines.find((line) => /^(?:job\s*)?(?:title|position|role|opening)\s*[:\-]/i.test(line));
+  const candidate = labelled?.replace(/^(?:job\s*)?(?:title|position|role|opening)\s*[:\-]\s*/i, "").trim();
+  if (candidate && candidate.length <= 120 && !candidate.includes("@")) return candidate;
+  const roleLine = lines.find((line) => /\b(developer|engineer|architect|analyst|consultant|scientist|designer|administrator|devops|tester|qa)\b/i.test(line) && line.length <= 120);
+  if (roleLine) return roleLine.replace(/[|•].*$/, "").trim();
+  if (roleFamily) return roleFamily.toLowerCase().split("_").map((part) => part[0]!.toUpperCase() + part.slice(1)).join(" ") + " Engineer";
+  return "Contractor role";
+}
+
 const nullableString = () => ({ anyOf: [{ type: "string" }, { type: "null" }] });
 const nullableEnum = (values: readonly string[]) => ({ anyOf: [{ type: "string", enum: values }, { type: "null" }] });
 

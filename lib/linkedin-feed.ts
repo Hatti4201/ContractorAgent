@@ -18,6 +18,8 @@ export type FeedPost = {
   author: string;
   /** The author's profile, without LinkedIn's tracking query; null when the paste lost its links. */
   profileUrl: string | null;
+  /** The post itself when LinkedIn included its permalink in the copied HTML/text. */
+  postUrl?: string | null;
   headline: string | null;
   /** As LinkedIn shows it, e.g. "19h" or "2d". */
   age: string | null;
@@ -50,6 +52,11 @@ function profileUrl(value: string | undefined) {
   } catch {
     return null;
   }
+}
+
+function postUrl(text: string) {
+  const links = [...text.matchAll(/https?:\/\/(?:www\.)?linkedin\.com\/(?:posts\/|feed\/update\/|pulse\/)[^\s)]+/gi)];
+  return links[0]?.[0]?.replace(/[.,;]+$/, "") ?? null;
 }
 
 /** Keeps a link's text and drops LinkedIn's long tracking URLs, except addresses a post itself spells out. */
@@ -88,6 +95,7 @@ function postFrom(lines: string[]): FeedPost | null {
   return {
     author: marker[2]!.trim().slice(0, 200),
     profileUrl: profileUrl(marker[3]),
+    postUrl: postUrl(lines.slice(0, end).join("\n")),
     headline: headline ? readableLine(headline).slice(0, 300) : null,
     age: visibleAt >= 0 ? visibilityLine.exec(content[visibleAt]!)![1]!.replace(/\s+/g, "") : null,
     body,
@@ -106,7 +114,7 @@ export function splitFeed(text: string): FeedPost[] {
 /** The post as the pipeline reads it: the body, then who posted it, which also marks it as LinkedIn. */
 export function postIntakeText(post: FeedPost) {
   const byline = [post.author, post.headline].filter(Boolean).join(" — ");
-  return `${post.body}\n\nPosted on LinkedIn by ${byline}${post.profileUrl ? `\nProfile: ${post.profileUrl}` : ""}`;
+  return `${post.body}\n\nPosted on LinkedIn by ${byline}${post.profileUrl ? `\nProfile: ${post.profileUrl}` : ""}${post.postUrl ? `\nPost: ${post.postUrl}` : ""}`;
 }
 
 const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;

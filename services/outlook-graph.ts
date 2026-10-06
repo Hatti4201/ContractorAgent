@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
 import { OutreachMode } from "@/app/generated/prisma/enums";
 import { outreachBodyHtml } from "@/services/outreach-markup";
 import { checkResumeFile } from "@/services/resume-router";
@@ -18,6 +17,11 @@ export type OutlookInboxMessage = {
   preview: string;
   fromAddress: string;
   receivedAt: Date;
+  conversationId?: string;
+  toAddresses?: string[];
+  body?: string;
+  sentAt?: Date | null;
+  webLink?: string | null;
 };
 type GraphDraftInput = {
   mode: OutreachMode;
@@ -27,7 +31,13 @@ type GraphDraftInput = {
   body: string;
   replySourceMessageId: string | null;
   resumePath: string;
+  roleFamily: string;
 };
+
+export function resumeAttachmentName(roleFamily: string) {
+  const safeRoleFamily = roleFamily.trim().replace(/[^a-z0-9_-]/gi, "_");
+  return `HattiMa_Resume_${safeRoleFamily}.pdf`;
+}
 
 export class OutlookDraftCreationError extends Error {
   constructor(message: string, readonly orphanedMessageId: string | null = null, readonly orphanedWebLink: string | null = null) {
@@ -36,8 +46,8 @@ export class OutlookDraftCreationError extends Error {
 }
 
 export class OutlookGraphError extends Error {
-  constructor(readonly status: number) {
-    super(`Microsoft Graph request failed with status ${status}.`);
+  constructor(readonly status: number, readonly detail = "") {
+    super(`Microsoft Graph request failed with status ${status}${detail ? `: ${detail}` : "."}`);
   }
 }
 
@@ -71,8 +81,9 @@ async function graphRequest(path: string, init: RequestInit, options: FetchOptio
     },
     signal: AbortSignal.timeout(60_000),
   });
-  if (!expected.includes(response.status)) throw new OutlookGraphError(response.status);
-  return response.status === 204 || response.status === 404 ? null : await response.json() as unknown;
+  if (!expected.includes(response.status)) throw new OutlookGraphError(response.status, (await response.text()).slice(0, 500));
+  // Graph's successful send endpoint returns 202 with an empty body.
+  return response.status === 202 || response.status === 204 || response.status === 404 ? null : await response.json() as unknown;
 }
 
 async function attachmentBytes(messageIdValue: string, attachmentId: string, options: FetchOptions) {
@@ -188,7 +199,7 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
   if (!checked.usable || !checked.canonicalPath) throw new OutlookDraftCreationError(checked.issue ?? "Selected Resume is unavailable.");
   const content = await readFile(checked.canonicalPath);
   if (!content.length || content.length > MAX_ATTACHMENT_BYTES) throw new OutlookDraftCreationError("Selected Resume must be between 1 byte and 150 MB.");
-  const fileName = basename(checked.canonicalPath);
+  const fileName = resumeAttachmentName(input.roleFamily);
   let created: { id: string; webLink: string | null } | null = null;
 
   try {
@@ -277,7 +288,8 @@ export async function createOutlookMessageDraft(input: GraphDraftInput, options:
 
 function inboxMessage(value: unknown): OutlookInboxMessage {
   const message = object(value);
-  const from = object(object(message.from).emailAddress);
+  const fromValue = message.from && typeof message.from === "object" ? object(message.from).emailAddress : null;
+  const from = fromValue && typeof fromValue === "object" ? object(fromValue) : { address: "unknown@local" };
   if (message.isDraft !== false) throw new Error("Microsoft Graph returned an invalid Inbox message.");
   const receivedAt = new Date(requiredString(message.receivedDateTime, "received date", 100));
   if (Number.isNaN(receivedAt.getTime())) throw new Error("Microsoft Graph received date is invalid.");
@@ -287,6 +299,14 @@ function inboxMessage(value: unknown): OutlookInboxMessage {
     preview: typeof message.bodyPreview === "string" ? message.bodyPreview.slice(0, 2_000) : "",
     fromAddress: requiredString(from.address, "sender address", 320).toLowerCase(),
     receivedAt,
+    conversationId: typeof message.conversationId === "string" && message.conversationId ? message.conversationId : requiredString(message.id, "conversation id"),
+    toAddresses: Array.isArray(message.toRecipients)
+      ? message.toRecipients.flatMap((entry) => {
+        try { const address = object(object(entry).emailAddress).address; return typeof address === "string" ? [address.toLowerCase()] : []; } catch { return []; }
+      })
+      : [],
+    sentAt: typeof message.sentDateTime === "string" ? new Date(message.sentDateTime) : null,
+    webLink: typeof message.webLink === "string" ? safeOutlookLink(message.webLink) : null,
   };
 }
 
@@ -302,7 +322,7 @@ function inboxMessage(value: unknown): OutlookInboxMessage {
  * to, and the recipient validator looks for the sender's address in exactly that text.
  */
 export async function readOutlookInboxMessage(messageIdValue: string, options: FetchOptions) {
-  const value = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,subject,body,receivedDateTime,from,isDraft`, {
+  const value = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,subject,body,receivedDateTime,sentDateTime,from,toRecipients,isDraft,conversationId,webLink`, {
     method: "GET",
     headers: { Prefer: 'IdType="ImmutableId", outlook.body-content-type="text"' },
   }, options, [200]));
@@ -324,16 +344,61 @@ export function inboxIntakeText(message: { subject: string; fromAddress: string;
 }
 
 export async function listOutlookInboxMessages(options: FetchOptions, since?: Date | null) {
-  const select = "$select=id,subject,bodyPreview,receivedDateTime,from,isDraft&$top=25";
-  const path = since
-    ? `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20asc&$filter=receivedDateTime%20ge%20${encodeURIComponent(since.toISOString())}`
-    : `/me/mailFolders/inbox/messages?${select}&$orderby=receivedDateTime%20desc`;
-  const result = object(await graphRequest(path, { method: "GET" }, options, [200]));
-  if (!Array.isArray(result.value)) throw new Error("Microsoft Graph message list is invalid.");
-  const messages = result.value.flatMap((value) => {
-    try { return [inboxMessage(value)]; } catch { return []; }
-  });
+  const params = new URLSearchParams({ "$select": "id,subject,bodyPreview,receivedDateTime,sentDateTime,from,toRecipients,isDraft,conversationId,webLink", "$top": "50", "$orderby": since ? "receivedDateTime asc" : "receivedDateTime desc" });
+  if (since) params.set("$filter", `receivedDateTime ge ${since.toISOString()}`);
+  let next: string | null = `/me/mailFolders/inbox/messages?${params.toString()}`;
+  const messages: OutlookInboxMessage[] = [];
+  while (next) {
+    const result = object(await graphRequest(next, { method: "GET" }, options, [200]));
+    if (!Array.isArray(result.value)) throw new Error("Microsoft Graph message list is invalid.");
+    messages.push(...result.value.flatMap((value) => { try { return [inboxMessage(value)]; } catch { return []; } }));
+    const link = result["@odata.nextLink"];
+    if (typeof link !== "string" || !link) next = null;
+    else {
+      const url = new URL(link);
+      if (url.protocol !== "https:" || url.hostname !== "graph.microsoft.com") throw new Error("Microsoft Graph returned an unsafe paging URL.");
+      const pathname = url.pathname.startsWith("/v1.0/") ? url.pathname.slice("/v1.0".length) : url.pathname;
+      next = `${pathname}${url.search}`;
+    }
+  }
   return since ? messages : messages.reverse();
+}
+
+export type OutlookMailFolder = "focused" | "other" | "sentitems" | "junkemail";
+
+/** Lists one mailbox folder with paging, preserving the Graph conversation id and direction fields. */
+export async function listOutlookFolderMessages(folder: OutlookMailFolder, options: FetchOptions, since?: Date | null) {
+  // Focused and Other are Outlook views over the same Inbox folder, not real Graph folders.
+  // Graph rejects combining inferenceClassification filters with this ordered delta query, so
+  // scan Inbox once under Focused and leave Other empty; the database still contains both views.
+  if (folder === "focused") return listOutlookInboxMessages(options, since);
+  if (folder === "other") return [];
+  const params = new URLSearchParams({
+    "$select": "id,subject,bodyPreview,receivedDateTime,sentDateTime,from,toRecipients,isDraft,conversationId,webLink",
+    "$top": "50",
+    "$orderby": "receivedDateTime asc",
+  });
+  const clauses = [`receivedDateTime ge ${new Date(since ?? Date.now() - 90 * 24 * 60 * 60_000).toISOString()}`];
+  params.set("$filter", clauses.join(" and "));
+  const folderId = folder;
+  let next: string | null = `/me/mailFolders/${folderId}/messages?${params.toString()}`;
+  const messages: OutlookInboxMessage[] = [];
+  while (next) {
+    const value = object(await graphRequest(next, { method: "GET" }, options, [200]));
+    if (!Array.isArray(value.value)) throw new Error("Microsoft Graph mailbox response is invalid.");
+    for (const item of value.value) {
+      try { messages.push(inboxMessage(item)); } catch { /* skip malformed mailbox rows */ }
+    }
+    const link = value["@odata.nextLink"];
+    if (typeof link !== "string" || !link) next = null;
+    else {
+      const url = new URL(link);
+      if (url.protocol !== "https:" || url.hostname !== "graph.microsoft.com") throw new Error("Microsoft Graph returned an unsafe paging URL.");
+      const pathname = url.pathname.startsWith("/v1.0/") ? url.pathname.slice("/v1.0".length) : url.pathname;
+      next = `${pathname}${url.search}`;
+    }
+  }
+  return messages;
 }
 
 export async function getOutlookInboxMessage(messageIdValue: string, options: FetchOptions) {
@@ -384,12 +449,12 @@ async function sentAttachmentMatches(messageIdValue: string, fileName: string, c
  * Reports what Outlook actually sent, so the user's own edits can be archived as the record of truth.
  * Differences are described, never used to reject the message.
  */
-export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string | null; resumePath: string }, options: FetchOptions): Promise<SentMessageArchive | { sent: false; sentAt: null }> {
+export async function inspectOutlookSentMessage(messageIdValue: string, expected: { toAddress: string; subject: string | null; resumePath: string; roleFamily: string }, options: FetchOptions): Promise<SentMessageArchive | { sent: false; sentAt: null }> {
   // A message that already left the mailbox is a fact worth recording even when the resume behind it
   // has since been replaced or renamed: the attachment then goes unchecked rather than blocking.
   const checked = await checkResumeFile(expected.resumePath);
   const content = checked.usable && checked.canonicalPath ? await readFile(checked.canonicalPath) : null;
-  const fileName = checked.canonicalPath ? basename(checked.canonicalPath) : null;
+  const fileName = checked.canonicalPath ? resumeAttachmentName(expected.roleFamily) : null;
   const message = object(await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}?$select=id,isDraft,sentDateTime,toRecipients,subject,body,hasAttachments`, {
     method: "GET",
     // Plain text keeps the archived copy readable; the reply history Outlook appends is part of what was sent.

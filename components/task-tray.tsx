@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 
 type Task = {
   id: string;
@@ -28,6 +29,7 @@ export function TaskTray() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const seen = useRef(new Map<string, Task["status"]>());
+  const dismissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const mountedAt = useRef(0);
 
   useEffect(() => {
@@ -65,13 +67,29 @@ export function TaskTray() {
     return () => { active = false; clearTimeout(timer); };
   }, [router]);
 
+  useEffect(() => {
+    for (const task of tasks) {
+      if (dismissTimers.current.has(task.id)) continue;
+      dismissTimers.current.set(task.id, setTimeout(() => {
+        setDismissed((current) => current.includes(task.id) ? current : [...current, task.id]);
+        dismissTimers.current.delete(task.id);
+      }, 3_000));
+    }
+    return () => {};
+  }, [tasks]);
+
+  useEffect(() => () => {
+    for (const timer of dismissTimers.current.values()) clearTimeout(timer);
+  }, []);
+
   const visible = tasks.filter((task) => !dismissed.includes(task.id));
   if (!visible.length) return null;
 
   return (
-    <div aria-label="Background tasks" aria-live="polite" className="fixed bottom-4 right-4 z-50 w-80 max-w-[calc(100vw-2rem)] space-y-2">
+    <div aria-label="Background tasks" aria-live="polite" className="fixed bottom-4 right-4 z-50 w-64 max-w-[calc(100vw-2rem)] space-y-1.5">
+      <button className="ml-auto block rounded-md bg-slate-800 px-2 py-1 text-[10px] font-semibold text-white hover:bg-slate-700" onClick={() => setDismissed(visible.map((task) => task.id))} type="button">清除全部</button>
       {visible.map((task) => (
-        <article className={`rounded-xl border p-3 text-sm shadow-lg ${tone[task.status]}`} key={task.id}>
+        <article className={`rounded-lg border p-2 text-xs shadow-lg ${tone[task.status]}`} key={task.id}>
           <div className="flex items-start justify-between gap-3">
             <p className="font-medium text-slate-950">
               {task.status === "RUNNING" && <span aria-hidden="true" className="mr-2 inline-block animate-spin">◌</span>}
@@ -79,11 +97,12 @@ export function TaskTray() {
             </p>
             <button
               aria-label="Dismiss task"
-              className="text-slate-400 hover:text-slate-700"
+              className={`relative ${labelScope.row} text-slate-400 hover:text-slate-700`}
               onClick={() => setDismissed((current) => [...current, task.id])}
               type="button"
             >
               ✕
+              <HoverLabel scope="row" text="关闭任务提示" />
             </button>
           </div>
           {task.progress && <p className="mt-1 text-xs text-slate-600">{task.progress}</p>}

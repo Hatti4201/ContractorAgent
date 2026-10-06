@@ -1,4 +1,4 @@
-import type { Prisma } from "@/app/generated/prisma/client";
+import { Prisma } from "@/app/generated/prisma/client";
 import { IntakeStatus, JobSourceType, SweepOutcome, SweepStatus, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
 import { pooled } from "@/lib/pooled";
 import { obviousNoise, postIntakeText, splitFeed, type FeedPost } from "@/lib/linkedin-feed";
@@ -66,6 +66,7 @@ async function runSweep(sweepId: string, pasted: FeedPost[]) {
           fingerprint,
           author: post.author,
           profileUrl: post.profileUrl,
+          postUrl: post.postUrl ?? null,
           headline: post.headline,
           text: post.body,
           title: triaged?.title ?? null,
@@ -154,7 +155,7 @@ async function failStaleSweeps(now = new Date()) {
 }
 
 const postSelection = {
-  id: true, author: true, profileUrl: true, headline: true, text: true, title: true, email: true, outcome: true, reason: true, intakeId: true,
+  id: true, author: true, profileUrl: true, postUrl: true, headline: true, text: true, title: true, email: true, outcome: true, reason: true, intakeId: true,
   intake: {
     select: {
       status: true, preview: true, opportunityId: true,
@@ -178,10 +179,13 @@ export async function recentSweeps(limit = 7) {
     include: { posts: { select: postSelection, orderBy: { createdAt: "asc" } } },
   });
   const intakeIds = sweeps.flatMap((sweep) => sweep.posts.flatMap((post) => (post.intakeId ? [post.intakeId] : [])));
-  const failedTasks = new Set((await database.task.findMany({
-    where: { subjectId: { in: intakeIds }, kind: TaskKind.INTAKE_PIPELINE, status: TaskStatus.FAILED },
-    select: { subjectId: true },
-  })).flatMap((task) => (task.subjectId ? [task.subjectId] : [])));
+  const taskHistory = await database.task.findMany({
+    where: { subjectId: { in: intakeIds }, kind: TaskKind.INTAKE_PIPELINE },
+    select: { subjectId: true, status: true, error: true, startedAt: true },
+    orderBy: { startedAt: "desc" },
+  });
+  const latestTasks = new Map<string, { status: TaskStatus; error: string | null }>();
+  for (const task of taskHistory) if (task.subjectId && !latestTasks.has(task.subjectId)) latestTasks.set(task.subjectId, task);
 
   return sweeps.map((sweep) => ({
     id: sweep.id,
@@ -199,12 +203,14 @@ export async function recentSweeps(limit = 7) {
             hasPreview: Boolean(preview),
             stopReason: preview?.brake ?? preview?.hold ?? null,
             draft: post.intake.opportunity?.outreachDraft ?? null,
-          } : null, Boolean(post.intakeId && failedTasks.has(post.intakeId)))
+        } : null, Boolean(post.intakeId && latestTasks.get(post.intakeId)?.status === TaskStatus.FAILED), post.intakeId ? latestTasks.get(post.intakeId)?.error ?? null : null)
         : null;
       return {
         id: post.id,
         author: post.author,
         profileUrl: post.profileUrl,
+        postUrl: post.postUrl,
+        explicitC2C: /\b(?:c2c|c2h|corp[-\s]?to[-\s]?corp)\b/i.test(post.text) && !/\b(?:no|not|without)\s+(?:c2c|c2h|corp[-\s]?to[-\s]?corp)\b/i.test(post.text),
         headline: post.headline,
         excerpt: post.text.slice(0, 600),
         title: post.title,
@@ -219,6 +225,84 @@ export async function recentSweeps(limit = 7) {
       };
     }),
   }));
+}
+
+/** Retries the unfinished intake work already stored for a sweep; no LinkedIn paste is needed. */
+export async function resweepSweep(sweepId: string, defer: (run: () => Promise<void>) => void, scope: "all" | "needs" = "all") {
+  const database = getPrisma();
+  const sweep = await database.sweep.findUnique({
+    where: { id: sweepId },
+    select: { id: true, posts: { where: { outcome: SweepOutcome.QUEUED, intakeId: { not: null } }, select: { intakeId: true } } },
+  });
+  if (!sweep) throw new SweepInputError("Sweep not found.");
+  const intakeIds = sweep.posts.flatMap((post) => post.intakeId ? [post.intakeId] : []);
+  if (!intakeIds.length) return 0;
+  const [intakes, tasks] = await Promise.all([
+    database.jobIntake.findMany({ where: { id: { in: intakeIds }, status: IntakeStatus.PENDING }, select: { id: true, preview: true } }),
+    database.task.findMany({ where: { subjectId: { in: intakeIds }, kind: TaskKind.INTAKE_PIPELINE }, select: { subjectId: true, status: true, startedAt: true }, orderBy: { startedAt: "desc" } }),
+  ]);
+  const latest = new Map<string, TaskStatus>();
+  for (const task of tasks) if (task.subjectId && !latest.has(task.subjectId)) latest.set(task.subjectId, task.status);
+  const retryIds = intakes.filter((intake) => {
+    const preview = parseIntakePreview(intake.preview);
+    const needs = latest.get(intake.id) === TaskStatus.FAILED || !preview || Boolean(preview.brake || preview.hold);
+    return scope === "all" || needs;
+  }).map((intake) => intake.id);
+  if (!retryIds.length) return 0;
+
+  // Re-screen from the saved raw JD so a resweep picks up changed application rules and resume routing.
+  await database.jobIntake.updateMany({
+    where: { id: { in: retryIds }, status: IntakeStatus.PENDING },
+    data: { analysis: Prisma.JsonNull, policy: Prisma.JsonNull, preview: Prisma.JsonNull },
+  });
+  await database.sweep.update({ where: { id: sweepId }, data: { status: SweepStatus.RUNNING, progress: `Resweeping ${retryIds.length} jobs`, error: null } });
+  defer(async () => {
+    try {
+      let done = 0;
+      await pooled(retryIds, PIPELINE_CONCURRENCY, async (intakeId) => {
+        try {
+          await runTaskNow(
+            { kind: TaskKind.INTAKE_PIPELINE, label: `Resweep: ${intakeId}`.slice(0, 200), subjectId: intakeId, href: `/intakes/${intakeId}/review`, silent: true },
+            (task) => runIntakePipeline(intakeId, task),
+          );
+        } catch { /* the latest task remains failed and the row stays visible */ }
+        done += 1;
+        await database.sweep.update({ where: { id: sweepId }, data: { progress: `Reswept ${done} of ${retryIds.length} jobs` } });
+      });
+      await database.sweep.update({ where: { id: sweepId }, data: { status: SweepStatus.DONE, progress: null } });
+    } catch (error) {
+      await database.sweep.update({ where: { id: sweepId }, data: { status: SweepStatus.FAILED, progress: null, error: (error instanceof Error ? error.message : "The resweep failed.").slice(0, 500) } }).catch(() => {});
+    }
+  });
+  return retryIds.length;
+}
+
+/** Restores one skipped post whose location was not stated, then runs the normal autopilot pipeline. */
+export async function restoreSweepPost(postId: string) {
+  const database = getPrisma();
+  const post = await database.sweepPost.findUnique({ where: { id: postId } });
+  if (!post) throw new SweepInputError("Sweep post not found.");
+  if (post.outcome !== SweepOutcome.SKIPPED) throw new SweepInputError("Only skipped sweep posts can be restored.");
+  if (post.intakeId) {
+    await database.jobIntake.update({ where: { id: post.intakeId }, data: { status: IntakeStatus.PENDING } });
+    await database.sweepPost.update({ where: { id: postId }, data: { outcome: SweepOutcome.QUEUED, reason: "Restored: YOE is not used as an application filter." } });
+    await runTaskNow(
+      { kind: TaskKind.INTAKE_PIPELINE, label: `LinkedIn Restore: ${post.title ?? post.author}`.slice(0, 200), subjectId: post.intakeId, href: `/intakes/${post.intakeId}/review`, silent: true },
+      (task) => runIntakePipeline(post.intakeId!, task),
+    );
+    return post.intakeId;
+  }
+  const rawText = postIntakeText({ author: post.author, profileUrl: post.profileUrl, postUrl: post.postUrl, headline: post.headline, age: null, body: post.text });
+  const intake = await database.jobIntake.create({
+    data: { sourceType: JobSourceType.LINKEDIN_POST, rawText, originalSender: null, receivedAt: new Date(), fingerprint: jobFingerprint(rawText) },
+    select: { id: true },
+  });
+  await database.sweepPost.update({ where: { id: postId }, data: { outcome: SweepOutcome.QUEUED, reason: "Restored: location not stated; allowed into autopilot.", intakeId: intake.id } });
+  await runTaskNow(
+    { kind: TaskKind.INTAKE_PIPELINE, label: `LinkedIn Restore: ${post.title ?? post.author}`.slice(0, 200), subjectId: intake.id, href: `/intakes/${intake.id}/review`, silent: true },
+    (task) => runIntakePipeline(intake.id, task),
+  );
+  return intake.id;
 }
 
 export type SweepView = Awaited<ReturnType<typeof recentSweeps>>[number];

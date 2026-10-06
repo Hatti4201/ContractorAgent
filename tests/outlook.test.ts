@@ -74,7 +74,7 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
     let draftNumber = 0;
     let currentSubject = "";
     let currentRecipient = "";
-    let currentAttachmentName = "fictional-resume.pdf";
+    let currentAttachmentName = "HattiMa_Resume_JAVA_BACKEND.pdf";
     let currentAttachmentSize = Buffer.byteLength(resumeContent);
     let mismatchAttachment = false;
     let sizeOnlyMismatch = false;
@@ -155,6 +155,7 @@ test("Outlook cache encryption rejects tampering and Graph creates verified draf
       body: "**Rate:** $80/hr W2 <not markup>",
       ccAddress: null,
       resumePath,
+      roleFamily: "JAVA_BACKEND",
     };
     await createOutlookMessageDraft({ ...common, mode: OutreachMode.FIRST_OUTREACH, replySourceMessageId: null }, { accessToken: "fictional-access-token", fetcher });
     const reply = await createOutlookMessageDraft({ ...common, mode: OutreachMode.DIRECT_EMAIL_REPLY, replySourceMessageId: "source-message-1" }, { accessToken: "fictional-access-token", fetcher });

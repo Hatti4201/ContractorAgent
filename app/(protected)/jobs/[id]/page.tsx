@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { generateOutreachDraft } from "@/app/(protected)/jobs/[id]/outreach/actions";
+import { addExistingJobToPipeline } from "@/app/(protected)/conversations/actions";
 import { addActivity, completeAttention, deleteJob, selectResume, undoAutoStageChange, updateJob, updateJobCase } from "@/app/(protected)/jobs/actions";
 import { parseAutoStageChange } from "@/services/follow-up-auto";
 import { DeleteJobForm } from "@/components/delete-job-form";
@@ -36,12 +37,17 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         vendor: true,
         selectedResume: true,
         outreachDraft: true,
+        conversationJobs: { orderBy: { createdAt: "desc" }, take: 1, include: { conversation: { select: { messages: { where: { isHidden: false }, orderBy: { receivedAt: "desc" }, select: { id: true, direction: true } } } } } },
         activities: { orderBy: [{ occurredAt: "desc" }, { createdAt: "desc" }] },
       },
     }),
     database.resume.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }),
   ]);
   if (!job?.applicationTrack) notFound();
+  const conversation = job.conversationJobs[0]?.conversation;
+  const pipelineMessage = conversation?.messages.find((message) => message.direction === "incoming");
+  const hasConversationReply = conversation?.messages.some((message) => message.direction === "outgoing") ?? false;
+  const canAddToPipeline = Boolean(pipelineMessage && !hasConversationReply && !job.outreachDraft);
 
   const update = updateJob.bind(null, job.id);
   const add = addActivity.bind(null, job.id);
@@ -85,6 +91,8 @@ export default async function JobDetailPage({ params, searchParams }: { params: 
         </div>
         <DeleteJobForm action={remove} />
       </div>
+
+      {canAddToPipeline && <form action={addExistingJobToPipeline.bind(null, job.id, pipelineMessage!.id)} className="mt-5"><button className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 font-semibold text-amber-900 hover:bg-amber-100" type="submit">添加到 Pipeline 并生成回复草稿</button></form>}
 
       <section aria-label="Application track" className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[

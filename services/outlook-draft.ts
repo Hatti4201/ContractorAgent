@@ -88,6 +88,7 @@ export async function buildOutlookDraftForJob(id: string, defer?: (run: () => Pr
             body: draft.body,
             replySourceMessageId: draft.replySourceMessageId,
             resumePath: draft.attachmentResume.filePath,
+            roleFamily: draft.attachmentResume.roleFamily,
           }, { accessToken });
           await getPrisma().$transaction([
             getPrisma().outreachDraft.update({

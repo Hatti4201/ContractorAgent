@@ -3,14 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { AutopilotSetting } from "@/app/generated/prisma/enums";
+import { AutopilotSetting, AutoSendState, OutlookDraftState, TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { parseAutopilotSettings } from "@/services/autopilot";
-import { cancelAutoSend, currentAutopilotMode, saveAutopilotSettings, setAutopilotSetting } from "@/services/auto-send";
+import { cancelAutoSend, currentAutopilotMode, saveAutopilotSettings, sendDueDrafts, setAutopilotSetting } from "@/services/auto-send";
 import { rerunWaiting, startAutopilotOnWaiting } from "@/services/autopilot-batch";
 import { sendDigest } from "@/services/digest-send";
 import { outlookSendToken } from "@/services/outlook-auth";
-import { TaskBusyError } from "@/services/tasks";
+import { runTaskNow, TaskBusyError } from "@/services/tasks";
+import { getPrisma } from "@/lib/prisma";
+import { saveEmployerCcAddress } from "@/services/employer";
 
 function refresh() {
   revalidatePath("/autopilot");
@@ -40,13 +42,15 @@ export async function chooseAutopilot(setting: string) {
 }
 
 /**
- * The threshold, send delay and daily limit. With the autopilot on, the waiting jobs are taken through
+ * The private employer address, threshold, send window and daily limit. With the autopilot on, the waiting jobs are taken through
  * again at once: a lower bar lets through what the old one held back.
  */
 export async function saveAutopilotSettingsAction(formData: FormData) {
   await requireAuth();
   const field = (name: string) => String(formData.get(name) ?? "");
-  const parsed = parseAutopilotSettings({ threshold: field("threshold"), delayMinutes: field("delayMinutes"), dailyLimit: field("dailyLimit") });
+  const employer = await saveEmployerCcAddress(field("employerCcAddress"));
+  if (employer.issue) redirect("/autopilot?invalid=employer");
+  const parsed = parseAutopilotSettings({ threshold: field("threshold"), dailyLimit: field("dailyLimit"), sendStartTime: field("sendStartTime"), sendEndTime: field("sendEndTime") });
   if ("error" in parsed) redirect(`/autopilot?invalid=${parsed.error}`);
   await saveAutopilotSettings(parsed);
   const run = (await currentAutopilotMode()) === "off" ? null : await rerunWaiting(after);
@@ -69,10 +73,51 @@ export async function runAutopilotOnWaiting(returnTo: string) {
   redirect(`${back}?autopilotRun=${started}`);
 }
 
+/** Sends the Outlook drafts the user reviewed while the autopilot was in Draft mode. */
+export async function sendReviewedDraftsNow() {
+  await requireAuth();
+  if (await currentAutopilotMode() !== "shadow") redirect("/autopilot?draftSend=wrong-mode");
+  const database = getPrisma();
+  const { count } = await database.outreachDraft.updateMany({
+    where: { outlookState: OutlookDraftState.CREATED, outlookMessageId: { not: null }, sentConfirmedAt: null, OR: [{ autoSendState: null }, { autoSendState: AutoSendState.SHADOW }] },
+    data: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: new Date(), autoSendError: null },
+  });
+  let started = 0;
+  if (count) {
+    try {
+      await runTaskNow({ kind: TaskKind.AUTO_SEND, label: "Sending reviewed Outlook drafts", subjectId: "draft-send", href: "/autopilot" }, (task) => sendDueDrafts(task).then(() => undefined));
+      started = count;
+    } catch (error) {
+      if (!(error instanceof TaskBusyError)) throw error;
+      started = -1;
+    }
+  }
+  refresh();
+  redirect(`/autopilot?draftSend=${started}`);
+}
+
 /** Keeps one scheduled email as an Outlook draft for the user to send, or not. */
 export async function cancelScheduledSend(draftId: string) {
   await requireAuth();
   await cancelAutoSend(draftId);
+  refresh();
+}
+
+/** Sends one scheduled draft immediately without releasing the rest of the queue. */
+export async function sendScheduledDraftNow(draftId: string) {
+  await requireAuth();
+  const database = getPrisma();
+  const { count } = await database.outreachDraft.updateMany({
+    where: { id: draftId, autoSendState: AutoSendState.SCHEDULED },
+    data: { autoSendAt: new Date(), autoSendError: null },
+  });
+  if (count) {
+    try {
+      await runTaskNow({ kind: TaskKind.AUTO_SEND, label: "Sending one priority email", subjectId: `priority-send-${draftId}`, href: "/autopilot" }, (task) => sendDueDrafts(task, new Date(), draftId).then(() => undefined));
+    } catch (error) {
+      if (!(error instanceof TaskBusyError)) throw error;
+    }
+  }
   refresh();
 }
 

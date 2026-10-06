@@ -1,10 +1,10 @@
-import { IntakeStatus, OutreachDraftStatus, OutreachMode } from "@/app/generated/prisma/enums";
+import { IntakeStatus, OutreachDraftStatus, OutreachMode, SweepOutcome } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { applicationDecision, pitchedCase, readStoredPolicy, type StoredPolicy } from "@/services/application-policy";
-import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute, readyForAutopilot, type AutopilotMode } from "@/services/autopilot";
+import { AUTOPILOT_MIN_CONFIDENCE, autopilotApplies, autopilotMatchHold, autopilotRoute, eligibilityConflictReason, readyForAutopilot, type AutopilotMode } from "@/services/autopilot";
 import { AutopilotHold, autoConfirmIntake } from "@/services/intake-confirm";
-import { addRequiredReviewWarnings, parseJobCase, type JobCase } from "@/services/job-case";
+import { addRequiredReviewWarnings, inferJobTitle, parseJobCase, type JobCase } from "@/services/job-case";
 import { deletedBefore } from "@/services/job-delete";
 import { analyzeJobText } from "@/services/job-analyzer";
 import { assessMatch, readMatchReport, type MatchReport } from "@/services/match-score";
@@ -57,6 +57,10 @@ const stopped = (brake: string, resumeId: string | null, match: MatchReport | nu
   replySourceMessageId: null,
 });
 
+function needsRoleFocusedReanalysis(rawText: string, analysis: JobCase) {
+  return !analysis.roleFamily && /\bjava\b/i.test(rawText) && /(?:position|role|opening)\s*[:#-]?\s*\d/i.test(rawText);
+}
+
 async function savePreview(intakeId: string, preview: IntakePreview) {
   await getPrisma().jobIntake.update({
     where: { id: intakeId },
@@ -89,14 +93,16 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
   const autopilot = autopilotApplies(await currentAutopilotMode());
 
   await task?.progress("Analyzing the job description");
-  const analysis: JobCase = intake.analysis
-    ? parseJobCase(intake.analysis)
+  const storedAnalysis = intake.analysis ? parseJobCase(intake.analysis) : null;
+  const analysis: JobCase = storedAnalysis && !needsRoleFocusedReanalysis(intake.rawText, storedAnalysis)
+    ? storedAnalysis
     : addRequiredReviewWarnings(await analyzeJobText({
         sourceType: intake.sourceType,
         rawText: intake.rawText,
         originalSender: intake.originalSender,
-        roleFamilies: await activeRoleFamilies(),
-      }));
+      roleFamilies: await activeRoleFamilies(),
+    }));
+  if (!analysis.title) analysis.title = inferJobTitle(intake.rawText, analysis.roleFamily);
   await getPrisma().jobIntake.update({
     where: { id: intakeId },
     data: { analysis: analysis as unknown as Prisma.InputJsonValue },
@@ -151,6 +157,10 @@ export async function resumeAutopilot(intakeId: string, task?: TaskHandle) {
   const preview = parseIntakePreview(intake.preview);
   if (!preview || !readyForAutopilot(preview)) return;
   const analysis = parseJobCase(intake.analysis);
+  if (!analysis.title) {
+    analysis.title = inferJobTitle(intake.rawText, analysis.roleFamily);
+    await getPrisma().jobIntake.update({ where: { id: intakeId }, data: { analysis: analysis as unknown as Prisma.InputJsonValue } });
+  }
 
   const policy = await intakePolicy(intakeId, intake.rawText, intake.policy);
   if (!policy) return savePreview(intakeId, { ...preview, hold: "Your application rules could not be checked, so the autopilot left this for you." });
@@ -190,6 +200,18 @@ async function continueIntake(
   await task?.progress("Scoring the match against your profile");
   let match: MatchReport | null = null;
   try { match = await assessMatch(analysis, await loadOutreachContext()); } catch { match = null; }
+
+  const eligibilityConflict = eligibilityConflictReason(match);
+  if (eligibilityConflict) {
+    const stoppedPreview = stopped(eligibilityConflict, null, match);
+    await getPrisma().jobIntake.updateMany({
+      where: { id: intakeId, status: IntakeStatus.PENDING },
+      data: { status: IntakeStatus.SKIPPED, preview: stoppedPreview as unknown as Prisma.InputJsonValue },
+    });
+    // Keep the Sweep counters aligned with the intake state: this post is filtered, not waiting.
+    await getPrisma().sweepPost.updateMany({ where: { intakeId }, data: { outcome: SweepOutcome.SKIPPED, reason: eligibilityConflict } });
+    return;
+  }
 
   await task?.progress("Routing the resume");
   const minConfidence = autopilot ? AUTOPILOT_MIN_CONFIDENCE : RESUME_CONFIDENCE_THRESHOLD;

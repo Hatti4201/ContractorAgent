@@ -64,6 +64,41 @@ export function calendarDate(date: Date, timeZone: string) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
+/** The local date bucket beginning at a fixed wall-clock hour. */
+export function calendarBoundary(date: Date, timeZone: string, hour: number) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date).map((part) => [part.type, part.value]),
+  );
+  const localDate = calendarDate(date, timeZone);
+  const [year, month, day] = localDate.split("-").map(Number);
+  const boundaryDate = Number(parts.hour) < hour
+    ? new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10)
+    : localDate;
+  const [boundaryYear, boundaryMonth, boundaryDay] = boundaryDate.split("-").map(Number);
+  const desiredWallClock = Date.UTC(boundaryYear, boundaryMonth - 1, boundaryDay, hour);
+  const actualParts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(desiredWallClock)).map((part) => [part.type, part.value]),
+  );
+  const actualWallClock = Date.UTC(Number(actualParts.year), Number(actualParts.month) - 1, Number(actualParts.day), Number(actualParts.hour), Number(actualParts.minute), Number(actualParts.second));
+  return new Date(desiredWallClock + desiredWallClock - actualWallClock);
+}
+
 function addDays(value: string, days: number) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);

@@ -1,20 +1,27 @@
 import Link from "next/link";
 import { Bot, CircleCheck, CircleSlash, CircleX, Clock, FilePen, Ghost, History, Hourglass, Mail, Pause, Play, Send } from "lucide-react";
-import { cancelScheduledSend, chooseAutopilot, runAutopilotOnWaiting, sendDigestNow } from "@/app/(protected)/autopilot/actions";
+import { cancelScheduledSend, chooseAutopilot, runAutopilotOnWaiting, sendDigestNow, sendReviewedDraftsNow, sendScheduledDraftNow } from "@/app/(protected)/autopilot/actions";
 import { AutopilotSwitch } from "@/components/autopilot-switch";
-import { HoverLabel } from "@/components/hover-label";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 import { Toast } from "@/components/toast";
 import { formatDateTime } from "@/lib/job-values";
 import { settingOfMode } from "@/services/autopilot";
-import { autopilotOverview } from "@/services/auto-send";
-import { waitingForAutopilot } from "@/services/autopilot-batch";
+import { autopilotOverview, reviewedDraftCount } from "@/services/auto-send";
+import { manualAutopilotQueue, waitingForAutopilot } from "@/services/autopilot-batch";
 import { digestSettings } from "@/services/digest";
 import { lastDigestStatus } from "@/services/digest-send";
 
-export type AutopilotNotice = { autopilot?: string; cancelled?: string; autopilotRun?: string; saved?: string; invalid?: string };
+export type AutopilotNotice = { autopilot?: string; cancelled?: string; autopilotRun?: string; draftSend?: string; saved?: string; invalid?: string };
 
-const noticeKeys = ["autopilot", "cancelled", "autopilotRun", "saved", "invalid"];
-const invalidFields: Record<string, string> = { threshold: "Match: 0–100", delay: "Delay: 1–1440 min", limit: "Daily limit: 0–500" };
+const noticeKeys = ["autopilot", "cancelled", "autopilotRun", "draftSend", "saved", "invalid"];
+const invalidFields: Record<string, string> = {
+  employer: "Employer address: enter a valid email",
+  threshold: "Match: 0–100",
+  limit: "Daily limit: 0–500",
+  sendStartTime: "Send start time is invalid",
+  sendEndTime: "Send end time is invalid",
+  sendWindow: "Send start time must be before end time",
+};
 
 /** One line for whatever the last action did; a batch it started rides along as "▶ N". */
 function noticeText(notice: AutopilotNotice): { text: string; tone: "ok" | "warn" } | null {
@@ -27,6 +34,11 @@ function noticeText(notice: AutopilotNotice): { text: string; tone: "ok" | "warn
   if (notice.autopilot === "send") return { tone: "ok", text: `Sending on${ran}` };
   if (notice.autopilot === "draft") return { tone: "ok", text: `Drafts only${kept}${ran}` };
   if (notice.autopilot === "off") return { tone: "ok", text: `Autopilot off${kept}` };
+  if (notice.draftSend === "wrong-mode") return { tone: "warn", text: "Switch to Draft mode to use this button" };
+  if (notice.draftSend !== undefined) {
+    const sent = Number(notice.draftSend);
+    return { tone: sent > 0 ? "ok" : "warn", text: sent > 0 ? `Sending ${sent} reviewed drafts` : "No reviewed drafts to send" };
+  }
   if (notice.saved) return { tone: "ok", text: `Saved${ran}` };
   if (run === -1) return { tone: "warn", text: "Already running" };
   if (run === 0) return { tone: "warn", text: "Nothing to run" };
@@ -44,7 +56,7 @@ const summaryClass = "flex cursor-pointer list-none items-center gap-1.5 rounded
 
 /** The switch and the autopilot's numbers in one row; each list opens from its icon. */
 export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice }) {
-  const [overview, digest, waiting] = await Promise.all([autopilotOverview(), lastDigestStatus(), waitingForAutopilot()]);
+  const [overview, digest, waiting, manual, reviewed] = await Promise.all([autopilotOverview(), lastDigestStatus(), waitingForAutopilot(), manualAutopilotQueue(), reviewedDraftCount()]);
   const { mode, upcoming, recent, shadow } = overview;
   const digestConfig = digestSettings();
   const message = noticeText(notice);
@@ -54,13 +66,21 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
     <section aria-label="Autopilot" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
       {message && <Toast clear={noticeKeys} text={message.text} tone={message.tone} />}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Bot aria-label="Autopilot" className="text-slate-500" size={22} />
-        <AutopilotSwitch choose={chooseAutopilot} current={settingOfMode(mode)} delayMinutes={overview.delayMinutes} limit={overview.limit} />
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700"><Bot aria-hidden="true" className="text-slate-500" size={22} />Autopilot</span>
+        <AutopilotSwitch choose={chooseAutopilot} current={settingOfMode(mode)} limit={overview.limit} />
 
         {mode === "send" && (
           <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-700" title={`Sent in the last 24 hours, of ${overview.limit} allowed`}>
-            <Send aria-hidden="true" className="text-emerald-600" size={15} /> {overview.sentToday}/{overview.limit}
+            <Send aria-hidden="true" className="text-emerald-600" size={15} /> Sent today {overview.sentToday}/{overview.limit}
           </span>
+        )}
+
+        {mode === "shadow" && reviewed > 0 && (
+          <form action={sendReviewedDraftsNow}>
+            <button aria-label={`Send ${reviewed} reviewed Outlook drafts now`} className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-800" title="Send all reviewed Outlook drafts now" type="submit">
+              <Send aria-hidden="true" size={14} /> Send {reviewed} reviewed drafts
+            </button>
+          </form>
         )}
 
         {mode !== "off" && waiting.length > 0 && (
@@ -71,16 +91,25 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
               title={`Run the autopilot on ${waiting.length} jobs waiting with a finished email`}
               type="submit"
             >
-              <Play aria-hidden="true" size={14} /> {waiting.length}
+              <Play aria-hidden="true" size={14} /> Run {waiting.length} waiting jobs
             </button>
           </form>
+        )}
+
+        {mode !== "off" && manual.length > 0 && (
+          <details className="relative">
+            <summary className={summaryClass} title="Jobs held for manual review">⚠ Needs review {manual.length}</summary>
+            <ul className="absolute left-0 z-20 mt-1 w-[28rem] space-y-1 rounded-xl border border-amber-200 bg-white p-2 shadow-lg">
+              {manual.map((item) => <li className="rounded-lg px-2 py-1 hover:bg-amber-50" key={item.id}><Link className="block truncate text-sm font-medium text-slate-900" href={item.href}>{item.title}</Link><span className="block text-xs text-amber-800">{item.reason}</span></li>)}
+            </ul>
+          </details>
         )}
 
         <div className="ml-auto flex flex-wrap items-center gap-1">
           {upcoming.length > 0 && (
             <details className="group relative">
               <summary className={summaryClass} title="About to send">
-                <Clock aria-hidden="true" className="text-sky-600" size={15} /> {upcoming.length}
+                <Clock aria-hidden="true" className="text-sky-600" size={15} /> About to send {upcoming.length}
               </summary>
               <ul className="absolute right-0 z-20 mt-1 w-80 space-y-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
                 {upcoming.map((draft) => (
@@ -89,11 +118,20 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
                       {draft.opportunity.title}
                     </Link>
                     {draft.autoSendState === "SCHEDULED" && (
-                      <form action={cancelScheduledSend.bind(null, draft.id)}>
-                        <button aria-label={`Don't send ${draft.opportunity.title}; keep it as a draft`} className="rounded p-1 text-red-600 hover:bg-red-50" title="Don't send, keep as draft" type="submit">
-                          <CircleSlash aria-hidden="true" size={15} />
-                        </button>
-                      </form>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <form action={sendScheduledDraftNow.bind(null, draft.id)}>
+                          <button aria-label={`Send ${draft.opportunity.title} immediately`} className={`relative ${labelScope.bar} rounded p-1 text-emerald-700 hover:bg-emerald-50`} title="立即发送并插队" type="submit">
+                            <Send aria-hidden="true" size={15} />
+                            <HoverLabel scope="bar" text="立即发送" variant="inline" />
+                          </button>
+                        </form>
+                        <form action={cancelScheduledSend.bind(null, draft.id)}>
+                          <button aria-label={`Don't send ${draft.opportunity.title}; keep it as a draft`} className={`relative ${labelScope.bar} rounded p-1 text-red-600 hover:bg-red-50`} title="Don't send, keep as draft" type="submit">
+                            <CircleSlash aria-hidden="true" size={15} />
+                            <HoverLabel scope="bar" text="取消自动发送" variant="inline" />
+                          </button>
+                        </form>
+                      </span>
                     )}
                   </li>
                 ))}
@@ -104,7 +142,7 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
           {recent.length > 0 && (
             <details className="relative">
               <summary className={summaryClass} title="Last 7 days">
-                <History aria-hidden="true" size={15} />
+                <History aria-hidden="true" size={15} /> Recent
                 {(Object.keys(outcomeIcons) as Array<keyof typeof outcomeIcons>).map((state) => {
                   const { icon: Icon, tone } = outcomeIcons[state];
                   return count(state) ? <span className="flex items-center gap-0.5" key={state}><Icon aria-hidden="true" className={tone} size={13} />{count(state)}</span> : null;
@@ -127,9 +165,9 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
           {shadow.items.length > 0 && (
             <details className="relative">
               <summary className={summaryClass} title="Drafts only, last 7 days: would have sent / you sent">
-                <Ghost aria-hidden="true" size={15} /> {shadow.items.length}
+                <Ghost aria-hidden="true" size={15} /> Drafts {shadow.items.length}
                 <span className="text-slate-400">/</span>
-                <Send aria-hidden="true" size={13} /> {shadow.sentByYou}
+                <Send aria-hidden="true" size={13} /> sent {shadow.sentByYou}
               </summary>
               <ul className="absolute right-0 z-20 mt-1 w-80 space-y-1 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
                 {shadow.items.map((draft) => (
@@ -148,11 +186,11 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
             <form action={sendDigestNow}>
               <button
                 aria-label="Email the digest now"
-                className={`relative rounded-lg p-1.5 hover:bg-slate-100 ${digest?.lastDigestError ? "text-red-600" : "text-slate-500"}`}
+                className={`relative ${labelScope.bar} rounded-lg p-1.5 hover:bg-slate-100 ${digest?.lastDigestError ? "text-red-600" : "text-slate-500"}`}
                 title={digest?.lastDigestError ? `Last digest failed: ${digest.lastDigestError}` : `Digest daily at ${digestConfig.hour}:00${digest?.lastDigestAt ? ` · last ${formatDateTime(digest.lastDigestAt)}` : ""} · click to send now`}
                 type="submit"
               >
-                <Mail aria-hidden="true" size={17} />
+                <Mail aria-hidden="true" size={17} /><HoverLabel scope="bar" text="立即发送摘要" />
                 {digest?.lastDigestError && <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-600" />}
               </button>
             </form>

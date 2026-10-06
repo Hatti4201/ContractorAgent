@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { saveExposureSettings, setExposureMode, setExposureSchedule } from "@/app/(protected)/exposure/actions";
+import { dismissExposureError, saveExposureSettings, setExposureMode, setExposureSchedule } from "@/app/(protected)/exposure/actions";
 import { ExposurePlayButton } from "@/components/exposure-play-button";
 import { ExposureResult } from "@/app/generated/prisma/enums";
 import { AutoRefresh } from "@/components/auto-refresh";
@@ -52,7 +52,13 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
     weekOfResults(database),
     chromeReachable(config.cdpUrl),
   ]);
-  const running = exposureRunning();
+  const running = exposureRunning(state);
+  const errorAt = state.lastErrorAt ?? state.updatedAt;
+  const errorVisible = state.consecutiveFailures > 0 && Boolean(state.lastError) && (!state.errorClearedAt || errorAt > state.errorClearedAt);
+  const counted = count(ExposureResult.APPLIED) + count(ExposureResult.DRY_RUN_READY);
+  const stopReason = state.lastStopReason ?? (counted >= config.dailyLimit
+    ? `Daily limit reached (${counted}/${config.dailyLimit}). The limit resets daily at 5:00 AM local time; the next run will continue after the reset.`
+    : null);
   const blockedReason = config.mode === "off" ? "Mode is Off: choose Dry run or Live below" : !chrome ? "Dedicated Chrome not running: npm run exposure:chrome" : null;
   const exampleTotal = 10;
 
@@ -65,10 +71,24 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
 
       {notice === "saved" && <p className="mt-6 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-900">Saved. Takes effect from the next run.</p>}
       {notice === "confirm-on" && <p className="mt-6 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-900">Tick the confirmation box to switch on real submissions.</p>}
-      {state.consecutiveFailures > 0 && (
-        <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900" role="alert">
-          The last {state.consecutiveFailures === 1 ? "run" : `${state.consecutiveFailures} runs`} stopped: {state.lastError ?? "reason unknown"}
-        </p>
+      {errorVisible && (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">The last {state.consecutiveFailures === 1 ? "run" : `${state.consecutiveFailures} runs`} stopped</p>
+            <p className="mt-1">{state.lastError}</p>
+            <p className="mt-2 text-xs text-red-800">发生时间：{formatDateTime(errorAt)}</p>
+          </div>
+          <form action={dismissExposureError}>
+            <button aria-label="Dismiss Dice exposure error" className="rounded-lg p-1 text-red-700 hover:bg-red-100" title="Dismiss this error" type="submit">×</button>
+          </form>
+        </div>
+      )}
+      {!running && stopReason && (
+        <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status">
+          <p className="font-semibold">上次暂停原因</p>
+          <p className="mt-1">{stopReason}</p>
+          {state.lastStopAt && <p className="mt-2 text-xs text-sky-800">发生时间：{formatDateTime(state.lastStopAt)}</p>}
+        </div>
       )}
 
       {/* Status and controls */}
@@ -82,9 +102,9 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
               <span className="inline-flex items-center gap-1.5 text-slate-700" title={chrome ? "Dedicated Chrome connected" : "Dedicated Chrome not running: npm run exposure:chrome"}>
                 <span aria-hidden className={`h-2 w-2 rounded-full ${chrome ? "bg-emerald-500" : "bg-red-500"}`} />Chrome
               </span>
-              <span className="inline-flex items-center gap-1.5 text-slate-700" title="Applied or dry-run in the last 24 hours, of the daily limit">
+              <span className="inline-flex items-center gap-1.5 text-slate-700" title="Applied or dry-run since 5:00 AM local time, of the daily limit">
                 <svg aria-hidden className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" strokeLinecap="round" /></svg>
-                {count(ExposureResult.APPLIED) + count(ExposureResult.DRY_RUN_READY)} / {config.dailyLimit}
+                {counted} / {config.dailyLimit}
               </span>
               <span className="inline-flex items-center gap-1.5 text-slate-700" title="Last run">
                 <svg aria-hidden className="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -184,7 +204,7 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
 
         <h3 className="mt-6 font-semibold text-slate-950">How many, how fast</h3>
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
-          <NumberField hint="Rolling 24 hours" label="Daily limit" max={1000} min={1} name="dailyLimit" value={config.dailyLimit} />
+          <NumberField hint="Resets daily at 5:00 AM local time" label="Daily limit" max={1000} min={1} name="dailyLimit" value={config.dailyLimit} />
           <NumberField hint="Spreads the day across runs" label="Per-run limit" max={1000} min={1} name="perRunLimit" value={config.perRunLimit} />
           <NumberField label="Seconds between applications" max={600} min={0} name="jobDelaySeconds" value={config.jobDelaySeconds} />
         </div>

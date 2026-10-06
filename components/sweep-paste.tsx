@@ -2,7 +2,7 @@
 
 import { CircleAlert, CircleX, FileText, Loader, ScanSearch, UserRoundX } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type ClipboardEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { HoverLabel, labelScope } from "@/components/hover-label";
 import { clipboardHtmlToText, MAX_SWEEP_LENGTH, splitFeed } from "@/lib/linkedin-feed";
 
@@ -12,6 +12,7 @@ import { clipboardHtmlToText, MAX_SWEEP_LENGTH, splitFeed } from "@/lib/linkedin
  */
 export function SweepPaste() {
   const router = useRouter();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
@@ -20,12 +21,22 @@ export function SweepPaste() {
 
   function paste(event: ClipboardEvent<HTMLTextAreaElement>) {
     const html = event.clipboardData.getData("text/html");
-    if (!html) return;
+    if (!html) {
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (textarea) textarea.scrollTop = textarea.scrollHeight;
+      });
+      return;
+    }
     const converted = clipboardHtmlToText(html, (value) => new DOMParser().parseFromString(value, "text/html"));
     // Only a page the splitter can read replaces the plain paste; anything else pastes as usual.
     if (!splitFeed(converted).length) return;
     event.preventDefault();
     setText(converted);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (textarea) textarea.scrollTop = textarea.scrollHeight;
+    });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -58,6 +69,7 @@ export function SweepPaste() {
         onChange={(event) => setText(event.target.value)}
         onPaste={paste}
         placeholder="Group → search → Past 24 hours → Show more ×4 → ⌘A ⌘C → paste here"
+        ref={textareaRef}
         value={text}
       />
       <div className={`${labelScope.bar} mt-2 flex flex-wrap items-center gap-2`} aria-live="polite">

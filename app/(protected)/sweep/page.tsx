@@ -27,7 +27,9 @@ const byState: Partial<Record<string, SweepGroup>> = {
 };
 
 function groupOf(post: Post): SweepGroup {
-  if (post.outcome === "NO_EMAIL" || post.outcome === "FAILED") return "needs";
+  const tag = shortReason(post.detail ?? post.reason);
+  if (post.outcome === "NO_EMAIL" || tag?.kind === "duplicate") return "skipped";
+  if (post.outcome === "FAILED") return "needs";
   if (post.outcome === "SKIPPED") return "skipped";
   if (post.outcome === "NOISE" || post.outcome === "NOT_RELEVANT") return "not";
   return (post.state && byState[post.state]) || "working";
@@ -55,12 +57,15 @@ function cardView(sweep: SweepView): SweepCardView {
         href: post.opportunityId ? `/jobs/${post.opportunityId}/outreach` : post.intakeId ? `/intakes/${post.intakeId}/review` : null,
         author: post.author,
         profileUrl: post.profileUrl,
+        postUrl: post.postUrl,
+        explicitC2C: post.explicitC2C,
         email: post.email,
         match: post.matchScore,
         group: groupOf(post),
         reason,
         tag: shortReason(reason),
         excerpt: post.excerpt,
+        restore: groupOf(post) === "skipped",
       };
     }),
   };
@@ -140,6 +145,7 @@ export default async function SweepPage({ searchParams }: { searchParams: Promis
           </ul>
         </details>
       )}
+
     </div>
   );
 }

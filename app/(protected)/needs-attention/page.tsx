@@ -1,11 +1,14 @@
 import Link from "next/link";
 import {
   confirmFollowUpSuggestion,
+  autoProcessFollowUpSuggestions,
+  dismissMailScanError,
   dismissFollowUpSuggestion,
   linkFollowUpSuggestion,
   retryFollowUpSuggestion,
   syncOutlookFollowUps,
 } from "@/app/(protected)/needs-attention/actions";
+import { dismissExposureError } from "@/app/(protected)/exposure/actions";
 import { ApplicationStage, FollowUpStatus } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
@@ -68,6 +71,8 @@ export default async function NeedsAttentionPage() {
     exposureState(),
   ]);
   const timeZone = configuredTimeZone();
+  const exposureErrorAt = exposure.lastErrorAt ?? exposure.updatedAt;
+  const mailErrorAt = scanState.lastErrorAt ?? scanState.updatedAt;
   const items = buildAttentionItems(opportunities, new Date(), timeZone);
   const linkable = opportunities.filter((opportunity) => opportunity.applicationTrack && !terminalStages.has(opportunity.applicationTrack.currentStage));
 
@@ -91,19 +96,30 @@ export default async function NeedsAttentionPage() {
         </div>
       </div>
 
-      {scanState.consecutiveFailures > 0 && (
-        <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900" role="alert">
-          The Outlook scan has failed {scanState.consecutiveFailures} time{scanState.consecutiveFailures === 1 ? "" : "s"} in a row: {scanState.lastError ?? "reason unknown"}
-          {scanState.lastSuccessAt ? ` Last successful scan: ${formatDateTime(scanState.lastSuccessAt)}.` : " No scan has ever succeeded."}
-          {" "}Reconnect Outlook or check the AI configuration, then scan again.
-        </p>
+      {scanState.consecutiveFailures > 0 && scanState.lastError && (!scanState.errorClearedAt || mailErrorAt > scanState.errorClearedAt) && (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">Outlook scan failed {scanState.consecutiveFailures} time{scanState.consecutiveFailures === 1 ? "" : "s"} in a row</p>
+            <p className="mt-1">{scanState.lastError}</p>
+            <p className="mt-2 text-xs text-red-800">发生时间：{formatDateTime(mailErrorAt)} · {scanState.lastSuccessAt ? `上次成功：${formatDateTime(scanState.lastSuccessAt)}` : "尚未成功扫描"}</p>
+          </div>
+          <form action={dismissMailScanError}>
+            <button aria-label="Dismiss Outlook scan error" className="rounded-lg p-1 text-red-700 hover:bg-red-100" title="Dismiss this error" type="submit">×</button>
+          </form>
+        </div>
       )}
 
-      {exposure.consecutiveFailures > 0 && (
-        <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-900" role="alert">
-          Dice exposure stopped: {exposure.lastError ?? "reason unknown"}{" "}
-          <Link className="underline" href="/exposure">Open exposure</Link>
-        </p>
+      {exposure.consecutiveFailures > 0 && exposure.lastError && (!exposure.errorClearedAt || exposureErrorAt > exposure.errorClearedAt) && (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">Dice exposure stopped</p>
+            <p className="mt-1">{exposure.lastError}</p>
+            <p className="mt-2 text-xs text-red-800">发生时间：{formatDateTime(exposureErrorAt)} · <Link className="underline" href="/exposure">Open exposure</Link></p>
+          </div>
+          <form action={dismissExposureError}>
+            <button aria-label="Dismiss Dice exposure error" className="rounded-lg p-1 text-red-700 hover:bg-red-100" title="Dismiss this error" type="submit">×</button>
+          </form>
+        </div>
       )}
 
       <section className="mt-8" aria-labelledby="email-suggestions">
@@ -111,6 +127,7 @@ export default async function NeedsAttentionPage() {
           <div>
             <h2 className="text-2xl font-semibold text-slate-950" id="email-suggestions">Recruiter email suggestions</h2>
           </div>
+          {suggestions.length > 0 && <form action={autoProcessFollowUpSuggestions}><button className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800" type="submit">让 Agent 自动处理全部</button></form>}
         </div>
 
         {suggestions.length ? (

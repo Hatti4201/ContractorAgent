@@ -12,7 +12,7 @@ import { getPrisma } from "@/lib/prisma";
 import { autopilotAccepts, autopilotDuplicateHold, autopilotMatchHold } from "@/services/autopilot";
 import { currentMatchThreshold } from "@/services/auto-send";
 import { resolveContacts } from "@/services/contacts";
-import { employerCcSetting } from "@/services/employer";
+import { currentEmployerCcSetting } from "@/services/employer";
 import type { IntakePreview } from "@/services/intake-pipeline";
 import { findDuplicateMatches, type JobCase } from "@/services/job-case";
 import type { MatchReport } from "@/services/match-score";
@@ -99,7 +99,6 @@ export class AutopilotHold extends Error {}
  * leaves the intake pending, so the user sees it in the queue with that reason.
  */
 export async function autoConfirmIntake(intakeId: string, analysis: JobCase, preview: IntakePreview) {
-  if (!analysis.title) throw new AutopilotHold("The analysis found no job title.");
   const matchHold = autopilotMatchHold(preview.match, await currentMatchThreshold());
   if (matchHold) throw new AutopilotHold(matchHold);
   if (!preview.resumeId || !preview.mode || !preview.toAddress || !preview.subject || !preview.body) {
@@ -134,7 +133,7 @@ export async function autoConfirmIntake(intakeId: string, analysis: JobCase, pre
 
     const created = await createOpportunityFromIntake(database, {
       intake,
-      reviewed: { ...analysis, title },
+      reviewed: { ...analysis, title: title ?? analysis.title ?? "Untitled role" },
       source: { sourceType: intake.sourceType, originalSender: intake.originalSender, receivedAt: intake.receivedAt },
       recruiterLinkedin: null,
       selectedResumeId: resumeId,
@@ -150,7 +149,7 @@ export async function autoConfirmIntake(intakeId: string, analysis: JobCase, pre
         replySourceMessageId,
         ...email,
         // Same default the review screen starts from: C2C copies the employer, from local config only.
-        ccAddress: analysis.employmentType === EmploymentType.C2C ? employerCcSetting().address : null,
+        ccAddress: analysis.employmentType === EmploymentType.C2C ? (await currentEmployerCcSetting()).address : null,
         attachmentResumeId: resumeId,
         contextFingerprint,
         validation: validation as unknown as Prisma.InputJsonValue,

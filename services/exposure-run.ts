@@ -28,6 +28,7 @@ import {
   type ExposureConfig,
 } from "@/services/exposure-rules";
 import { loadOutreachContext } from "@/services/outreach-context";
+import { calendarBoundary, configuredTimeZone } from "@/services/attention";
 
 type Database = PrismaClient | Prisma.TransactionClient;
 type Answer = { question: string; kind: string; answer: string; factQuote: string | null };
@@ -49,18 +50,23 @@ export async function priorResults(database: Database, externalId: string) {
   return rows.map((row) => row.result);
 }
 
-// ponytail: "today" is a rolling 24 hours, so the limit can never be exceeded across midnight either.
+const DAILY_RESET_HOUR = 5;
+
+export function exposureDayStart(now = new Date(), timeZone = configuredTimeZone()) {
+  return calendarBoundary(now, timeZone, DAILY_RESET_HOUR);
+}
+
 export function countedToday(database: Database, now = new Date()) {
   return database.exposureApplication.count({
-    where: { createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) }, result: { in: [ExposureResult.APPLIED, ExposureResult.DRY_RUN_READY] } },
+    where: { createdAt: { gte: exposureDayStart(now) }, result: { in: [ExposureResult.APPLIED, ExposureResult.DRY_RUN_READY] } },
   });
 }
 
-/** Results of the last 24 hours, for the exposure page's daily summary. */
+/** Results since today's 05:00 local reset, for the exposure page's daily summary. */
 export async function recentCounts(database: Database = getPrisma(), now = new Date()) {
   const rows = await database.exposureApplication.groupBy({
     by: ["result"],
-    where: { createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+    where: { createdAt: { gte: exposureDayStart(now) } },
     _count: true,
   });
   return (result: ExposureResult) => rows.find((row) => row.result === result)?._count ?? 0;
@@ -252,9 +258,15 @@ async function runPages(context: RunContext) {
         if (seen.has(card.guid)) continue;
         seen.add(card.guid);
         await context.checkStop();
-        // Reaching either limit is the plan working, so it ends the run quietly.
-        if (summary.applied + summary.rehearsed >= config.perRunLimit) return;
-        if (await countedToday(database) >= config.dailyLimit) return;
+        if (summary.applied + summary.rehearsed >= config.perRunLimit) {
+          summary.stopReason = `Per-run limit reached (${config.perRunLimit}). The next run will continue with the next unsettled job.`;
+          return;
+        }
+        const today = await countedToday(database);
+        if (today >= config.dailyLimit) {
+          summary.stopReason = `Daily limit reached (${today}/${config.dailyLimit}). The limit resets daily at 5:00 AM local time; the next run will continue after the reset.`;
+          return;
+        }
         if (settledByHistory(await priorResults(database, card.guid), config.mode)) continue;
 
         const decision = decideCard(card, config.titleBlacklist, config.companyBlacklist);
@@ -301,8 +313,9 @@ async function runPages(context: RunContext) {
 // ponytail: one run at a time per Node process, which is all a single local app has.
 const globalForExposure = globalThis as unknown as { exposureRunning?: boolean };
 
-export function exposureRunning() {
-  return Boolean(globalForExposure.exposureRunning);
+export function exposureRunning(state?: { progress: string | null }) {
+  // The database is the cross-request truth for the UI; the process flag remains the local lock.
+  return Boolean(globalForExposure.exposureRunning || state?.progress);
 }
 
 /** The effective settings: what was saved on the /exposure page, on top of the .env defaults. */
@@ -335,17 +348,25 @@ export async function runExposure(): Promise<RunSummary | null> {
         if (stopRequested) throw new StopRequested();
       },
     });
-    await database.exposureState.update({ where: { id: STATE_ID }, data: { lastSuccessAt: new Date(), consecutiveFailures: 0, lastError: null } });
+    await database.exposureState.update({ where: { id: STATE_ID }, data: {
+      lastSuccessAt: new Date(),
+      consecutiveFailures: 0,
+      lastError: null,
+      lastStopReason: summary.stopReason ?? "Run completed.",
+      lastStopAt: new Date(),
+    } });
     return summary;
   } catch (error) {
     if (error instanceof StopRequested) {
-      summary.stopReason = "Stopped from the exposure page.";
+      summary.stopReason = "Paused from the exposure page after the current step. The next run will continue with the next unsettled job.";
+      await database.exposureState.update({ where: { id: STATE_ID }, data: { lastStopReason: summary.stopReason, lastStopAt: new Date() } });
       return summary;
     }
     const message = (error instanceof Error ? error.message : "The exposure run failed.").slice(0, 500);
     summary.stopReason = message;
     // An unattended run has to stay loud when it stops: Needs Attention shows this until a clean run.
-    await database.exposureState.update({ where: { id: STATE_ID }, data: { consecutiveFailures: { increment: 1 }, lastError: message } });
+    const failedAt = new Date();
+    await database.exposureState.update({ where: { id: STATE_ID }, data: { consecutiveFailures: { increment: 1 }, lastError: message, lastErrorAt: failedAt, errorClearedAt: null, lastStopReason: message, lastStopAt: failedAt } });
     return summary;
   } finally {
     tab?.close();

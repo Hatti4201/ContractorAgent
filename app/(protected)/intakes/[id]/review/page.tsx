@@ -4,13 +4,14 @@ import { notFound, redirect } from "next/navigation";
 import { confirmIntake, confirmIntakeWithDraft } from "@/app/(protected)/jobs/actions";
 import { EmploymentType, IntakeStatus, type OutreachMode } from "@/app/generated/prisma/enums";
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 import { MatchReportSection } from "@/components/match-report";
 import { SweepRefresher } from "@/components/sweep-paste";
 import { currentMatchThreshold } from "@/services/auto-send";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { parseIntakePreview } from "@/services/intake-pipeline";
-import { employerCcSetting } from "@/services/employer";
+import { currentEmployerCcSetting } from "@/services/employer";
 import { detectRecruiterProfile } from "@/services/intake-source";
 import { outlookConnected } from "@/services/outlook-auth";
 import { listOutlookSourceMessages, replyModes } from "@/services/outlook-graph";
@@ -34,7 +35,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
       <div className="mx-auto flex max-w-3xl items-center justify-center gap-3 px-6 py-16 text-slate-500">
         {/* The analysis lands on its own; look again every few seconds rather than asking for a reload. */}
         <SweepRefresher active />
-        <Link aria-label="Back to jobs" className="rounded-lg p-1.5 hover:bg-slate-100 hover:text-slate-900" href="/jobs" title="Back to jobs"><ArrowLeft aria-hidden="true" size={18} /></Link>
+        <Link aria-label="Back to jobs" className={`relative ${labelScope.bar} rounded-lg p-1.5 hover:bg-slate-100 hover:text-slate-900`} href="/jobs" title="Back to jobs"><ArrowLeft aria-hidden="true" size={18} /><HoverLabel scope="bar" text="返回岗位" /></Link>
         <Loader aria-hidden="true" className="animate-spin" size={20} />
         <span className="text-sm" role="status">Preparing</span>
       </div>
@@ -92,7 +93,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
   // one click away rather than being dropped.
   const notes = jobCase.warnings.filter((warning) => !openWarnings.includes(warning));
   // The employer copy address never comes from the model; C2C only decides whether it starts ticked.
-  const employer = employerCcSetting();
+  const employer = await currentEmployerCcSetting();
   const employerCopy = employer.address
     ? { address: employer.address, defaultOn: jobCase.employmentType === EmploymentType.C2C }
     : null;
@@ -100,7 +101,7 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       <div className="flex flex-wrap items-center gap-2">
-        <Link aria-label="New analysis" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900" href="/intake" title="New analysis"><ArrowLeft aria-hidden="true" size={18} /></Link>
+        <Link aria-label="New analysis" className={`relative ${labelScope.bar} rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900`} href="/intake" title="New analysis"><ArrowLeft aria-hidden="true" size={18} /><HoverLabel scope="bar" text="新建分析" /></Link>
         <h1 className="min-w-0 truncate text-xl font-semibold text-slate-950" title={jobCase.title ?? undefined}>{jobCase.title ?? "Untitled job"}</h1>
         <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600" title="Analysis confidence">
           <Gauge aria-hidden="true" size={13} />{Math.round(jobCase.confidence * 100)}%

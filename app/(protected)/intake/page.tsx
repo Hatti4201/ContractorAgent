@@ -31,6 +31,8 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
     where: { sourceMessageId: { in: inbox.map((message) => message.id) } },
     select: { sourceMessageId: true },
   })).flatMap((intake) => (intake.sourceMessageId ? [intake.sourceMessageId] : [])));
+  const previewQueue = queue.slice(0, 5);
+  const additionalQueue = queue.slice(5);
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
@@ -41,11 +43,16 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
       {discarded && <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900" role="status">Pasted source discarded.</p>}
       {error && <p className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800" role="alert">That source is no longer waiting for review.</p>}
 
+      <section className="mt-8 scroll-mt-6" id="paste">
+        <h2 className="text-xl font-semibold text-slate-950">Paste the text yourself</h2>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
+      </section>
+
       {queue.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-xl font-semibold text-slate-950">Waiting for your review</h2>
+          <h2 className="text-xl font-semibold text-slate-950">Waiting for your review <span className="text-sm font-normal text-slate-500">({queue.length})</span></h2>
           <ul className="mt-5 space-y-3">
-            {queue.map((intake) => (
+            {previewQueue.map((intake) => (
               <li className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" key={intake.id}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -61,6 +68,19 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
               </li>
             ))}
           </ul>
+          {additionalQueue.length > 0 && <details className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <summary className="cursor-pointer font-semibold text-slate-800">展开其余 {additionalQueue.length} 个待审核 Job</summary>
+            <ul className="mt-4 space-y-3">
+              {additionalQueue.map((intake) => (
+                <li className="rounded-2xl border border-slate-200 p-4" key={intake.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0"><Link className="font-semibold text-slate-950 underline" href={`/intakes/${intake.id}/review`}>{intake.title}</Link><p className="mt-1 text-sm text-slate-600">{formatEnum(intake.sourceType)} · {formatDateTime(intake.createdAt)}</p>{intake.detail && <p className="mt-2 text-sm text-amber-900">{intake.detail}</p>}</div>
+                    <div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${intakeStates[intake.state]!.tone}`}>{intakeStates[intake.state]!.label}</span><DiscardIntakeForm action={discardIntake.bind(null, intake.id)} /></div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>}
         </section>
       )}
 
@@ -69,7 +89,7 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
         {inboxFailed && <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Outlook could not be read just now. Reconnect and reload.</p>}
         {!inboxFailed && inbox.length === 0 && <p className="mt-4 text-sm text-slate-600"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> to list recent mail here.</p>}
         {inbox.length > 0 && (
-          <ul className="mt-4 space-y-2">
+          <ul className="mt-4 max-h-96 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 pr-3">
             {inbox.map((message) => (
               <li className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4" key={message.id}>
                 <div className="min-w-0">
@@ -112,9 +132,6 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
           ) : <p className="mt-4 text-sm text-slate-600">Nothing judged yet.</p>}
         </section>
       )}
-
-      <h2 className="mt-10 text-xl font-semibold text-slate-950">Or paste the text yourself</h2>
-      <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6"><IntakeForm /></div>
 
       <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-6" id="linkedin">
         <summary className="cursor-pointer text-lg font-semibold text-slate-950">From LinkedIn: the → Agent bookmarklet</summary>

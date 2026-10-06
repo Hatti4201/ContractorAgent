@@ -39,6 +39,14 @@ export async function stopExposure(formData?: FormData) {
   done(undefined, formData);
 }
 
+export async function dismissExposureError() {
+  await requireAuth();
+  const current = await exposureState();
+  if (current.lastError) await getPrisma().exposureState.update({ where: { id: "primary" }, data: { errorClearedAt: new Date() } });
+  revalidatePath("/needs-attention");
+  revalidatePath("/dashboard");
+}
+
 export async function setExposureSchedule(enabled: boolean) {
   await requireAuth();
   await saveSettings({ scheduleEnabled: enabled });

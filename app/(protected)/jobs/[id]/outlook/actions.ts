@@ -94,6 +94,7 @@ export async function confirmOutlookSent(id: string) {
             // A reply's subject belongs to the thread, so there is nothing of ours to compare.
             subject: replyModes.has(draft.mode) ? null : draft.subject,
             resumePath: draft.attachmentResume.filePath,
+            roleFamily: draft.attachmentResume.roleFamily,
           }, { accessToken: await outlookAccessToken() });
         } catch (error) {
           const message = error instanceof OutlookGraphError && error.status === 404

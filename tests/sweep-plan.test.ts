@@ -44,6 +44,7 @@ test("a queued post's state follows its intake, job and draft", () => {
   assert.equal(sweepItemState({ ...intake, status: "PENDING", draft: null }, false).state, "READY", "A written email waiting for review is not a problem.");
   assert.equal(sweepItemState({ ...intake, status: "PENDING", stopReason: "Match 30% is below 50%." }, false).detail, "Match 30% is below 50%.");
   assert.equal(sweepItemState(intake, false).state, "IN_OUTLOOK");
+  assert.equal(sweepItemState({ ...intake, draft: { ...draft, outlookState: "SENT" } }, false).state, "SENT", "A manually sent Outlook draft is sent in the sweep too.");
   assert.equal(sweepItemState({ ...intake, draft: { ...draft, autoSendState: "SCHEDULED" } }, false).state, "SCHEDULED");
   assert.equal(sweepItemState({ ...intake, draft: { ...draft, autoSendState: "SENT", autoSentAt: new Date() } }, false).state, "SENT");
   assert.equal(sweepItemState({ ...intake, draft: { ...draft, autoSendState: "CANCELLED", autoSendError: "Daily limit" } }, false).detail, "Daily limit");
@@ -58,7 +59,10 @@ test("reasons shrink to a tag a glance can read", async () => {
   assert.equal(shortReason("Match 42% is below 50%; missing Kafka, AWS.")?.label, "42%");
   assert.equal(shortReason("Hotlist or bench sales: consultants on offer, not a job.")?.label, "Hotlist");
   assert.equal(shortReason("No email in the post: message the author on LinkedIn if it is worth it.")?.label, "No email");
-  assert.equal(shortReason("Eligibility conflict: Work authorization: USC/GC only.")?.label, "Eligibility");
+  assert.equal(shortReason("YOE below requirement: 13+ years of experience")?.label, "YOE");
+  assert.equal(shortReason("Eligibility conflict: Work authorization: USC/GC only.")?.label, "Only USC/GC");
+  assert.equal(shortReason("Eligibility conflict: Work authorization: H1B (your context: STEM OPT).")?.label, "Only H1B");
+  assert.equal(shortReason("Eligibility conflict: Work authorization: All visas except H1B & OPT.")?.label, "No H1B/OPT");
   assert.equal(shortReason('The same JD is already tracked as "Java Lead".')?.label, "Duplicate");
   assert.equal(shortReason(null), null);
 });

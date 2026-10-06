@@ -4,6 +4,7 @@ import {
   OutreachMode,
 } from "@/app/generated/prisma/enums";
 import type { JobCase } from "@/services/job-case";
+import { openAiError } from "@/services/job-analyzer";
 import { checkResumeFile } from "@/services/resume-router";
 
 const validationSeverities = ["NEEDS_REVIEW", "BLOCK"] as const;
@@ -85,6 +86,7 @@ const generationInstructions = `Write a concise recruiter outreach email from su
 - Markdown ** ** bold is the only markup allowed, and no other Markdown may appear.
 - The approved context decides which facts the email contains. Rules there that add content for a given
   engagement type, such as employer details when jobCase.employmentType is C2C, must be followed in full.
+- When jobCase.employmentType is UNKNOWN because the post did not state W2 or C2C, ask one concise question asking whether the role is available on W2 or C2C. Do not guess an arrangement or present either one as confirmed.
 - Bolding is a separate decision from inclusion, and this list never limits what the email may contain.
   Bold the years-of-experience claim, and the label of every screening line the email does contain:
   tech stack, work authorization, location, availability, rate, clearance, relocation, employer.
@@ -145,7 +147,7 @@ async function structuredResponse(
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`OpenAI outreach request failed with status ${response.status}.`);
+  if (!response.ok) throw new Error(openAiError("outreach request", response.status));
   const output = responseText(await response.json());
   if (!output) throw new Error("OpenAI returned no structured outreach result.");
   try {

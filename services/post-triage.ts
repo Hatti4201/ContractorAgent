@@ -1,6 +1,6 @@
 import { postEmails } from "@/lib/linkedin-feed";
 import { engagements, readPolicyFacts, type PolicyFacts } from "@/services/application-policy";
-import { responseText } from "@/services/job-analyzer";
+import { openAiError, responseText } from "@/services/job-analyzer";
 import type { RoleFamilyOption } from "@/services/role-family";
 
 /** Enough posts per call to keep a daily sweep to a handful of calls, few enough that none is skimmed. */
@@ -129,7 +129,7 @@ export async function triagePosts(texts: readonly string[], roleFamilies: readon
     }),
     signal: AbortSignal.timeout(180_000),
   });
-  if (!response.ok) throw new Error(`OpenAI screening failed with status ${response.status}.`);
+  if (!response.ok) throw new Error(openAiError("screening", response.status));
   const output = responseText(await response.json() as unknown);
   if (!output) throw new Error("OpenAI returned no screening result.");
   try { return parseTriage(JSON.parse(output), texts); } catch { throw new Error("OpenAI returned an invalid screening result."); }

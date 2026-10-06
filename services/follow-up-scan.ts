@@ -229,6 +229,8 @@ export async function scanFollowUps(task?: TaskHandle) {
       data: {
         consecutiveFailures: { increment: 1 },
         lastError: (error instanceof Error ? error.message : "The Outlook scan failed.").slice(0, 500),
+        lastErrorAt: new Date(),
+        errorClearedAt: null,
       },
     });
     throw error;

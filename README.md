@@ -33,8 +33,8 @@ still marked running after fifteen minutes is reported as interrupted and can be
 While the server runs, the Outlook scan repeats on a schedule set by `MAIL_SCAN_*` in the environment:
 by default Monday to Friday, 06:00 to 15:00 in `APP_TIME_ZONE`, once an hour. `APP_TIME_ZONE` must be a
 real IANA name such as `America/Los_Angeles`; an unrecognised value silently falls back to UTC and
-takes follow-up due dates with it. Set `MAIL_SCAN_ENABLED=false` to turn the schedule off; the manual
-button on Needs attention runs the same code either way.
+takes follow-up due dates with it. Set `MAIL_SCAN_ENABLED=false` to turn only the Outlook scan off; the
+manual button on Needs attention runs the same code either way, and automatic sending remains active.
 
 Each scan asks Microsoft Graph only for mail from the last message it decided on, so a run that finds
 nothing new costs no model call, and the watermark advances only past messages that run actually
@@ -52,20 +52,19 @@ has a three-position switch, and a click takes effect at once, with no restart:
 |---|---|
 | **Off** | Every job is analysed and written, then waits for your review |
 | **Drafts only** | Jobs that pass every gate become Outlook drafts; you send them. Each draft also records when it would have been sent (the shadow trial below) |
-| **Send** | As Drafts only, and each draft is sent after the delay, within the daily limit |
+| **Send** | As Drafts only, and each draft is sent immediately, within the daily limit |
 
-The same page sets the three numbers the autopilot works to, saved in the database and in effect at
+The same page sets the send window and two numbers the autopilot works to, saved in the database and in effect at
 once:
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Match ≥** | 50% | The lowest match score the autopilot takes on; below it the job waits for you |
-| **Delay** | 10 min | Between building a draft and sending it: the window to cancel in |
+| **Send window** | 06:00–15:00 | Local-time window in which automatic sends are allowed |
 | **Daily limit** | 50 | Emails sent automatically in any rolling 24 hours |
 
 Until you first use the switch, `AUTOPILOT` in the environment decides (`draft` and `shadow` both mean
-Drafts only); until you first save the numbers, `MATCH_THRESHOLD`, `AUTO_SEND_DELAY_MINUTES` and
-`AUTO_SEND_DAILY_LIMIT` do. Jobs prepared while the switch was Off, or held earlier, stay in the queue
+Drafts only); until you first save the settings, `MATCH_THRESHOLD`, `AUTO_SEND_START_TIME`, `AUTO_SEND_END_TIME` and `AUTO_SEND_DAILY_LIMIT` do. Jobs prepared while the switch was Off, or held earlier, stay in the queue
 with their email written. Turning the switch to Drafts only or Send, or saving the numbers while it is
 on, takes them through the gates again at once, without writing the emails again; **Run the autopilot
 on them** (▶ on the Autopilot and Sweep pages) does the same on demand.
@@ -109,8 +108,8 @@ Move the switch one step at a time, Off → Drafts only → Send:
   The Autopilot page shows, for the last 7 days, how many the autopilot would have
   sent and how many of those you sent yourself. Run it for a week; if you sent nearly all of them and
   rarely changed a word, move on.
-- **Send** sends each draft the autopilot built the delay (default 10 minutes) after building
-  it, at most the daily limit (default 50) in any rolling 24 hours; over the limit the best
+- **Send** sends each draft during the configured send window, at most the daily limit (default 50)
+  in any rolling 24 hours; over the limit the best
   matches go and the rest stay in Outlook for you. Until then it shows under **About to send** with a
   **Don't send** link. Moving the switch away from Send cancels everything still queued, and those
   emails stay in Outlook as drafts. It sends the draft as it stands in Outlook, so an edit you make
@@ -120,7 +119,7 @@ Right before each send the draft is re-checked: still approved, recipient, resum
 unchanged, and still a draft in Outlook (one you already sent or deleted is left alone). Anything that
 fails a check stays in Outlook for you and is never retried; a send that was claimed but never
 confirmed is reported, not repeated, so nothing goes twice. Sends run on the scheduler's five-minute
-tick, so they need `MAIL_SCAN_ENABLED`; outside the scan window only a send that fell due in the last
+tick independently of `MAIL_SCAN_ENABLED`; outside the configured send window only a send that fell due in the last
 hour goes, and anything older waits for the next window rather than reaching a recruiter at night.
 
 Add delegated `Mail.Send` to the app registration in Microsoft Entra once. Choosing **Send** then checks

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Briefcase, FileText, Mail, Plus, Radar, ScanSearch, TriangleAlert, Users, type LucideIcon } from "lucide-react";
+import { Bot, Briefcase, FileText, Mail, MessageCircle, Plus, Radar, ScanSearch, TriangleAlert, Users, type LucideIcon } from "lucide-react";
 import { HoverLabel } from "@/components/hover-label";
 
 export type NavigationCounts = { intake: number; attention: number };
@@ -16,6 +16,7 @@ const items: Item[] = [
   { href: "/sweep", label: "Sweep", short: "扫帖", icon: ScanSearch },
   { href: "/autopilot", label: "Autopilot", short: "自动", icon: Bot },
   { href: "/needs-attention", label: "Attention", short: "待处理", icon: TriangleAlert, badge: "attention" },
+  { href: "/conversations", label: "Conversations", short: "对话", icon: MessageCircle },
   { href: "/jobs", label: "Jobs", short: "岗位", icon: Briefcase },
   { href: "/recruiters", label: "Recruiters", short: "招聘人", icon: Users },
   { href: "/exposure", label: "Exposure", short: "曝光", icon: Radar },

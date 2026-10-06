@@ -1,4 +1,5 @@
 import { runExposureNow, stopExposure } from "@/app/(protected)/exposure/actions";
+import { HoverLabel, labelScope } from "@/components/hover-label";
 
 // One round button that is either play or pause. The picture carries the state; the words live in the
 // tooltip and the accessible name, so nothing is lost for a screen reader.
@@ -32,12 +33,13 @@ export function ExposurePlayButton({ running, stopping, blockedReason, back, siz
       {running && <span aria-hidden className={`absolute -inset-1 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600 [animation-duration:2s]`} />}
       <button
         aria-label={label}
-        className={`relative flex items-center justify-center rounded-full shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${box} ${tone}`}
+        className={`relative ${labelScope.bar} flex items-center justify-center rounded-full shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${box} ${tone}`}
         disabled={stopping || (!running && Boolean(blockedReason))}
         title={label}
         type="submit"
       >
         {running ? <PauseIcon /> : <PlayIcon />}
+        <HoverLabel scope="bar" text={label} />
       </button>
     </form>
   );

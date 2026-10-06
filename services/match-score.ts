@@ -1,5 +1,5 @@
 import type { JobCase } from "@/services/job-case";
-import { responseText } from "@/services/job-analyzer";
+import { openAiError, responseText } from "@/services/job-analyzer";
 
 const skillVerdicts = ["MET", "PARTIAL", "MISSING"] as const;
 const eligibilityVerdicts = ["OK", "CONFLICT", "UNKNOWN"] as const;
@@ -155,7 +155,7 @@ export async function assessMatch(jobCase: JobCase, approvedContext: string, opt
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`OpenAI match scoring failed with status ${response.status}.`);
+  if (!response.ok) throw new Error(openAiError("match scoring", response.status));
   const output = responseText(await response.json() as unknown);
   if (!output) throw new Error("OpenAI returned no match result.");
   try { return parseMatch(JSON.parse(output), requirements, approvedContext); } catch { throw new Error("OpenAI returned an invalid match result."); }

@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { discardIntake } from "@/app/(protected)/intake/actions";
 import { ExposureCard } from "@/components/exposure-card";
+import { DashboardAutomationCards } from "@/components/dashboard-automation-cards";
 import { AutopilotChip } from "@/components/autopilot-panel";
 import { PendingStrip, type PendingItem } from "@/components/pending-strip";
 import { PerformanceTable } from "@/components/performance-table";
@@ -245,6 +246,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <PendingStrip checkSent={checkSentDraftsNow} inOutlook={pending.inOutlook} preparing={pending.preparing} review={pending.review} />
 
       <div className="mt-6"><ExposureCard /></div>
+      <DashboardAutomationCards />
 
       <div className={`${labelScope.bar} mt-2 flex flex-wrap items-center gap-2`}>
         {timeRanges.map((range) => (

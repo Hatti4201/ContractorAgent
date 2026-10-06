@@ -22,6 +22,7 @@ test("the Bay Area is known by its cities, and a name shared with another state 
 test("W2 is taken only in the Bay Area or fully remote", () => {
   assert.equal(applicationDecision(facts({ engagements: ["W2"], locations: [at("Pleasanton", "CA")] })).verdict, "APPLY");
   assert.equal(applicationDecision(facts({ engagements: ["W2"], remote: true })).verdict, "APPLY");
+  assert.equal(applicationDecision(facts({ engagements: ["W2"] })).verdict, "APPLY", "An unstated location is not evidence that the job is outside the Bay Area.");
   const dallas = applicationDecision(facts({ engagements: ["W2"], locations: [at("Dallas", "TX")] }));
   assert.equal(dallas.verdict, "SKIP");
   assert.match(dallas.reason, /W2 only, in Dallas, TX/);
@@ -33,7 +34,10 @@ test("C2C is taken anywhere unless the job is local-only or wants a face-to-face
   const atlanta = applicationDecision(facts({ engagements: ["C2C", "W2"], locations: [at("Alpharetta", "GA")] }));
   assert.equal(atlanta.verdict, "APPLY");
   assert.equal(atlanta.pitch, "C2C", "Outside the Bay Area the email offers C2C.");
-  assert.equal(applicationDecision(facts({ locations: [at("Charlotte", "NC")] })).pitch, "C2C", "A job naming no arrangement is asked as C2C.");
+  const unstated = applicationDecision(facts({ locations: [at("Charlotte", "NC")] }));
+  assert.equal(unstated.verdict, "APPLY", "A job naming no arrangement stays in the queue.");
+  assert.equal(unstated.pitch, null, "The email asks whether the role supports W2 or C2C.");
+  assert.match(unstated.reason, /ask whether W2 or C2C/);
   assert.equal(applicationDecision(facts({ engagements: ["C2C"], localOnly: true, locations: [at("Irving", "TX")] })).verdict, "SKIP");
   assert.equal(applicationDecision(facts({ engagements: ["C2C"], localOnly: true, relocationAccepted: true, locations: [at("Irving", "TX")] })).verdict, "APPLY");
   const ohio = applicationDecision(facts({ engagements: ["C2C"], inPersonInterview: true, relocationAccepted: true, locations: [at("Blue Ash", "OH")] }));

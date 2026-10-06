@@ -4,10 +4,12 @@ import { getPrisma } from "@/lib/prisma";
 import { autopilotApplies, readyForAutopilot } from "@/services/autopilot";
 import { currentAutopilotMode } from "@/services/auto-send";
 import { parseIntakePreview, resumeAutopilot } from "@/services/intake-pipeline";
+import { inferJobTitle, parseJobCase } from "@/services/job-case";
 import { startTask, TaskBusyError } from "@/services/tasks";
 
 // Each job is an Outlook draft upload, not a model call; a few at a time keep Graph comfortable.
 const CONCURRENCY = 3;
+const titleHold = "The analysis found no job title.";
 
 /**
  * Jobs with a finished email still waiting in the queue: prepared while the autopilot was off, or
@@ -19,7 +21,27 @@ export async function waitingForAutopilot() {
     select: { id: true, preview: true },
     orderBy: { createdAt: "asc" },
   });
-  return intakes.filter((intake) => readyForAutopilot(parseIntakePreview(intake.preview))).map((intake) => intake.id);
+  return intakes.filter((intake) => {
+    const preview = parseIntakePreview(intake.preview);
+    return readyForAutopilot(preview) && (!preview?.hold || preview.hold === titleHold);
+  }).map((intake) => intake.id);
+}
+
+/** Finished drafts that need a person, with the exact hold/brake shown in the intake review. */
+export async function manualAutopilotQueue() {
+  const intakes = await getPrisma().jobIntake.findMany({
+    where: { status: IntakeStatus.PENDING },
+    select: { id: true, rawText: true, analysis: true, preview: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return intakes.flatMap((intake) => {
+    const preview = parseIntakePreview(intake.preview);
+    const reason = preview?.hold ?? preview?.brake ?? "The intake needs review before the autopilot can continue.";
+    if (!preview || reason === titleHold) return [];
+    const analysis = intake.analysis ? parseJobCase(intake.analysis) : null;
+    const title = inferJobTitle(intake.rawText, analysis?.roleFamily ?? null);
+    return [{ id: intake.id, title, reason, href: `/intakes/${intake.id}/review` }];
+  });
 }
 
 /** Runs the autopilot over every waiting job in the background; returns how many it took on. */

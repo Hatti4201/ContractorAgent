@@ -116,7 +116,7 @@ enum OutlookDraftState {
 }
 
 /// What the autopilot does with an Outlook draft it built. SHADOW only records when it would have
-/// sent; SCHEDULED waits out the delay; SENDING is claimed and never retried, so no mail goes twice.
+/// sent; SCHEDULED waits for the send window; SENDING is claimed and never retried, so no mail goes twice.
 enum AutoSendState {
   SHADOW
   SCHEDULED
@@ -206,6 +206,7 @@ model Opportunity {
   activities       Activity[]
   outreachDraft    OutreachDraft?
   followUpSuggestions FollowUpSuggestion[]
+  conversationJobs ConversationJob[]
   createdAt        DateTime          @default(now()) @map("created_at")
   updatedAt        DateTime          @updatedAt @map("updated_at")
 
@@ -446,9 +447,75 @@ model MailScanState {
   lastSuccessAt       DateTime? @map("last_success_at")
   consecutiveFailures Int       @default(0) @map("consecutive_failures")
   lastError           String?   @map("last_error")
+  lastErrorAt         DateTime? @map("last_error_at")
+  errorClearedAt      DateTime? @map("error_cleared_at")
+  lastStopReason      String?   @map("last_stop_reason")
+  lastStopAt          DateTime? @map("last_stop_at")
+  autoScanEnabled     Boolean  @default(true) @map("auto_scan_enabled")
+  initialScanCompleteAt DateTime? @map("initial_scan_complete_at")
+  folderWatermarks    Json?    @map("folder_watermarks")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   @@map("mail_scan_state")
+}
+
+model ConversationThread {
+  id                  String   @id @default(cuid())
+  outlookConversationId String @unique @map("outlook_conversation_id")
+  subject             String
+  recruiterName       String?  @map("recruiter_name")
+  recruiterEmail      String?  @map("recruiter_email")
+  isRelevant          Boolean  @default(false) @map("is_relevant")
+  isHidden            Boolean  @default(true) @map("is_hidden")
+  summary             String?
+  lastMessageAt       DateTime @map("last_message_at")
+  messages            ConversationMessage[]
+  jobs                ConversationJob[]
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([isRelevant, isHidden, lastMessageAt])
+  @@map("conversation_threads")
+}
+
+model ConversationMessage {
+  id                  String   @id @default(cuid())
+  outlookMessageId    String   @unique @map("outlook_message_id")
+  conversationId      String   @map("conversation_id")
+  folder              String
+  direction           String
+  fromAddress         String   @map("from_address")
+  toAddresses         String   @map("to_addresses")
+  subject             String
+  body                String
+  bodyPreview         String   @map("body_preview")
+  sentAt              DateTime? @map("sent_at")
+  receivedAt          DateTime @map("received_at")
+  isRelevant          Boolean  @default(false) @map("is_relevant")
+  isHidden            Boolean  @default(true) @map("is_hidden")
+  messageType         String?  @map("message_type")
+  summary             String?
+  replyDraft          String?  @map("reply_draft")
+  analyzedAt          DateTime? @map("analyzed_at")
+  thread              ConversationThread @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([conversationId, receivedAt])
+  @@index([isRelevant, isHidden, receivedAt])
+  @@map("conversation_messages")
+}
+
+model ConversationJob {
+  conversationId String @map("conversation_id")
+  opportunityId  String @map("opportunity_id")
+  conversation   ConversationThread @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  opportunity    Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@id([conversationId, opportunityId])
+  @@index([opportunityId])
+  @@map("conversation_jobs")
 }
 
 enum ExposureChannel {
@@ -488,6 +555,10 @@ model ExposureState {
   lastSuccessAt       DateTime? @map("last_success_at")
   consecutiveFailures Int       @default(0) @map("consecutive_failures")
   lastError           String?   @map("last_error")
+  lastErrorAt         DateTime? @map("last_error_at")
+  errorClearedAt      DateTime? @map("error_cleared_at")
+  lastStopReason      String?   @map("last_stop_reason")
+  lastStopAt          DateTime? @map("last_stop_at")
   // Settings saved from the /exposure page; null means the .env defaults (rules/exposure.md §8).
   settings            Json?
   // Set by the Stop button; the running pass checks it between steps and exits cleanly.
@@ -515,10 +586,13 @@ model AutopilotControl {
   /// Set on the Autopilot page; each is null until first saved, and the environment decides until then.
   /// The fit a job needs, 0 to 1.
   matchThreshold  Float?    @map("match_threshold")
-  /// Minutes between building a draft and sending it: the window to cancel in.
-  sendDelayMinutes Int?     @map("send_delay_minutes")
+  /// Local-time window in which automatic sends are allowed.
+  sendStartTime   String?   @map("send_start_time")
+  sendEndTime     String?   @map("send_end_time")
   /// Sends allowed in any rolling 24 hours.
   dailySendLimit  Int?      @map("daily_send_limit")
+  /// Private employer address copied on C2C outreach.
+  employerCcAddress String? @map("employer_cc_address")
   /// When the daily digest last went out (or was attempted); one per local date.
   lastDigestAt    DateTime? @map("last_digest_at")
   lastDigestError String?   @map("last_digest_error")
@@ -552,6 +626,7 @@ model SweepPost {
   fingerprint String       @unique
   author      String
   profileUrl  String?      @map("profile_url")
+  postUrl     String?      @map("post_url")
   headline    String?
   text        String
   title       String?

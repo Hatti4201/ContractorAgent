@@ -7,7 +7,7 @@ import { ActivityType, EmploymentType, OutlookDraftState, OutreachDraftStatus, O
 import type { Prisma } from "@/app/generated/prisma/client";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
-import { employerCcSetting } from "@/services/employer";
+import { currentEmployerCcSetting } from "@/services/employer";
 import { parseJobCase } from "@/services/job-case";
 import { checkResumeFile } from "@/services/resume-router";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -104,13 +104,13 @@ async function requireMutableDraft(id: string) {
 }
 
 /** A C2C engagement copies the employer by default; the user can clear it before any draft leaves. */
-function defaultCcAddress(input: OutreachInput) {
-  return input.jobCase.employmentType === EmploymentType.C2C ? employerCcSetting().address : null;
+async function defaultCcAddress(input: OutreachInput) {
+  return input.jobCase.employmentType === EmploymentType.C2C ? (await currentEmployerCcSetting()).address : null;
 }
 
 async function saveGeneratedDraft(id: string, input: OutreachInput, content: OutreachContent) {
   const validation = await validateOutreachContent(input, content);
-  const ccAddress = defaultCcAddress(input);
+  const ccAddress = await defaultCcAddress(input);
   await getPrisma().$transaction([
     getPrisma().outreachDraft.upsert({
       where: { opportunityId: id },
@@ -326,7 +326,7 @@ export async function setOutreachCopy(id: string, formData: FormData) {
   await requireAuth();
   await requireMutableDraft(id);
   const wanted = formData.get("copyEmployer") === "on";
-  const setting = employerCcSetting();
+  const setting = await currentEmployerCcSetting();
   if (wanted && !setting.address) redirect(`/jobs/${id}/outreach?copy=unavailable`);
 
   await getPrisma().outreachDraft.update({

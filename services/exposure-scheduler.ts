@@ -1,4 +1,5 @@
 import { exposureState, loadExposureConfig, runExposure } from "@/services/exposure-run";
+import { getPrisma } from "@/lib/prisma";
 import { shouldScanNow } from "@/services/mail-schedule";
 
 // Same pattern as the mail scheduler: a short tick, and the decision made from the last run time.
@@ -17,6 +18,9 @@ async function tick() {
 /** Always registers, because the mode can be switched on from the page; an "off" tick does nothing. */
 export function startExposureScheduler() {
   if (globalForScheduler.exposureTimer) return;
+  // A process restart kills an in-memory run before its finally block can clear progress.
+  // Clear that stale UI marker once at startup; a live run in this process owns the lock instead.
+  void getPrisma().exposureState.update({ where: { id: "primary" }, data: { progress: null, stopRequested: false } }).catch(() => {});
   const timer = setInterval(() => { void tick().catch(() => {}); }, TICK_MS);
   timer.unref();
   globalForScheduler.exposureTimer = timer;

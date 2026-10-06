@@ -19,7 +19,7 @@ const draftSelection = {
   outlookMessageId: true,
   outlookWebLink: true,
   outlookDraftCreatedAt: true,
-  attachmentResume: { select: { filePath: true } },
+  attachmentResume: { select: { filePath: true, roleFamily: true } },
   opportunity: {
     select: {
       title: true,
@@ -50,6 +50,7 @@ export async function archiveIfSent(draft: UnsentDraft, accessToken: string, dat
     // A reply carries the thread's subject, not one of ours, so there is nothing to compare.
     subject: replyModes.has(draft.mode) ? null : draft.subject,
     resumePath: draft.attachmentResume.filePath,
+    roleFamily: draft.attachmentResume.roleFamily,
   }, { accessToken });
   if (!result.sent) return { sent: false as const };
 

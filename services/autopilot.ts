@@ -26,7 +26,7 @@ export const AUTOPILOT_MIN_CONFIDENCE = 0.5;
  *   fails a hard gate waits. The user still sends.
  * shadow = draft, and each draft also records when it would have been sent, so a trial week shows
  *   what automatic sending would have done before it is allowed to.
- * send = the draft is sent after AUTO_SEND_DELAY_MINUTES unless cancelled, within the daily limit.
+ * send = the draft is sent immediately after it passes, within the daily limit.
  */
 export type AutopilotMode = "off" | "draft" | "shadow" | "send";
 const modes: readonly AutopilotMode[] = ["off", "draft", "shadow", "send"];
@@ -93,9 +93,32 @@ function bounded(value: string | undefined, fallback: number, low: number, high:
   return value?.trim() && Number.isInteger(parsed) && parsed >= low && parsed <= high ? parsed : fallback;
 }
 
-/** The window to cancel a send in. The scheduler ticks every five minutes, so a send lands up to five late. */
-export function autoSendDelayMinutes(value = process.env.AUTO_SEND_DELAY_MINUTES) {
-  return bounded(value, 10, 1, 1440);
+const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+function fallbackSendTime(value: string | undefined, legacyHour: string | undefined, fallback: string) {
+  if (value?.trim() && timePattern.test(value.trim())) return value.trim();
+  const hour = Number(legacyHour);
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? `${String(hour).padStart(2, "0")}:00` : fallback;
+}
+
+function timeMinutes(value: string, end = false) {
+  if (end && value === "24:00") return 24 * 60;
+  if (!timePattern.test(value)) return null;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+/** The local-time window in which SEND is allowed to call Outlook. */
+export type SendWindow = { startTime: string; endTime: string };
+
+export function sendWindowMinutes(window: SendWindow) {
+  const start = timeMinutes(window.startTime);
+  const end = timeMinutes(window.endTime, true);
+  return start !== null && end !== null && start < end ? { start, end } : null;
+}
+
+function defaultSendTime(env: Record<string, string | undefined>, specific: string, legacy: string, fallback: string) {
+  return fallbackSendTime(env[specific], env[legacy], fallback);
 }
 
 /**
@@ -107,8 +130,8 @@ export function autoSendDailyLimit(value = process.env.AUTO_SEND_DAILY_LIMIT) {
   return bounded(value, 50, 0, 500);
 }
 
-export type AutopilotSettings = { threshold: number; delayMinutes: number; dailyLimit: number };
-type StoredSettings = { matchThreshold: number | null; sendDelayMinutes: number | null; dailySendLimit: number | null };
+export type AutopilotSettings = { threshold: number; dailyLimit: number } & SendWindow;
+type StoredSettings = { matchThreshold: number | null; dailySendLimit: number | null; sendStartTime: string | null; sendEndTime: string | null };
 
 /**
  * What the Autopilot page saved, each value on its own: one the user has not set yet still comes from
@@ -117,33 +140,50 @@ type StoredSettings = { matchThreshold: number | null; sendDelayMinutes: number 
 export function resolveAutopilotSettings(stored: StoredSettings | null, env: Record<string, string | undefined> = process.env): AutopilotSettings {
   return {
     threshold: stored?.matchThreshold ?? matchThreshold(env.MATCH_THRESHOLD),
-    delayMinutes: stored?.sendDelayMinutes ?? autoSendDelayMinutes(env.AUTO_SEND_DELAY_MINUTES),
     dailyLimit: stored?.dailySendLimit ?? autoSendDailyLimit(env.AUTO_SEND_DAILY_LIMIT),
+    startTime: stored?.sendStartTime ?? defaultSendTime(env, "AUTO_SEND_START_TIME", "MAIL_SCAN_START_HOUR", "06:00"),
+    endTime: stored?.sendEndTime ?? defaultSendTime(env, "AUTO_SEND_END_TIME", "MAIL_SCAN_END_HOUR", "15:00"),
   };
 }
 
 /**
- * The Autopilot page's form, as whole numbers: the threshold in percent. Anything out of range is
- * refused with the field's name, never clamped, since a silently changed limit is worse than a retry.
+ * The Autopilot page's form: a whole-number threshold/limit and a valid local-time window. Anything
+ * out of range is refused with the field's name, never clamped.
  */
-export function parseAutopilotSettings(form: { threshold: string; delayMinutes: string; dailyLimit: string }): AutopilotSettings | { error: string } {
+export function parseAutopilotSettings(form: { threshold: string; dailyLimit: string; sendStartTime: string; sendEndTime: string }): AutopilotSettings | { error: string } {
   const whole = (value: string, low: number, high: number) => {
     const number = Number(value.trim());
     return value.trim() && Number.isInteger(number) && number >= low && number <= high ? number : null;
   };
   const threshold = whole(form.threshold, 0, 100);
-  const delayMinutes = whole(form.delayMinutes, 1, 1440);
   const dailyLimit = whole(form.dailyLimit, 0, 500);
   if (threshold === null) return { error: "threshold" };
-  if (delayMinutes === null) return { error: "delay" };
   if (dailyLimit === null) return { error: "limit" };
-  return { threshold: threshold / 100, delayMinutes, dailyLimit };
+  const startTime = timeMinutes(form.sendStartTime);
+  const endTime = timeMinutes(form.sendEndTime, true);
+  if (startTime === null) return { error: "sendStartTime" };
+  if (endTime === null) return { error: "sendEndTime" };
+  if (startTime >= endTime) return { error: "sendWindow" };
+  return { threshold: threshold / 100, dailyLimit, startTime: form.sendStartTime, endTime: form.sendEndTime };
 }
 
-/** What happens to a draft the autopilot just built: nothing, a shadow record, or a scheduled send. */
-export function autoSendPlan(mode: AutopilotMode, now: Date, delayMinutes: number) {
+/** What happens to a draft the autopilot just built: nothing, a shadow record, or an immediate send. */
+export function autoSendPlan(mode: AutopilotMode, now: Date) {
   if (mode !== "shadow" && mode !== "send") return null;
-  return { state: mode === "send" ? "SCHEDULED" as const : "SHADOW" as const, at: new Date(now.getTime() + delayMinutes * 60_000) };
+  return {
+    state: mode === "send" ? "SCHEDULED" as const : "SHADOW" as const,
+    at: new Date(now),
+  };
+}
+
+export const AUTO_SEND_MIN_DELAY_MS = 5_000;
+export const AUTO_SEND_MAX_DELAY_MS = 120_000;
+
+/** Adds a random human-sized gap after the last automatic send already in the queue. */
+export function staggeredAutoSendAt(now: Date, lastScheduledAt: Date | null, random = Math.random()) {
+  const base = Math.max(now.getTime(), lastScheduledAt?.getTime() ?? 0);
+  const delay = AUTO_SEND_MIN_DELAY_MS + Math.floor(Math.max(0, Math.min(1, random)) * (AUTO_SEND_MAX_DELAY_MS - AUTO_SEND_MIN_DELAY_MS));
+  return new Date(base + delay);
 }
 
 export function sendQuota(limit: number, sentInLastDay: number) {
@@ -166,7 +206,7 @@ export function rankForSending<T extends { matchScore: number | null; autoSendAt
  * fact, and that still waits for the user. A NEEDS_REVIEW left after one rewrite is let through.
  */
 export function autopilotAccepts(validation: OutreachValidation | null) {
-  return Boolean(validation) && !validation!.issues.some((issue) => issue.severity === "BLOCK");
+  return validation?.status === "PASS";
 }
 
 /**
@@ -186,14 +226,20 @@ export function autopilotDuplicateHold(jobCase: JobCase, matches: DuplicateMatch
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
+/** A stated work-authorization mismatch is a hard skip, not a question for the user. */
+export function eligibilityConflictReason(report: MatchReport | null) {
+  const conflict = report?.requirements.find((item) => item.kind === "eligibility" && item.verdict === "CONFLICT");
+  return conflict ? `Eligibility conflict: ${conflict.requirement}${conflict.evidence ? ` (your context: "${conflict.evidence}")` : ""}.` : null;
+}
+
 /**
  * An eligibility conflict the context itself states is the one thing no loose fit makes up for; below
  * that, the score decides. A JD with no skills to score goes ahead, since there is nothing to fall short of.
  */
 export function autopilotMatchHold(report: MatchReport | null, threshold = matchThreshold()) {
   if (!report) return "The match score could not be computed.";
-  const conflict = report.requirements.find((item) => item.kind === "eligibility" && item.verdict === "CONFLICT");
-  if (conflict) return `Eligibility conflict: ${conflict.requirement}${conflict.evidence ? ` (your context: "${conflict.evidence}")` : ""}.`;
+  const eligibilityConflict = eligibilityConflictReason(report);
+  if (eligibilityConflict) return eligibilityConflict;
   if (report.score === null || report.score >= threshold) return null;
   const missing = report.requirements.filter((item) => item.kind === "skill" && item.verdict === "MISSING").map((item) => item.requirement);
   return `Match ${percent(report.score)} is below ${percent(threshold)}${missing.length ? `; missing ${missing.slice(0, 5).join(", ")}` : ""}.`;

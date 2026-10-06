@@ -12,7 +12,8 @@ import {
   proposalForFollowUp,
   type FollowUpAnalysis,
 } from "@/services/follow-up";
-import { analysisInput, scanFollowUps, suggestionData, terminalStages } from "@/services/follow-up-scan";
+import { activeCandidates, analysisInput, scanFollowUps, suggestionData, terminalStages } from "@/services/follow-up-scan";
+import { matchFollowUpOpportunity } from "@/services/follow-up";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { getOutlookInboxMessage } from "@/services/outlook-graph";
 import { startTask, TaskBusyError } from "@/services/tasks";
@@ -37,6 +38,13 @@ export async function syncOutlookFollowUps() {
   }
   refresh();
   redirect("/needs-attention");
+}
+
+export async function dismissMailScanError() {
+  await requireAuth();
+  const state = await getPrisma().mailScanState.findUnique({ where: { id: "primary" }, select: { lastError: true } });
+  if (state?.lastError) await getPrisma().mailScanState.update({ where: { id: "primary" }, data: { errorClearedAt: new Date() } });
+  refresh();
 }
 
 export async function retryFollowUpSuggestion(id: string) {
@@ -169,5 +177,23 @@ export async function dismissFollowUpSuggestion(id: string) {
     data: { status: FollowUpStatus.DISMISSED, decidedAt: new Date() },
   });
   if (result.count !== 1) throw new Error("This suggestion was already decided.");
+  refresh();
+}
+
+export async function autoProcessFollowUpSuggestions() {
+  await requireAuth();
+  const database = getPrisma();
+  const [suggestions, candidates] = await Promise.all([
+    database.followUpSuggestion.findMany({ where: { status: FollowUpStatus.PENDING }, select: { id: true, opportunityId: true, fromAddress: true, subject: true, evidence: true, event: true, confidence: true } }),
+    activeCandidates(),
+  ]);
+  for (const suggestion of suggestions) {
+    const opportunityId = suggestion.opportunityId ?? matchFollowUpOpportunity(suggestion.fromAddress, suggestion.subject, candidates).opportunityId;
+    if (!opportunityId || suggestion.confidence === null || !suggestion.event || !parseFollowUpEvidence(suggestion.evidence).length) continue;
+    const formData = new FormData();
+    formData.set("opportunityId", opportunityId);
+    if (!suggestion.opportunityId) await linkFollowUpSuggestion(suggestion.id, formData);
+    await confirmFollowUpSuggestion(suggestion.id);
+  }
   refresh();
 }

@@ -6,7 +6,6 @@ import test from "node:test";
 import { EmploymentType, JobSourceType, OutreachMode, WorkArrangement } from "../app/generated/prisma/enums";
 import {
   autoSendDailyLimit,
-  autoSendDelayMinutes,
   autoSendPlan,
   autopilotAccepts,
   autopilotApplies,
@@ -17,6 +16,9 @@ import {
   readyForAutopilot,
   resolveAutopilotSettings,
   settingOfMode,
+  staggeredAutoSendAt,
+  AUTO_SEND_MAX_DELAY_MS,
+  AUTO_SEND_MIN_DELAY_MS,
   autopilotRoute,
   rankForSending,
   sendQuota,
@@ -82,9 +84,9 @@ test("the autopilot answers the way the job reached you", () => {
     { mode: OutreachMode.FIRST_OUTREACH, thread: null });
 });
 
-test("a loose fit goes through, a blocking fact does not", () => {
+test("only a PASS validation goes through", () => {
   assert.ok(autopilotAccepts({ status: "PASS", issues: [] }));
-  assert.ok(autopilotAccepts({ status: "NEEDS_REVIEW", issues: [{ field: "body", severity: "NEEDS_REVIEW", message: "Tone is generic." }] }));
+  assert.ok(!autopilotAccepts({ status: "NEEDS_REVIEW", issues: [{ field: "body", severity: "NEEDS_REVIEW", message: "Tone is generic." }] }));
   assert.ok(!autopilotAccepts({ status: "NEEDS_REVIEW", issues: [{ field: "body", severity: "BLOCK", message: "Unsupported visa claim." }] }));
   assert.ok(!autopilotAccepts(null));
 });
@@ -163,19 +165,22 @@ test("shadow and send ride the same autopilot as draft", () => {
   for (const mode of ["draft", "shadow", "send"] as const) assert.ok(autopilotApplies(mode));
 });
 
-test("only shadow and send plan anything, and both wait out the delay", () => {
+test("only shadow and send plan anything; both are immediate", () => {
   const now = new Date("2026-09-24T17:00:00Z");
-  assert.equal(autoSendPlan("draft", now, 10), null);
-  assert.equal(autoSendPlan("off", now, 10), null);
-  assert.deepEqual(autoSendPlan("shadow", now, 10), { state: "SHADOW", at: new Date("2026-09-24T17:10:00Z") });
-  assert.deepEqual(autoSendPlan("send", now, 30), { state: "SCHEDULED", at: new Date("2026-09-24T17:30:00Z") });
+  assert.equal(autoSendPlan("draft", now), null);
+  assert.equal(autoSendPlan("off", now), null);
+  assert.deepEqual(autoSendPlan("shadow", now), { state: "SHADOW", at: now });
+  assert.deepEqual(autoSendPlan("send", now), { state: "SCHEDULED", at: now });
 });
 
-test("the delay and limit fall back to safe defaults on anything unreadable", () => {
-  assert.equal(autoSendDelayMinutes(undefined), 10);
-  assert.equal(autoSendDelayMinutes("0"), 10, "No window at all is not a delay.");
-  assert.equal(autoSendDelayMinutes("15"), 15);
-  assert.equal(autoSendDelayMinutes("2.5"), 10);
+test("automatic sends are staggered after the existing queue", () => {
+  const now = new Date("2026-09-24T17:00:00Z");
+  const last = new Date("2026-09-24T17:01:00Z");
+  assert.equal(staggeredAutoSendAt(now, last, 0).getTime(), last.getTime() + AUTO_SEND_MIN_DELAY_MS);
+  assert.equal(staggeredAutoSendAt(now, null, 1).getTime(), now.getTime() + AUTO_SEND_MAX_DELAY_MS);
+});
+
+test("the daily limit falls back to a safe default on anything unreadable", () => {
   assert.equal(autoSendDailyLimit(undefined), 50);
   assert.equal(autoSendDailyLimit("0"), 0, "Zero is a real choice: send nothing.");
   assert.equal(autoSendDailyLimit("9999"), 50);
@@ -184,23 +189,24 @@ test("the delay and limit fall back to safe defaults on anything unreadable", ()
 });
 
 test("the page's saved numbers win, one by one, over the environment", () => {
-  const env = { MATCH_THRESHOLD: "60", AUTO_SEND_DELAY_MINUTES: "20", AUTO_SEND_DAILY_LIMIT: "40" };
-  assert.deepEqual(resolveAutopilotSettings(null, env), { threshold: 0.6, delayMinutes: 20, dailyLimit: 40 });
-  assert.deepEqual(resolveAutopilotSettings(null, {}), { threshold: 0.5, delayMinutes: 10, dailyLimit: 50 });
+  const env = { MATCH_THRESHOLD: "60", AUTO_SEND_DAILY_LIMIT: "40", AUTO_SEND_START_TIME: "07:30", AUTO_SEND_END_TIME: "18:00" };
+  assert.deepEqual(resolveAutopilotSettings(null, env), { threshold: 0.6, dailyLimit: 40, startTime: "07:30", endTime: "18:00" });
+  assert.deepEqual(resolveAutopilotSettings(null, {}), { threshold: 0.5, dailyLimit: 50, startTime: "06:00", endTime: "15:00" });
   assert.deepEqual(
-    resolveAutopilotSettings({ matchThreshold: 0.3, sendDelayMinutes: null, dailySendLimit: null }, env),
-    { threshold: 0.3, delayMinutes: 20, dailyLimit: 40 },
+    resolveAutopilotSettings({ matchThreshold: 0.3, dailySendLimit: null, sendStartTime: null, sendEndTime: null }, env),
+    { threshold: 0.3, dailyLimit: 40, startTime: "07:30", endTime: "18:00" },
     "Saving the threshold alone leaves the others to the environment.",
   );
-  assert.equal(resolveAutopilotSettings({ matchThreshold: 0, sendDelayMinutes: 5, dailySendLimit: 0 }, env).threshold, 0, "Zero is a real threshold, not unset.");
+  assert.equal(resolveAutopilotSettings({ matchThreshold: 0, dailySendLimit: 0, sendStartTime: "00:00", sendEndTime: "01:00" }, env).threshold, 0, "Zero is a real threshold, not unset.");
 });
 
 test("the settings form takes whole numbers in range and names the first one that is not", () => {
-  assert.deepEqual(parseAutopilotSettings({ threshold: "30", delayMinutes: "10", dailyLimit: "50" }), { threshold: 0.3, delayMinutes: 10, dailyLimit: 50 });
-  assert.deepEqual(parseAutopilotSettings({ threshold: "101", delayMinutes: "10", dailyLimit: "50" }), { error: "threshold" });
-  assert.deepEqual(parseAutopilotSettings({ threshold: "30", delayMinutes: "0", dailyLimit: "50" }), { error: "delay" });
-  assert.deepEqual(parseAutopilotSettings({ threshold: "30", delayMinutes: "10", dailyLimit: "2.5" }), { error: "limit" });
-  assert.deepEqual(parseAutopilotSettings({ threshold: "", delayMinutes: "10", dailyLimit: "50" }), { error: "threshold" });
+  const valid = { threshold: "30", dailyLimit: "50", sendStartTime: "06:00", sendEndTime: "15:00" };
+  assert.deepEqual(parseAutopilotSettings(valid), { threshold: 0.3, dailyLimit: 50, startTime: "06:00", endTime: "15:00" });
+  assert.deepEqual(parseAutopilotSettings({ ...valid, threshold: "101" }), { error: "threshold" });
+  assert.deepEqual(parseAutopilotSettings({ ...valid, dailyLimit: "2.5" }), { error: "limit" });
+  assert.deepEqual(parseAutopilotSettings({ ...valid, threshold: "" }), { error: "threshold" });
+  assert.deepEqual(parseAutopilotSettings({ ...valid, sendStartTime: "18:00", sendEndTime: "06:00" }), { error: "sendWindow" });
 });
 
 test("over the daily limit the best matches are sent and the rest handed back", () => {

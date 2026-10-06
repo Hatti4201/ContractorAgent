@@ -9,7 +9,7 @@ import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
 import { Toast } from "@/components/toast";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
-import { employerCcSetting } from "@/services/employer";
+import { currentEmployerCcSetting } from "@/services/employer";
 import { outreachBodyHtml } from "@/services/outreach-markup";
 import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
@@ -47,7 +47,7 @@ export default async function OutreachDraftPage({ params, searchParams }: { para
       </div>
     );
   }
-  const employerCopy = employerCcSetting();
+  const employerCopy = await currentEmployerCcSetting();
   const validation = parseOutreachValidation(draft.validation);
   const file = await checkResumeFile(draft.attachmentResume.filePath);
   const attachmentReady = draft.attachmentResume.active && file.usable && draft.attachmentResume.roleFamily === draft.opportunity.roleFamily;

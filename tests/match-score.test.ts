@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EmploymentType, WorkArrangement } from "../app/generated/prisma/enums";
-import { autopilotMatchHold, matchThreshold } from "../services/autopilot";
+import { autopilotMatchHold, eligibilityConflictReason, matchThreshold } from "../services/autopilot";
 import type { JobCase } from "../services/job-case";
 import { assessMatch, matchRequirements, parseMatch, readMatchReport, type MatchReport } from "../services/match-score";
 
@@ -76,6 +76,7 @@ test("the autopilot holds on a stated conflict or a low score, and nothing else"
   assert.match(autopilotMatchHold(report(0.4), 0.5) ?? "", /Match 40% is below 50%; missing Kafka/);
   assert.match(autopilotMatchHold(null, 0.5) ?? "", /could not be computed/);
   const conflict = { kind: "eligibility" as const, requirement: "Clearance: TS/SCI", verdict: "CONFLICT" as const, evidence: "No clearance" };
+  assert.match(eligibilityConflictReason(report(0.9, [conflict])) ?? "", /Eligibility conflict: Clearance: TS\/SCI/);
   assert.match(autopilotMatchHold(report(0.9, [conflict]), 0.5) ?? "", /Eligibility conflict: Clearance: TS\/SCI/);
   assert.equal(autopilotMatchHold(report(0.9, [{ ...conflict, verdict: "UNKNOWN" as const }]), 0.5), null);
 });

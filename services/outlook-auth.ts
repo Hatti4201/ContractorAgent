@@ -84,6 +84,17 @@ export async function outlookConnected() {
   return Boolean(await getPrisma().outlookConnection.findUnique({ where: { id: CONNECTION_ID }, select: { id: true } }));
 }
 
+export async function outlookStatus() {
+  const configured = outlookEnvironmentConfigured();
+  const connected = await outlookConnected();
+  if (!configured || !connected) return { configured, connected, readReady: false, sendReady: false, readError: null, sendError: null };
+  let readError: string | null = null;
+  let sendError: string | null = null;
+  try { await outlookAccessToken(); } catch (error) { readError = error instanceof Error ? error.message : "Mail.ReadWrite is unavailable."; }
+  try { await outlookSendToken(); } catch (error) { sendError = error instanceof Error ? error.message : "Mail.Send is unavailable."; }
+  return { configured, connected, readReady: !readError, sendReady: !sendError, readError, sendError };
+}
+
 export async function outlookAuthorizationUrl(state: string, codeChallenge: string, forSending = false) {
   const { application, config } = client(false);
   return application.getAuthCodeUrl({
