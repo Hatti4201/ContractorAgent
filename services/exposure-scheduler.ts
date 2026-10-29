@@ -1,6 +1,7 @@
-import { exposureState, loadExposureConfig, runExposure } from "@/services/exposure-run";
+import { loadExposureConfig, readExposureState, runExposure } from "@/services/exposure-run";
 import { getPrisma } from "@/lib/prisma";
-import { shouldScanNow } from "@/services/mail-schedule";
+import { isWithinScanWindow, shouldScanNow } from "@/services/mail-schedule";
+import { isExposureBlockerReason } from "@/services/exposure-rules";
 
 // Same pattern as the mail scheduler: a short tick, and the decision made from the last run time.
 // Settings are re-read every tick, so a change saved on /exposure takes effect without a restart.
@@ -10,8 +11,11 @@ const globalForScheduler = globalThis as unknown as { exposureTimer?: ReturnType
 
 async function tick() {
   const config = await loadExposureConfig();
-  const state = await exposureState();
-  if (!shouldScanNow(new Date(), state.lastRunAt, config.window)) return;
+  const state = await readExposureState();
+  const now = new Date();
+  const scheduled = shouldScanNow(now, state.lastRunAt, config.window);
+  const blocked = isExposureBlockerReason(state.lastError) && isWithinScanWindow(now, config.window);
+  if (!scheduled && !blocked) return;
   await runExposure();
 }
 

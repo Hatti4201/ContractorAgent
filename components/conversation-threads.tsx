@@ -1,9 +1,11 @@
 "use client";
 
-import { Bot, CheckCircle2, CircleUserRound, ShieldAlert } from "lucide-react";
+import { Bot, CheckCircle2, CircleUserRound, LoaderCircle, Send, ShieldAlert } from "lucide-react";
 import Link from "next/link";
+import { useFormStatus } from "react-dom";
 import { useMemo, useState } from "react";
-import { addConversationToPipeline, addExistingJobToPipeline } from "@/app/(protected)/conversations/actions";
+import { addConversationToPipeline, addExistingJobToPipeline, sendConversationReply } from "@/app/(protected)/conversations/actions";
+import { OpenConversationMessageButton, ProcessConversationButton } from "@/components/process-conversation-button";
 
 export type ConversationThread = {
   id: string;
@@ -15,7 +17,7 @@ export type ConversationThread = {
   manualReview: boolean;
   summary: string;
   jobs: { id: string; title: string }[];
-  messages: { id: string; label: string; body: string; summary: string; tone: "incoming" | "outgoing"; at: string; replyDraft: string | null }[];
+  messages: { id: string; label: string; body: string; summary: string; tone: "incoming" | "outgoing"; at: string; replyDraft: string | null; replySentAt: string | null; replySendingAt: string | null; replySendError: string | null; inPipeline: boolean }[];
   replyStatus: "needs_reply" | "waiting_reply";
   manualReply: boolean;
   pipelineMessageId: string | null;
@@ -63,7 +65,13 @@ function StageProgress({ currentStage }: { currentStage: string }) {
   );
 }
 
-function Bubble({ label, body, summary, tone, at, replyDraft }: { label: string; body: string; summary: string; tone: "incoming" | "outgoing"; at: string; replyDraft: string | null }) {
+function ReplySendButton({ sending }: { sending: boolean }) {
+  const { pending } = useFormStatus();
+  const busy = pending || sending;
+  return <button className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60" disabled={busy} type="submit">{busy ? <LoaderCircle aria-hidden="true" className="animate-spin" size={13} /> : <Send aria-hidden="true" size={13} />}{busy ? "发送中…" : "确认发送"}</button>;
+}
+
+function Bubble({ id, label, body, summary, tone, at, replyDraft, replySentAt, replySendingAt, replySendError, inPipeline }: { id: string; label: string; body: string; summary: string; tone: "incoming" | "outgoing"; at: string; replyDraft: string | null; replySentAt: string | null; replySendingAt: string | null; replySendError: string | null; inPipeline: boolean }) {
   const [original, setOriginal] = useState(false);
   const visibleBody = original ? body : summary;
 
@@ -81,7 +89,8 @@ function Bubble({ label, body, summary, tone, at, replyDraft }: { label: string;
       <p className={`text-xs font-semibold ${tone === "incoming" ? "text-violet-700" : "text-emerald-700"}`}>{label}</p>
       <p className="mt-1 text-[11px] text-slate-400">{at}</p>
       <p className={`mt-2 text-sm leading-6 ${original ? "whitespace-pre-wrap" : "truncate"} ${tone === "incoming" ? "text-violet-950" : "text-emerald-950"}`}>{visibleBody}</p>
-      {replyDraft && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">待确认回复草稿：{replyDraft}</p>}
+      {replyDraft && tone === "incoming" && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><p className="font-semibold">回复草稿</p><p className="mt-1 whitespace-pre-wrap">{replyDraft}</p>{replySentAt ? <p className="mt-2 font-semibold text-emerald-700">已确认发送</p> : <form action={sendConversationReply.bind(null, id)}><ReplySendButton sending={Boolean(replySendingAt)} /></form>}<OpenConversationMessageButton messageId={id} />{replySendError && <p className="mt-2 text-red-700">发送失败：{replySendError}</p>}</div>}
+      {tone === "incoming" && !inPipeline && <ProcessConversationButton messageId={id} />}
       <p className={`mt-2 text-[11px] ${tone === "incoming" ? "text-violet-500" : "text-emerald-600"}`}>{original ? "双击返回 AI summary" : "双击查看原文"}</p>
     </div>
   );
@@ -130,7 +139,7 @@ export function ConversationThreads({ threads }: { threads: ConversationThread[]
             <div className="space-y-4 p-5 sm:p-6">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400"><CircleUserRound aria-hidden="true" size={14} /> Message thread</div>
               <div className="max-h-[500px] space-y-4 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/40 p-3" tabIndex={0}>
-                {thread.messages.map((message) => <Bubble key={message.id} body={message.body} label={message.label} summary={message.summary} tone={message.tone} at={message.at} replyDraft={message.replyDraft} />)}
+                {thread.messages.map((message) => <Bubble key={message.id} id={message.id} body={message.body} label={message.label} summary={message.summary} tone={message.tone} at={message.at} replyDraft={message.replyDraft} replySentAt={message.replySentAt} replySendingAt={message.replySendingAt} replySendError={message.replySendError} inPipeline={message.inPipeline} />)}
               </div>
 
               <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">

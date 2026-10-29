@@ -1,71 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { HoverLabel, labelScope } from "@/components/hover-label";
-
-type Task = {
-  id: string;
-  status: "RUNNING" | "DONE" | "FAILED";
-  label: string;
-  href: string | null;
-  progress: string | null;
-  error: string | null;
-  finishedAt: string | null;
-};
-
-const POLL_MS = 2000;
-// Covers the redirect and mount window, so a task that landed just before this tray existed still refreshes it.
-const GRACE_MS = 10_000;
-const tone: Record<Task["status"], string> = {
+import { useSharedTasks, type SharedTask } from "@/components/status-subscriber";
+const tone: Record<SharedTask["status"], string> = {
   RUNNING: "border-slate-200 bg-white",
   DONE: "border-emerald-200 bg-emerald-50",
   FAILED: "border-red-200 bg-red-50",
 };
 
 export function TaskTray() {
-  const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const tasks = useSharedTasks();
   const [dismissed, setDismissed] = useState<string[]>([]);
-  const seen = useRef(new Map<string, Task["status"]>());
   const dismissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const mountedAt = useRef(0);
-
-  useEffect(() => {
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    mountedAt.current = Date.now();
-
-    async function poll() {
-      try {
-        const response = await fetch("/api/tasks", { cache: "no-store" });
-        if (active && response.ok) {
-          const data = await response.json() as { tasks?: Task[] };
-          const next = data.tasks ?? [];
-          // A task that just ended has already written its results, so the open page needs new data.
-          // Work that finished before the first poll counts too: short tasks routinely beat it here,
-          // which used to leave the page showing the state it was redirected with.
-          let landed = false;
-          for (const task of next) {
-            const before = seen.current.get(task.id);
-            const justFinished = task.finishedAt !== null && Date.parse(task.finishedAt) >= mountedAt.current - GRACE_MS;
-            if (task.status !== "RUNNING" && (before === "RUNNING" || (before === undefined && justFinished))) landed = true;
-            seen.current.set(task.id, task.status);
-          }
-          // Refresh in place: the card appears where the user already is, and nothing moves under them.
-          if (landed) router.refresh();
-          setTasks(next);
-        }
-      } catch {
-        // A failed poll is not worth surfacing; the next tick retries.
-      }
-      if (active) timer = setTimeout(poll, POLL_MS);
-    }
-
-    poll();
-    return () => { active = false; clearTimeout(timer); };
-  }, [router]);
 
   useEffect(() => {
     for (const task of tasks) {

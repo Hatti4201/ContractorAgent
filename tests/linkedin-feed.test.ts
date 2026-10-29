@@ -29,9 +29,18 @@ test("the same page pasted as plain text still splits, only without profiles", (
   assert.ok(posts.every((post) => post.profileUrl === null));
 });
 
+test("a Discover page splits posts that only have Feed post and degree markers", () => {
+  const discover = `Feed post\n\nStaffing Group\nSen Akki • 2nd\n4m •\nJoin\nHello Professional, immediate C2C hiring opportunity for Sr. Java Developer.\n\nFeed post\n\nAnother Group\nPraveen Johnnyy • 3rd+\n2h •\nConnect\nHOTLIST C2C consultants available.`;
+  const posts = splitFeed(discover);
+  assert.deepEqual(posts.map((post) => post.author), ["Sen Akki", "Praveen Johnnyy"]);
+  assert.match(posts[0]!.body, /immediate C2C hiring opportunity/);
+  assert.match(posts[1]!.body, /HOTLIST/);
+});
+
 test("addresses written in mathematical bold are read as plain addresses", () => {
   const [, second] = splitFeed(page);
   assert.deepEqual(postEmails(second!.body), ["blake@example-vendor.test"]);
+  assert.deepEqual(postEmails("Share me @adam@fusiongs.com"), ["adam@fusiongs.com"]);
   assert.match(postIntakeText(second!), /Posted on LinkedIn by Blake Morgan — Lead - Talent Acquisition\nProfile: https:\/\/www\.linkedin\.com\/in\/ACoAAExampleBlake02$/);
 });
 

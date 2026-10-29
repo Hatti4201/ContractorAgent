@@ -163,6 +163,19 @@ enum FollowUpEvent {
   NO_ACTION
 }
 
+enum McpEventDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum AiIncidentDiagnosisStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 /// The role families the user maintains. Codes are the values stored on jobs and resumes, so a
 /// rename cascades and a family still in use cannot be deleted -- both enforced by the database.
 model RoleFamily {
@@ -345,6 +358,8 @@ model OutreachDraft {
   ccAddress           String?             @map("cc_address")
   subject             String
   body                String
+  /// Plain-text LinkedIn message; null on drafts created before LinkedIn outreach was added.
+  linkedinBody        String?             @map("linkedin_body")
   attachmentResumeId String              @map("attachment_resume_id")
   contextFingerprint String              @map("context_fingerprint")
   validation         Json
@@ -496,6 +511,9 @@ model ConversationMessage {
   messageType         String?  @map("message_type")
   summary             String?
   replyDraft          String?  @map("reply_draft")
+  replySentAt         DateTime? @map("reply_sent_at")
+  replySendingAt      DateTime? @map("reply_sending_at")
+  replySendError      String?   @map("reply_send_error")
   analyzedAt          DateTime? @map("analyzed_at")
   thread              ConversationThread @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   createdAt           DateTime @default(now()) @map("created_at")
@@ -599,6 +617,81 @@ model AutopilotControl {
   updatedAt       DateTime  @updatedAt @map("updated_at")
 
   @@map("autopilot_control")
+}
+
+model McpEventSubscription {
+  id                String   @id
+  principalHash     String   @map("principal_hash")
+  eventName         String   @map("event_name")
+  argumentsHash     String   @map("arguments_hash")
+  arguments         Json?
+  callbackUrl       String   @map("callback_url")
+  secretCiphertext  String   @map("secret_ciphertext")
+  expiresAt         DateTime? @map("expires_at")
+  verifiedAt        DateTime  @map("verified_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  deliveries        McpEventDelivery[]
+
+  @@unique([principalHash, eventName, callbackUrl, argumentsHash])
+  @@index([eventName, expiresAt])
+  @@map("mcp_event_subscriptions")
+}
+
+model McpEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique @map("event_id")
+  dedupeKey   String   @unique @map("dedupe_key")
+  name        String
+  data        Json
+  occurredAt  DateTime @map("occurred_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  deliveries  McpEventDelivery[]
+  diagnosis   AiIncidentDiagnosis?
+
+  @@index([name, occurredAt])
+  @@map("mcp_events")
+}
+
+model AiIncidentDiagnosis {
+  id                String                    @id @default(cuid())
+  eventId           String                    @unique @map("event_id")
+  status            AiIncidentDiagnosisStatus @default(PENDING)
+  severity          String?
+  summary           String?
+  diagnosis         String?
+  recommendedAction String?                   @map("recommended_action")
+  needsUser         Boolean?                  @map("needs_user")
+  safeToRecover     Boolean?                  @map("safe_to_recover")
+  codexHandoff      String?                   @map("codex_handoff")
+  model             String?
+  error             String?
+  attempts          Int                       @default(0)
+  lastAttemptAt     DateTime?                 @map("last_attempt_at")
+  completedAt       DateTime?                 @map("completed_at")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+  event             McpEvent                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("ai_incident_diagnoses")
+}
+
+model McpEventDelivery {
+  id             String                  @id @default(cuid())
+  eventId        String                  @map("event_id")
+  subscriptionId String                  @map("subscription_id")
+  status         McpEventDeliveryStatus  @default(PENDING)
+  attempts       Int                     @default(0)
+  lastAttemptAt  DateTime?               @map("last_attempt_at")
+  deliveredAt    DateTime?               @map("delivered_at")
+  error          String?
+  event          McpEvent                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  subscription   McpEventSubscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, subscriptionId])
+  @@index([status, lastAttemptAt])
+  @@map("mcp_event_deliveries")
 }
 
 /** One LinkedIn page the user pasted in whole, and what became of its posts. */

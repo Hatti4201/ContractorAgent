@@ -376,6 +376,7 @@ async function confirmIntakeRecord(id: string, markDuplicate: boolean, formData:
           ccAddress: formData.get("copyEmployer") === "true" ? (await currentEmployerCcSetting()).address : null,
           subject: draft.subject,
           body: draft.body,
+          linkedinBody: preview?.linkedinBody ?? draft.body,
           attachmentResumeId: selectedResumeId,
           contextFingerprint: outreachContextFingerprint(await loadOutreachContext()),
           validation: (mode !== analyzedMode

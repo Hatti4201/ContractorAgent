@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { IntakeStatus, TaskKind } from "@/app/generated/prisma/enums";
+import { IntakeStatus, SweepOutcome, TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { runIntakePipeline } from "@/services/intake-pipeline";
@@ -18,7 +18,13 @@ export async function discardIntake(id: string, returnTo = "/intake") {
   await requireAuth();
   const back = returnPages.has(returnTo) ? returnTo : "/intake";
   // Only an intake the user never confirmed can be dropped; a confirmed one owns an opportunity.
-  const removed = await getPrisma().jobIntake.deleteMany({ where: { id, status: IntakeStatus.PENDING } });
+  const removed = await getPrisma().$transaction(async (transaction) => {
+    await transaction.sweepPost.updateMany({
+      where: { intakeId: id },
+      data: { outcome: SweepOutcome.SKIPPED, reason: "You discarded this job before preparation finished." },
+    });
+    return transaction.jobIntake.deleteMany({ where: { id, status: IntakeStatus.PENDING } });
+  });
   if (removed.count !== 1) redirect(`${back}?error=missing`);
   revalidatePath("/intake");
   revalidatePath("/dashboard");

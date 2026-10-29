@@ -15,8 +15,8 @@ import { formatDate, formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { buildAttentionItems, configuredTimeZone, type AttentionItem } from "@/services/attention";
 import { parseFollowUpEvidence } from "@/services/follow-up";
-import { exposureState } from "@/services/exposure-run";
-import { mailScanState } from "@/services/follow-up-scan";
+import { readExposureState } from "@/services/exposure-run";
+import { readMailScanState } from "@/services/follow-up-scan";
 import { outlookConnected } from "@/services/outlook-auth";
 
 function dueLabel(item: AttentionItem) {
@@ -67,8 +67,8 @@ export default async function NeedsAttentionPage() {
       take: 50,
     }),
     outlookConnected(),
-    mailScanState(),
-    exposureState(),
+    readMailScanState(),
+    readExposureState(),
   ]);
   const timeZone = configuredTimeZone();
   const exposureErrorAt = exposure.lastErrorAt ?? exposure.updatedAt;

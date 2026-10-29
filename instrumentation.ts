@@ -5,4 +5,6 @@ export async function register() {
   startMailScanScheduler();
   const { startExposureScheduler } = await import("@/services/exposure-scheduler");
   startExposureScheduler();
+  const { startMcpEventBridge } = await import("@/services/mcp-events");
+  startMcpEventBridge();
 }

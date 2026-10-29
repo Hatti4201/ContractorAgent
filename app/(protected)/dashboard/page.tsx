@@ -36,6 +36,9 @@ import { deleteJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobIcon } from "@/components/delete-job-form";
 import { deletedNotice } from "@/lib/delete-notice";
 import { HoverLabel, labelScope } from "@/components/hover-label";
+import { AiCapacityNotice } from "@/components/ai-capacity-notice";
+import { AiIncidentNotice } from "@/components/ai-incident-notice";
+import { AiIncidentDiagnosisStatus } from "@/app/generated/prisma/enums";
 
 type Search = Record<string, string | string[] | undefined>;
 type Filters = {
@@ -130,7 +133,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     applicationTrack: stage ? { is: { currentStage: stage } } : undefined,
   };
   const database = getPrisma();
-  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue, waitingToSend, beingPrepared] = await Promise.all([
+  const [opportunities, vendors, recruiters, attentionOpportunities, emailAttentionCount, queue, waitingToSend, beingPrepared, latestIncident] = await Promise.all([
     database.opportunity.findMany({
       where,
       select: {
@@ -171,6 +174,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     queuedIntakes(database),
     listUnsentDrafts(database),
     listDraftsAwaitingOutlook(database),
+    database.aiIncidentDiagnosis.findFirst({
+      where: { status: { in: [AiIncidentDiagnosisStatus.PENDING, AiIncidentDiagnosisStatus.RUNNING, AiIncidentDiagnosisStatus.COMPLETED, AiIncidentDiagnosisStatus.FAILED] } },
+      orderBy: { updatedAt: "desc" },
+      select: { status: true, severity: true, summary: true, diagnosis: true, recommendedAction: true, needsUser: true, safeToRecover: true, codexHandoff: true, updatedAt: true, event: { select: { occurredAt: true, data: true } } },
+    }),
   ]);
   const summary = summarizeDashboard(opportunities, filters.range);
   const attentionCount = buildAttentionItems(attentionOpportunities, new Date(), configuredTimeZone()).length + emailAttentionCount;
@@ -244,6 +252,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       </div>
 
       <PendingStrip checkSent={checkSentDraftsNow} inOutlook={pending.inOutlook} preparing={pending.preparing} review={pending.review} />
+
+      <AiCapacityNotice />
+      <AiIncidentNotice incident={latestIncident} />
 
       <div className="mt-6"><ExposureCard /></div>
       <DashboardAutomationCards />

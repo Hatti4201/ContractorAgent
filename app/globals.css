@@ -34,3 +34,99 @@ body {
 a {
   text-underline-offset: 3px;
 }
+
+.exposure-radar {
+  z-index: 0;
+}
+
+.exposure-radar__ring,
+.exposure-radar__sweep,
+.exposure-radar__point,
+.exposure-radar__core {
+  position: absolute;
+  display: block;
+}
+
+.exposure-radar__ring {
+  inset: 0;
+  border: 1px solid rgb(56 189 248 / 0.52);
+  border-radius: 9999px;
+}
+
+.exposure-radar__ring--outer {
+  animation: exposure-radar-pulse 2.4s ease-out infinite;
+  box-shadow: 0 0 12px rgb(14 165 233 / 0.18);
+}
+
+.exposure-radar__ring--inner {
+  inset: 0.25rem;
+  border-color: rgb(125 211 252 / 0.36);
+}
+
+.exposure-radar__sweep {
+  top: 50%;
+  left: 50%;
+  width: 50%;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgb(2 132 199 / 0.9), transparent);
+  animation: exposure-radar-sweep 2.3s linear infinite;
+}
+
+.exposure-radar__point {
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 9999px;
+  background: #10b981;
+  box-shadow: 0 0 0 4px rgb(16 185 129 / 0.14), 0 0 10px rgb(16 185 129 / 0.9);
+  animation: exposure-radar-blink 1.8s ease-in-out infinite;
+}
+
+.exposure-radar__point--one {
+  top: 31%;
+  left: 29%;
+}
+
+.exposure-radar__point--two {
+  right: 22%;
+  bottom: 26%;
+  animation-delay: 0.6s;
+}
+
+.exposure-radar__core {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.95);
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.15), 0 0 12px rgb(255 255 255 / 0.9);
+  animation: exposure-radar-core 1.8s ease-in-out infinite;
+}
+
+@keyframes exposure-radar-pulse {
+  0%, 100% { transform: scale(0.93); opacity: 0.58; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes exposure-radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes exposure-radar-blink {
+  0%, 100% { transform: scale(0.75); opacity: 0.35; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+@keyframes exposure-radar-core {
+  0%, 100% { transform: scale(0.85); opacity: 0.7; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exposure-radar__ring--outer,
+  .exposure-radar__sweep,
+  .exposure-radar__point,
+  .exposure-radar__core {
+    animation: none;
+  }
+}

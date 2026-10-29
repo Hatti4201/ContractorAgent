@@ -25,7 +25,7 @@ export function scanWindowFromEnv(env: Partial<Record<string, string>> = process
     enabled: (env.MAIL_SCAN_ENABLED ?? "true").toLowerCase() !== "false",
     days: days.length ? [...new Set(days)] : [1, 2, 3, 4, 5],
     startHour: number(env.MAIL_SCAN_START_HOUR, 6, 0, 23),
-    endHour: number(env.MAIL_SCAN_END_HOUR, 15, 0, 23),
+    endHour: number(env.MAIL_SCAN_END_HOUR, 18, 0, 23),
     intervalMs: number(env.MAIL_SCAN_INTERVAL_MINUTES, 5, 5, 1440) * 60_000,
     timeZone: configuredTimeZone(env.APP_TIME_ZONE),
   };
@@ -53,4 +53,18 @@ export function isWithinScanWindow(now: Date, window: ScanWindow) {
 export function shouldScanNow(now: Date, lastRunAt: Date | null, window: ScanWindow) {
   if (!window.enabled || !isWithinScanWindow(now, window)) return false;
   return !lastRunAt || now.getTime() - lastRunAt.getTime() >= window.intervalMs;
+}
+
+/** Finds the next eligible wall-clock time for the dashboard countdown. */
+export function nextScheduledScanAt(now: Date, lastRunAt: Date | null, window: ScanWindow) {
+  if (!window.enabled) return null;
+  let candidate = new Date((lastRunAt?.getTime() ?? now.getTime()) + (lastRunAt ? window.intervalMs : 0));
+  if (candidate.getTime() < now.getTime()) candidate = new Date(now);
+
+  // The window is at most eight days away for the supported weekday schedule.
+  for (let minute = 0; minute <= 8 * 24 * 60; minute += 1) {
+    if (isWithinScanWindow(candidate, window) && (!lastRunAt || candidate.getTime() - lastRunAt.getTime() >= window.intervalMs)) return candidate;
+    candidate = new Date(candidate.getTime() + 60_000);
+  }
+  return null;
 }

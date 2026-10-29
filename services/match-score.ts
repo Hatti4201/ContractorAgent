@@ -155,7 +155,7 @@ export async function assessMatch(jobCase: JobCase, approvedContext: string, opt
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(openAiError("match scoring", response.status));
+  if (!response.ok) throw new Error(openAiError("match scoring", response.status, await response.text().catch(() => "")));
   const output = responseText(await response.json() as unknown);
   if (!output) throw new Error("OpenAI returned no match result.");
   try { return parseMatch(JSON.parse(output), requirements, approvedContext); } catch { throw new Error("OpenAI returned an invalid match result."); }

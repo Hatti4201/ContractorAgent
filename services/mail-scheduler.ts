@@ -1,27 +1,31 @@
 import { TaskKind } from "@/app/generated/prisma/enums";
 import { autoSendTick } from "@/services/auto-send";
 import { digestTick } from "@/services/digest-send";
-import { mailScanState, scanFollowUps } from "@/services/follow-up-scan";
+import { readMailScanState, scanFollowUps } from "@/services/follow-up-scan";
 import { syncOutlookConversations } from "@/services/conversation-sync";
+import { scanWindowFromEnv, shouldScanNow } from "@/services/mail-schedule";
 import { outlookConnected } from "@/services/outlook-auth";
 import { runTaskNow, TaskBusyError } from "@/services/tasks";
+import { recoverAiCapacityBlockedWork } from "@/services/ai-recovery";
 
 // The tick is short and the decision is made from the last run time, so a missed or delayed tick
 // self-corrects rather than drifting or firing a burst of catch-up scans.
 const TICK_MS = 5_000;
-const SCAN_TICK_MS = 5 * 60_000;
 
 // ponytail: the timer lives in this Node process, which is the ceiling for a local single-user app.
 // Stopping the server stops the schedule; the stale sweep reports whatever it interrupted.
 const globalForScheduler = globalThis as unknown as { mailScanTimer?: ReturnType<typeof setInterval> };
 
 async function tick() {
+  void recoverAiCapacityBlockedWork().catch((error) => {
+    console.error("AI capacity recovery failed:", error instanceof Error ? error.message : error);
+  });
   // Sending checks its own hours (see auto-send), so it runs ahead of the scan window check.
   await autoSendTick().catch(() => {});
   await digestTick().catch(() => {});
-  const state = await mailScanState();
+  const state = await readMailScanState();
   if (!state.autoScanEnabled) return;
-  if (state.lastRunAt && new Date().getTime() - state.lastRunAt.getTime() < SCAN_TICK_MS) return;
+  if (!shouldScanNow(new Date(), state.lastRunAt, scanWindowFromEnv())) return;
   // Without a connected mailbox there is nothing to scan, and recording a failure would be noise.
   if (!await outlookConnected()) return;
 

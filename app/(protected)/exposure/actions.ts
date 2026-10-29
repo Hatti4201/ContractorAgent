@@ -27,8 +27,14 @@ async function saveSettings(changes: Record<string, unknown>) {
 
 export async function runExposureNow(formData?: FormData) {
   await requireAuth();
+  const config = await loadExposureConfig();
+  if (config.mode === "off") return done(undefined, formData);
+  const claimed = await getPrisma().exposureState.updateMany({
+    where: { id: "primary", progress: null },
+    data: { progress: "Starting", stopRequested: false },
+  });
   // A run takes many minutes, so it continues after the response; the page follows its progress.
-  after(() => runExposure().then(() => undefined));
+  if (claimed.count === 1) after(() => runExposure().then(() => undefined));
   done(undefined, formData);
 }
 
@@ -66,7 +72,6 @@ export async function saveExposureSettings(formData: FormData) {
   await requireAuth();
   const text = (name: string) => String(formData.get(name) ?? "");
   await saveSettings({
-    keywords: text("keywords"),
     postedDate: text("postedDate"),
     employmentTypes: formData.getAll("employmentTypes").map(String),
     pageRatio: Number(text("pagePercent")) / 100,

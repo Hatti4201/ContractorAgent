@@ -30,6 +30,23 @@ test("W2 is taken only in the Bay Area or fully remote", () => {
   assert.equal(applicationDecision(facts({ engagements: ["W2"], remote: true, localOnly: true, locations: [at("Austin", "TX")] })).verdict, "SKIP", "Remote for Texas residents only is not remote for you.");
 });
 
+test("LinkedIn Sweep applies by default, prefers C2C, and skips only unreachable local or F2F roles", () => {
+  const dallasW2 = applicationDecision(facts({ engagements: ["W2"], locations: [at("Dallas", "TX")] }), "sweep");
+  assert.equal(dallasW2.verdict, "APPLY");
+  assert.equal(dallasW2.pitch, "W2");
+
+  const dallasBoth = applicationDecision(facts({ engagements: ["W2", "C2C"], locations: [at("Dallas", "TX")] }), "sweep");
+  assert.equal(dallasBoth.verdict, "APPLY");
+  assert.equal(dallasBoth.pitch, "C2C");
+
+  assert.equal(applicationDecision(facts({ engagements: ["FULL_TIME"], locations: [at("Plano", "TX")] }), "sweep").verdict, "APPLY");
+
+  assert.equal(applicationDecision(facts({ engagements: ["W2"], inPersonInterview: true, locations: [at("Blue Ash", "OH")] }), "sweep").verdict, "SKIP");
+  assert.equal(applicationDecision(facts({ engagements: ["W2"], inPersonInterview: true }), "sweep").verdict, "APPLY");
+  assert.equal(applicationDecision(facts({ engagements: ["W2"], inPersonInterview: true, locations: [at("San Jose", "CA")] }), "sweep").verdict, "APPLY");
+  assert.equal(applicationDecision(facts({ engagements: ["W2"], localOnly: true, locations: [at("Dallas", "TX")] }), "sweep").verdict, "SKIP");
+});
+
 test("C2C is taken anywhere unless the job is local-only or wants a face-to-face interview", () => {
   const atlanta = applicationDecision(facts({ engagements: ["C2C", "W2"], locations: [at("Alpharetta", "GA")] }));
   assert.equal(atlanta.verdict, "APPLY");
@@ -55,6 +72,8 @@ test("in the Bay Area a face-to-face interview and local-only are fine", () => {
 test("stored facts are read back and decided again, never trusted as a stored verdict", () => {
   const stored = { facts: facts({ engagements: ["W2"], locations: [at("Dallas", "TX")] }), decision: { verdict: "APPLY", reason: "tampered", pitch: null } };
   assert.equal(readStoredPolicy(stored)?.decision.verdict, "SKIP");
+  assert.equal(readStoredPolicy({ ...stored, mode: "sweep" })?.decision.pitch, "W2");
+  assert.equal(readStoredPolicy(stored, "sweep")?.decision.pitch, "W2");
   assert.equal(readStoredPolicy({ facts: { engagements: ["SOMETHING"] } }), null);
   assert.equal(readStoredPolicy(null), null);
 });

@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { ArrowUpRight, Bot, CircleAlert, MailSearch, Pause, Play } from "lucide-react";
+import { chooseAutopilotFromDashboard } from "@/app/(protected)/autopilot/actions";
+import { AutopilotSwitch } from "@/components/autopilot-switch";
 import { TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
 import { formatDateTime } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
+import { OutlookSendQueue } from "@/components/outlook-send-queue";
 import { autopilotOverview, currentAutopilotMode } from "@/services/auto-send";
+import { settingOfMode } from "@/services/autopilot";
 import { waitingForAutopilot } from "@/services/autopilot-batch";
-import { mailScanState } from "@/services/follow-up-scan";
+import { readMailScanState } from "@/services/follow-up-scan";
 import { scanWindowFromEnv } from "@/services/mail-schedule";
 
 const taskStatus = { status: TaskStatus.RUNNING } as const;
@@ -18,7 +22,7 @@ export async function DashboardAutomationCards() {
     autopilotOverview(),
     waitingForAutopilot(),
     database.task.findFirst({ where: { kind: { in: [TaskKind.AUTOPILOT_BATCH, TaskKind.AUTO_SEND] }, ...taskStatus }, orderBy: { startedAt: "desc" } }),
-    mailScanState(),
+    readMailScanState(),
     database.task.findFirst({ where: { kind: TaskKind.FOLLOW_UP_SCAN, ...taskStatus }, orderBy: { startedAt: "desc" } }),
   ]);
   const scanWindow = scanWindowFromEnv();
@@ -48,6 +52,10 @@ export async function DashboardAutomationCards() {
             <ArrowUpRight aria-hidden="true" size={15} />
           </Link>
         </div>
+        <div className="mt-3 border-t border-slate-200/80 pt-3">
+          <AutopilotSwitch choose={chooseAutopilotFromDashboard} current={settingOfMode(mode)} limit={overview.limit} />
+        </div>
+        <OutlookSendQueue overview={overview} compact />
       </section>
 
       <section aria-labelledby="mail-scan-dashboard-card" className={`rounded-xl border px-4 py-3 shadow-sm ${scanTone}`}>

@@ -18,17 +18,20 @@ import {
   decideCard,
   exposureConfig,
   isSubmitLabel,
+  isExposureDailyLimitReason,
   looksLikeIdentityQuestion,
   jobUrl,
   pagesToVisit,
   parsePageCount,
   quoteSupported,
+  randomExposureDelayMs,
   searchUrl,
   settledByHistory,
   type ExposureConfig,
 } from "@/services/exposure-rules";
 import { loadOutreachContext } from "@/services/outreach-context";
 import { calendarBoundary, configuredTimeZone } from "@/services/attention";
+import { isAiCapacityError } from "@/services/ai-capacity";
 
 type Database = PrismaClient | Prisma.TransactionClient;
 type Answer = { question: string; kind: string; answer: string; factQuote: string | null };
@@ -41,6 +44,12 @@ type JobOutcome =
 const STATE_ID = "primary";
 const STEP_PAUSE_MS = 1_500;
 
+const emptyExposureState = { id: STATE_ID, lastRunAt: null, lastSuccessAt: null, consecutiveFailures: 0, lastError: null, lastErrorAt: null, errorClearedAt: null, lastStopReason: null, lastStopAt: null, settings: null, stopRequested: false, progress: null, updatedAt: new Date(0) };
+
+export function readExposureState(database: Database = getPrisma()) {
+  return database.exposureState.findUnique({ where: { id: STATE_ID } }).then((state) => state ?? emptyExposureState);
+}
+
 export function exposureState(database: Database = getPrisma()) {
   return database.exposureState.upsert({ where: { id: STATE_ID }, create: { id: STATE_ID }, update: {} });
 }
@@ -48,6 +57,11 @@ export function exposureState(database: Database = getPrisma()) {
 export async function priorResults(database: Database, externalId: string) {
   const rows = await database.exposureApplication.findMany({ where: { channel: ExposureChannel.DICE, externalId }, select: { result: true } });
   return rows.map((row) => row.result);
+}
+
+async function priorReasons(database: Database, externalId: string) {
+  const rows = await database.exposureApplication.findMany({ where: { channel: ExposureChannel.DICE, externalId }, select: { reason: true } });
+  return rows.map((row) => row.reason);
 }
 
 const DAILY_RESET_HOUR = 5;
@@ -239,7 +253,9 @@ async function runPages(context: RunContext) {
   let failuresInARow = 0;
   const seen = new Set<string>();
 
-  for (const keyword of config.keywords) {
+  const keywordGroups = config.profileBatches.flatMap((batch) => batch.keywords.map((keyword) => ({ keyword, roleFamily: batch.roleFamily })));
+  for (const group of keywordGroups.length ? keywordGroups : config.keywords.map((keyword) => ({ keyword, roleFamily: "" }))) {
+    const keyword = group.keyword;
     let totalPages = 1;
     for (let pageNumber = 1; pageNumber <= pagesToVisit(totalPages, config.pageRatio, config.maxPages); pageNumber += 1) {
       await context.checkStop();
@@ -267,7 +283,8 @@ async function runPages(context: RunContext) {
           summary.stopReason = `Daily limit reached (${today}/${config.dailyLimit}). The limit resets daily at 5:00 AM local time; the next run will continue after the reset.`;
           return;
         }
-        if (settledByHistory(await priorResults(database, card.guid), config.mode)) continue;
+        const previous = await priorResults(database, card.guid);
+        if (settledByHistory(previous, config.mode, await priorReasons(database, card.guid))) continue;
 
         const decision = decideCard(card, config.titleBlacklist, config.companyBlacklist);
         if (!decision.apply) {
@@ -280,12 +297,23 @@ async function runPages(context: RunContext) {
         if (outcome.result === "BLOCKED") throw new Error(outcome.reason);
 
         if (outcome.result === ExposureResult.FAILED) {
+          if (isExposureDailyLimitReason(outcome.reason)) {
+            summary.stopReason = "Dice's daily application limit was reached. The next run will continue after the daily reset.";
+            return;
+          }
           failuresInARow += 1;
           summary.failed += 1;
           await record(database, { guid: card.guid, title: decision.title, company: decision.company, result: outcome.result, reason: outcome.reason, answers: outcome.answers });
+          if (isAiCapacityError(outcome.reason)) {
+            summary.stopReason = "OpenAI quota or rate limit blocked this run. The next run will retry after AI access recovers.";
+            return;
+          }
           if (failuresInARow >= config.maxConsecutiveFailures) throw new Error(`${failuresInARow} applications failed in a row. Last: ${outcome.reason}`);
           const verdict = await superviseFailure(config.supervisorModel, { jobTitle: decision.title, reason: outcome.reason, history: outcome.history, pageExcerpt: outcome.pageExcerpt, failuresInARow })
-            .catch(() => ({ decision: "skip_job" as const, reason: "Supervisor unavailable." }));
+            .catch((error) => {
+              if (isAiCapacityError(error)) throw error;
+              return { decision: "skip_job" as const, reason: "Supervisor unavailable." };
+            });
           if (verdict.decision === "stop_run") throw new Error(`Supervisor stopped the run: ${verdict.reason}`);
         } else {
           failuresInARow = 0;
@@ -303,8 +331,9 @@ async function runPages(context: RunContext) {
           if (outcome.result === ExposureResult.SKIPPED) continue;
         }
         // rules/exposure.md §6: space applications out instead of firing them back to back.
-        await context.progress(`${where} · waiting ${config.jobDelaySeconds}s before the next job`);
-        await pause(config.jobDelayMs);
+        const delayMs = randomExposureDelayMs(config.jobDelaySeconds);
+        await context.progress(`${where} · waiting ${Math.round(delayMs / 1000)}s before the next job`);
+        await pause(delayMs);
       }
     }
   }
@@ -320,12 +349,13 @@ export function exposureRunning(state?: { progress: string | null }) {
 
 /** The effective settings: what was saved on the /exposure page, on top of the .env defaults. */
 export async function loadExposureConfig(database: Database = getPrisma()) {
-  return exposureConfig((await exposureState(database)).settings);
+  return exposureConfig((await readExposureState(database)).settings);
 }
 
 /** One pass over the configured searches. Returns null when the channel is off or a run is already going. */
 export async function runExposure(): Promise<RunSummary | null> {
   const database = getPrisma();
+  await exposureState(database);
   const config = await loadExposureConfig(database);
   if (config.mode === "off" || globalForExposure.exposureRunning) return null;
   globalForExposure.exposureRunning = true;

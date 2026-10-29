@@ -53,8 +53,18 @@ export function responseText(value: unknown) {
   return parts.join("") || null;
 }
 
-export function openAiError(label: string, status: number) {
-  if (status === 429) return `OpenAI ${label} failed: API quota or rate limit exceeded (HTTP 429). Check OpenAI usage and billing.`;
+export function openAiError(label: string, status: number, responseBody = "") {
+  const normalized = responseBody.toLowerCase();
+  const providerCode = /"code"\s*:\s*"([^\"]+)"/i.exec(responseBody)?.[1];
+  if (status === 429 && (providerCode === "insufficient_quota" || /insufficient[_ ]quota|(?:current|available) quota|quota exhausted|exceeded.*quota|billing|credits? exhausted/.test(normalized))) {
+    const code = providerCode ? `, ${providerCode}` : "";
+    return `OpenAI ${label} failed: API quota/credits exhausted (HTTP 429${code}). Check OpenAI billing and available credits. [OPENAI_API_QUOTA_EXHAUSTED]`;
+  }
+  if (status === 429 && (providerCode === "rate_limit_exceeded" || /rate[_ ]limit|too many requests/.test(normalized))) {
+    const code = providerCode ? `, ${providerCode}` : "";
+    return `OpenAI ${label} failed: API rate limit reached (HTTP 429${code}). Check usage limits and retry later. [OPENAI_API_RATE_LIMITED]`;
+  }
+  if (status === 429) return `OpenAI ${label} failed: API quota/credits or rate limit unavailable (HTTP 429). Check OpenAI billing, credits, and usage limits. [OPENAI_API_429]`;
   if (status === 401) return `OpenAI ${label} failed: API key rejected (HTTP 401).`;
   if (status === 403) return `OpenAI ${label} failed: API access denied (HTTP 403).`;
   return `OpenAI ${label} failed with status ${status}.`;
@@ -86,7 +96,7 @@ export async function analyzeJobText(input: AnalyzerInput, options: AnalyzerOpti
     const delay = Number.isFinite(retryAfter) ? Math.min(retryAfter * 1_000, 10_000) : (attempt + 1) * 1_000;
     await new Promise((resolve) => setTimeout(resolve, delay));
   }
-  if (!response.ok) throw new Error(openAiError("analysis", response.status));
+  if (!response.ok) throw new Error(openAiError("analysis", response.status, await response.text().catch(() => "")));
   const data: unknown = await response.json();
   const output = responseText(data);
   if (!output) throw new Error("OpenAI returned no structured analysis.");

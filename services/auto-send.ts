@@ -4,6 +4,7 @@ import { autoSendPlan, modeFromSetting, rankForSending, resolveAutopilotSettings
 import { outlookAccessToken, outlookSendToken } from "@/services/outlook-auth";
 import { approvalIssue, preparedDraft } from "@/services/outlook-draft";
 import { configuredTimeZone } from "@/services/attention";
+import { isManualReplyAfterDraft, stopAutomaticSendAfterManualReply } from "@/services/manual-reply";
 import { OutlookGraphError, outlookDraftStatus, sendOutlookDraft } from "@/services/outlook-graph";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
 import { runTaskNow, TaskBusyError, type TaskHandle } from "@/services/tasks";
@@ -14,6 +15,20 @@ const DAY_MS = 24 * 60 * 60_000;
 // accepted it, and a second send is the one mistake this feature must not make.
 const STALE_SENDING_MS = 15 * 60_000;
 const LATE_GRACE_MS = 60 * 60_000;
+
+const sendableScheduledWhere = {
+  autoSendState: { in: [AutoSendState.SCHEDULED, AutoSendState.SENDING] },
+  outlookState: OutlookDraftState.CREATED,
+  outlookMessageId: { not: null },
+  sentConfirmedAt: null,
+};
+
+const reviewedDraftWhere = {
+  outlookState: OutlookDraftState.CREATED,
+  outlookMessageId: { not: null },
+  sentConfirmedAt: null,
+  OR: [{ autoSendState: null }, { autoSendState: AutoSendState.SHADOW }],
+};
 
 /**
  * Due, and sendable at this hour. Inside the send window anything due goes. Outside it only what fell
@@ -43,7 +58,7 @@ export async function scheduleAutoSend(opportunityId: string, mode?: AutopilotMo
   if (!plan) return;
   const database = getPrisma();
   const last = await database.outreachDraft.findFirst({
-    where: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: { not: null } },
+    where: { ...sendableScheduledWhere, autoSendState: AutoSendState.SCHEDULED, autoSendAt: { not: null } },
     orderBy: { autoSendAt: "desc" },
     select: { autoSendAt: true },
   });
@@ -113,9 +128,35 @@ export function sentInLastDay(now = new Date()) {
 
 /** Drafts the user can explicitly send from Draft mode after reviewing them in Outlook. */
 export function reviewedDraftCount() {
-  return getPrisma().outreachDraft.count({
-    where: { outlookState: OutlookDraftState.CREATED, outlookMessageId: { not: null }, sentConfirmedAt: null, OR: [{ autoSendState: null }, { autoSendState: AutoSendState.SHADOW }] },
+  return getPrisma().outreachDraft.count({ where: reviewedDraftWhere });
+}
+
+/** Releases reviewed Draft-mode emails into the same staggered queue used by Send mode. */
+export async function scheduleReviewedDrafts(now = new Date()) {
+  const database = getPrisma();
+  const drafts = await database.outreachDraft.findMany({
+    where: reviewedDraftWhere,
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
   });
+  const last = await database.outreachDraft.findFirst({
+    where: { ...sendableScheduledWhere, autoSendState: AutoSendState.SCHEDULED, autoSendAt: { not: null } },
+    orderBy: { autoSendAt: "desc" },
+    select: { autoSendAt: true },
+  });
+  let lastScheduledAt = last?.autoSendAt ?? null;
+  let scheduled = 0;
+  for (const draft of drafts) {
+    const autoSendAt = staggeredAutoSendAt(now, lastScheduledAt);
+    const result = await database.outreachDraft.updateMany({
+      where: { id: draft.id, ...reviewedDraftWhere },
+      data: { autoSendState: AutoSendState.SCHEDULED, autoSendAt, autoSendError: null },
+    });
+    if (result.count !== 1) continue;
+    lastScheduledAt = autoSendAt;
+    scheduled += 1;
+  }
+  return scheduled;
 }
 
 async function settle(id: string, state: AutoSendState, error: string | null) {
@@ -141,7 +182,7 @@ export async function sendDueDrafts(task?: TaskHandle, now = new Date(), onlyId?
   const { dailyLimit: limit } = settings;
   const quota = sendQuota(limit, await sentInLastDay(now));
   const scheduled = await database.outreachDraft.findMany({
-    where: { ...(onlyId ? { id: onlyId } : {}), autoSendState: AutoSendState.SCHEDULED, autoSendAt: onlyId ? { lte: now } : dueFilter(now, settings) },
+    where: { ...(onlyId ? { id: onlyId } : {}), ...sendableScheduledWhere, autoSendState: AutoSendState.SCHEDULED, autoSendAt: onlyId ? { lte: now } : dueFilter(now, settings) },
     select: { id: true, opportunityId: true, autoSendAt: true, opportunity: { select: { matchScore: true } } },
   });
   const { sending: ranked, overLimit } = rankForSending(scheduled.map((draft) => ({ ...draft, matchScore: draft.opportunity.matchScore })), quota);
@@ -190,6 +231,30 @@ export async function sendDueDrafts(task?: TaskHandle, now = new Date(), onlyId?
       continue;
     }
 
+    if (draft.outlookDraftCreatedAt) {
+      const manualReply = await database.conversationMessage.findFirst({
+        where: {
+          direction: "outgoing",
+          receivedAt: { gt: draft.outlookDraftCreatedAt },
+          outlookMessageId: { not: draft.outlookMessageId },
+          thread: {
+            OR: [
+              { jobs: { some: { opportunityId } } },
+              { recruiterEmail: { equals: draft.toAddress, mode: "insensitive" } },
+            ],
+          },
+        },
+        orderBy: { receivedAt: "asc" },
+        select: { direction: true, outlookMessageId: true, receivedAt: true },
+      });
+      if (manualReply && isManualReplyAfterDraft(manualReply, draft.outlookDraftCreatedAt, draft.outlookMessageId)) {
+        if (await stopAutomaticSendAfterManualReply(opportunityId, database)) {
+          await task?.progress("Skipped: you already replied in Outlook");
+          continue;
+        }
+      }
+    }
+
     try {
       const status = await outlookDraftStatus(draft.outlookMessageId, { accessToken: readToken });
       if (status === "GONE") { await settle(id, AutoSendState.CANCELLED, "The draft was deleted in Outlook, so nothing was sent."); continue; }
@@ -221,9 +286,10 @@ export async function sendDueDrafts(task?: TaskHandle, now = new Date(), onlyId?
 /** One scheduler tick's worth: nothing, and no task row, unless a send is actually due. */
 export async function autoSendTick(now = new Date()) {
   await recoverStaleSends(now);
-  if (await currentAutopilotMode() !== "send") return;
+  // In Draft mode, a reviewed batch is an explicit release into this same queue.
+  if (await currentAutopilotMode() === "off") return;
   const settings = await autopilotSettings();
-  if (!await getPrisma().outreachDraft.count({ where: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: dueFilter(now, settings) } })) return;
+  if (!await getPrisma().outreachDraft.count({ where: { ...sendableScheduledWhere, autoSendState: AutoSendState.SCHEDULED, autoSendAt: dueFilter(now, settings) } })) return;
   try {
     await runTaskNow(
       { kind: TaskKind.AUTO_SEND, label: "Sending the autopilot's emails", subjectId: "auto-send", href: "/autopilot" },
@@ -254,7 +320,7 @@ export async function autopilotOverview(now = new Date()) {
     autopilotSettings(),
     sentInLastDay(now),
     database.outreachDraft.findMany({
-      where: { autoSendState: { in: [AutoSendState.SCHEDULED, AutoSendState.SENDING] } },
+      where: sendableScheduledWhere,
       select: overviewSelection,
       orderBy: { autoSendAt: "asc" },
     }),

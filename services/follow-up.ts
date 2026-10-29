@@ -135,7 +135,7 @@ export async function analyzeFollowUpEmail(input: AnalyzerInput, options: Analyz
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(openAiError("analysis", response.status));
+  if (!response.ok) throw new Error(openAiError("analysis", response.status, await response.text().catch(() => "")));
   const output = responseText(await response.json() as unknown);
   if (!output) throw new Error("OpenAI returned no structured analysis.");
   let analysis: FollowUpAnalysis;

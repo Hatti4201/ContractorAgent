@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import {
-  ArrowUpRight, Ban, BadgeCheck, CircleX, Clock, Eye, EyeOff, ExternalLink, FileText, Loader, Mail, MailOpen, MailX, MapPin, MapPinOff, Percent, Repeat,
-  ListRestart, RotateCcw, Send, ShieldAlert, TriangleAlert, UserRound, Users, Briefcase, Copy, CircleHelp, type LucideIcon,
+  ArrowUpRight, Ban, BadgeCheck, CircleX, Clock, Eye, EyeOff, ExternalLink, FileText, Loader, MailOpen, MailX, MapPin, MapPinOff, Percent, Repeat,
+  ListRestart, RotateCcw, RotateCw, Send, ShieldAlert, TriangleAlert, UserRound, Users, Briefcase, Copy, CircleHelp, type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -21,6 +21,7 @@ export type SweepPostView = {
   postUrl: string | null;
   explicitC2C: boolean;
   email: string | null;
+  reachOut: string | null;
   match: number | null;
   group: SweepGroup;
   /** The full sentence, shown on hover only. */
@@ -28,6 +29,8 @@ export type SweepPostView = {
   tag: { kind: ReasonKind; label: string } | null;
   excerpt: string;
   restore: boolean;
+  outlookLink: string | null;
+  resweepable: boolean;
 };
 
 export type SweepCardView = {
@@ -67,9 +70,26 @@ const tagIcons: Record<ReasonKind, LucideIcon> = {
   eligibility: ShieldAlert, resume: FileText, experience: Clock, duplicate: Copy, "email-check": BadgeCheck, failed: CircleX, review: Eye, other: CircleHelp,
 };
 
-function PostRow({ post }: { post: SweepPostView }) {
+function PostRow({ post, onResweep, resweeping }: { post: SweepPostView; onResweep: () => void; resweeping: boolean }) {
   const [showPost, setShowPost] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [reachOutCopied, setReachOutCopied] = useState(false);
   const TagIcon = post.tag ? tagIcons[post.tag.kind] : null;
+
+  async function copyProfileUrl() {
+    if (!post.profileUrl) return;
+    await navigator.clipboard.writeText(post.profileUrl);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function copyReachOut() {
+    if (!post.reachOut) return;
+    await navigator.clipboard.writeText(post.reachOut);
+    setReachOutCopied(true);
+    window.setTimeout(() => setReachOutCopied(false), 1500);
+  }
+
   return (
     <li
       className={`${labelScope.row} cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-slate-300`}
@@ -100,12 +120,14 @@ function PostRow({ post }: { post: SweepPostView }) {
         {/* The row's actions sit too close for floating labels, so theirs appear beside each icon. */}
         <span className="ml-auto flex shrink-0 items-center gap-0.5 text-slate-400">
           {post.profileUrl
-            ? <a aria-label={`${post.author} on LinkedIn`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={post.profileUrl} rel="noreferrer" target="_blank" title={post.author}><UserRound aria-hidden="true" size={15} /><HoverLabel scope="row" text="发帖人" variant="inline" /></a>
+            ? <button aria-label={`Copy LinkedIn profile link for ${post.author}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" onClick={copyProfileUrl} title={copied ? "已复制" : "复制发帖人链接"} type="button"><UserRound aria-hidden="true" size={15} /><HoverLabel scope="row" text={copied ? "已复制" : "复制链接"} variant="inline" /></button>
             : <span aria-label={post.author} className="flex items-center gap-1 p-1" title={post.author}><UserRound aria-hidden="true" size={15} /><HoverLabel scope="row" text="发帖人" variant="inline" /></span>}
-          {post.email && <a aria-label={`Email ${post.email}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={`mailto:${post.email}`} title={post.email}><Mail aria-hidden="true" size={15} /><HoverLabel scope="row" text="发邮件" variant="inline" /></a>}
+          {post.email && post.reachOut && <button aria-label={`Copy LinkedIn reach-out for ${post.title}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" onClick={copyReachOut} title={reachOutCopied ? "已复制" : "复制 Reach-out 草稿"} type="button"><Copy aria-hidden="true" size={15} /><HoverLabel scope="row" text={reachOutCopied ? "已复制" : "复制草稿"} variant="inline" /></button>}
           {post.postUrl && post.explicitC2C && <a aria-label={`Open original LinkedIn post for ${post.title}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={post.postUrl} rel="noreferrer" target="_blank" title="原帖留言"><ExternalLink aria-hidden="true" size={15} /><HoverLabel scope="row" text="原帖留言" variant="inline" /></a>}
+          {post.outlookLink && (post.group === "outlook" || post.group === "soon") && <a aria-label={`Open Outlook draft for ${post.title}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={post.outlookLink} rel="noreferrer" target="_blank" title="打开 Outlook 草稿"><MailOpen aria-hidden="true" size={15} /><HoverLabel scope="row" text="打开 Outlook 草稿" variant="inline" /></a>}
           {post.href && <Link aria-label={`Open job detail for ${post.title}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" href={post.href} title="Job detail"><ArrowUpRight aria-hidden="true" size={15} /><HoverLabel scope="row" text="Job detail" variant="inline" /></Link>}
           {post.restore && <form action={`/api/sweep/post/${post.id}/restore`} method="post"><button aria-label={`Restore ${post.title} to autopilot`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900" title="Restore to autopilot" type="submit"><RotateCcw aria-hidden="true" size={15} /><HoverLabel scope="row" text="恢复自动处理" variant="inline" /></button></form>}
+          {post.resweepable && <button aria-label={`Resweep ${post.title}`} className="flex items-center gap-1 rounded p-1 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50" disabled={resweeping} onClick={onResweep} title="重新扫描" type="button"><RotateCw aria-hidden="true" className={resweeping ? "animate-spin" : ""} size={15} /><HoverLabel scope="row" text="重新扫描" variant="inline" /></button>}
         </span>
       </div>
       {showPost && <p className="mt-2 whitespace-pre-wrap border-t border-slate-100 pt-2 text-xs text-slate-600">{post.excerpt}</p>}
@@ -120,15 +142,31 @@ export function SweepCard({ sweep, latest }: { sweep: SweepCardView; latest: boo
   const first = latest ? order.slice(0, 2).find((group) => byGroup[group].length) ?? null : null;
   const [open, setOpen] = useState<SweepGroup | null>(first);
   const [resweeping, setResweeping] = useState(false);
+  const [resweepPostId, setResweepPostId] = useState<string | null>(null);
+  const [resweepNotice, setResweepNotice] = useState<string | null>(null);
+  const [resweepError, setResweepError] = useState<string | null>(null);
+  const stale = sweep.error?.startsWith("The server stopped before this sweep finished.") ?? false;
+  const error = stale
+    ? "The server stopped before this sweep finished. Use Resume this sweep to continue the saved posts; paste the page again only for posts that were never recorded."
+    : sweep.error;
 
-  async function resweep(scope: "all" | "needs") {
+  async function resweep(scope: "all" | "needs", postId?: string) {
     setResweeping(true);
+    setResweepPostId(postId ?? null);
+    setResweepNotice(null);
+    setResweepError(null);
     try {
-      const response = await fetch(`/api/sweep/${sweep.id}/resweep`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope }) });
-      if (!response.ok) throw new Error();
+      const response = await fetch(`/api/sweep/${sweep.id}/resweep`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope, ...(postId ? { postId } : {}) }) });
+      const result = await response.json().catch(() => ({})) as { count?: unknown; error?: unknown };
+      if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not start the resweep.");
+      const count = typeof result.count === "number" ? result.count : 0;
+      setResweepNotice(count ? (postId ? "Resweep started for this job." : `Resweep started for ${count} unfinished jobs.`) : "No unfinished jobs can be resumed from this sweep.");
       router.refresh();
+    } catch (error) {
+      setResweepError(error instanceof Error ? error.message : "Could not start the resweep.");
     } finally {
       setResweeping(false);
+      setResweepPostId(null);
     }
   }
 
@@ -176,15 +214,17 @@ export function SweepCard({ sweep, latest }: { sweep: SweepCardView; latest: boo
             <RotateCcw aria-hidden="true" className={resweeping ? "animate-spin" : ""} size={14} />
             <HoverLabel scope="bar" text="仅重扫" />
           </button>
-          <button aria-label={`Resweep all unfinished jobs in ${sweep.when}`} className="relative flex items-center gap-1 rounded-full border border-transparent bg-white/60 px-2.5 py-1 text-sm font-semibold text-slate-700 hover:border-slate-300 disabled:opacity-50" disabled={resweeping || sweep.running} onClick={() => resweep("all")} title="Retry all unfinished jobs from this sweep" type="button">
-            <ListRestart aria-hidden="true" size={14} />
-            <HoverLabel scope="bar" text="全部重扫" />
+          <button aria-label={`${stale ? "Resume" : "Resweep all unfinished jobs"} in ${sweep.when}`} className="relative flex items-center gap-1 rounded-full border border-transparent bg-white/60 px-2.5 py-1 text-sm font-semibold text-slate-700 hover:border-slate-300 disabled:opacity-50" disabled={resweeping || sweep.running} onClick={() => resweep("all")} title={stale ? "Resume this interrupted sweep" : "Retry all unfinished jobs from this sweep"} type="button">
+            <ListRestart aria-hidden="true" className={resweeping ? "animate-spin" : ""} size={14} />
+            <HoverLabel scope="bar" text={stale ? "恢复这次扫描" : "全部重扫"} />
           </button>
         </span>
       </div>
-      {sweep.error && <p className="mt-2 flex items-center gap-1.5 text-sm text-red-700" title={sweep.error}><CircleX aria-hidden="true" size={15} /><span className="truncate">{sweep.error}</span></p>}
+      {error && <p className="mt-2 flex items-center gap-1.5 text-sm text-red-700" title={error}><CircleX aria-hidden="true" size={15} /><span className="truncate">{error}</span></p>}
+      {resweepNotice && <p className="mt-2 flex items-center gap-1.5 text-sm text-emerald-700" role="status"><BadgeCheck aria-hidden="true" size={15} /><span>{resweepNotice}</span></p>}
+      {resweepError && <p className="mt-2 flex items-center gap-1.5 text-sm text-red-700" role="alert"><CircleX aria-hidden="true" size={15} /><span>{resweepError}</span></p>}
       {open && byGroup[open].length > 0 && (
-        <ul className="mt-2 space-y-1.5">{byGroup[open].map((post) => <PostRow key={post.id} post={post} />)}</ul>
+        <ul className="mt-2 space-y-1.5">{byGroup[open].map((post) => <PostRow key={post.id} post={post} onResweep={() => resweep("all", post.id)} resweeping={resweeping && resweepPostId === post.id} />)}</ul>
       )}
     </section>
   );

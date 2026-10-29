@@ -2,13 +2,9 @@ import { EmploymentType } from "@/app/generated/prisma/enums";
 import type { JobCase } from "@/services/job-case";
 
 /**
- * The user's own rules for which jobs to apply to, applied to every source, mail and LinkedIn alike:
- * - W2 (and full-time or 1099, which are employment too) only in the Bay Area, or fully remote;
- * - C2C anywhere, since the user relocates, but not where the job takes local candidates only;
- * - outside the Bay Area, never a job that requires a face-to-face interview.
- *
- * A model reads the facts out of the post (see post-triage.ts); this file decides. Keeping the
- * decision in code is what lets every skip name its exact reason.
+ * The user's application rules. Mail keeps the original conservative rules; LinkedIn Sweep uses
+ * the user's broad default-apply rules and only skips explicit local or unreachable F2F conflicts.
+ * A model reads facts out of the post (see post-triage.ts); this file decides and names each skip.
  */
 
 export const engagements = ["C2C", "W2", "CONTRACT_1099", "FULL_TIME"] as const;
@@ -30,6 +26,8 @@ export type PolicyFacts = {
 export type PolicyDecision =
   | { verdict: "APPLY"; reason: string; pitch: "C2C" | "W2" | null }
   | { verdict: "SKIP"; reason: string; pitch: null };
+
+export type PolicyMode = "default" | "sweep";
 
 const bayAreaCities = new Set([
   // San Francisco, San Mateo
@@ -72,11 +70,25 @@ function place(facts: PolicyFacts) {
 
 const label: Record<Engagement, string> = { C2C: "C2C", W2: "W2", CONTRACT_1099: "1099", FULL_TIME: "full-time" };
 
-export function applicationDecision(facts: PolicyFacts): PolicyDecision {
+export function applicationDecision(facts: PolicyFacts, mode: PolicyMode = "default"): PolicyDecision {
   const offers = new Set(facts.engagements);
   const where = place(facts);
   const onlyW2 = offers.size === 1 && offers.has("W2");
   const onlyC2C = offers.size === 1 && offers.has("C2C");
+
+  if (mode === "sweep") {
+    const hasNamedLocation = facts.locations.some((item) => item.city || item.state);
+    const isBayArea = facts.locations.some(inBayArea);
+    if (facts.localOnly && hasNamedLocation && !isBayArea && !facts.relocationAccepted) {
+      return { verdict: "SKIP", reason: `Local candidates only, in ${where}, with no relocation.`, pitch: null };
+    }
+    if (facts.inPersonInterview && hasNamedLocation && !isBayArea) {
+      return { verdict: "SKIP", reason: `Face-to-face interview required in ${where}, outside the Bay Area.`, pitch: null };
+    }
+    const pitch = offers.has("C2C") ? "C2C" : offers.has("W2") ? "W2" : null;
+    if (!offers.size) return { verdict: "APPLY", reason: `Contract type not stated in ${where}; ask whether W2 or C2C.`, pitch: null };
+    return { verdict: "APPLY", reason: `${[...offers].map((item) => label[item]).join("/")} in ${where}; no exclusion matched.`, pitch };
+  }
 
   if (facts.locations.some(inBayArea)) {
     return { verdict: "APPLY", reason: `Bay Area (${where}).`, pitch: onlyW2 ? "W2" : onlyC2C ? "C2C" : null };
@@ -127,18 +139,19 @@ export function readPolicyFacts(value: unknown): PolicyFacts | null {
   };
 }
 
-/** What the pipeline keeps on the intake: the facts it was given and the decision they led to. */
-export type StoredPolicy = { facts: PolicyFacts; decision: PolicyDecision };
+/** What the pipeline keeps on the intake: the facts, rule set, and decision they produced. */
+export type StoredPolicy = { facts: PolicyFacts; decision: PolicyDecision; mode: PolicyMode };
 
-export function readStoredPolicy(value: unknown): StoredPolicy | null {
+export function readStoredPolicy(value: unknown, fallbackMode: PolicyMode = "default"): StoredPolicy | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const facts = readPolicyFacts((value as { facts?: unknown }).facts);
-  return facts ? { facts, decision: applicationDecision(facts) } : null;
+  const stored = value as { facts?: unknown; mode?: unknown };
+  const facts = readPolicyFacts(stored.facts);
+  const mode: PolicyMode = stored.mode === "sweep" || stored.mode === "default" ? stored.mode : fallbackMode;
+  return facts ? { facts, decision: applicationDecision(facts, mode), mode } : null;
 }
 
 /**
- * Outside the Bay Area a job offering both is taken as C2C, and the email has to say so; the rules
- * decide that, not whichever arrangement the post happened to list first.
+ * The rules decide the arrangement, not whichever one the post happened to list first.
  */
 export function pitchedCase(analysis: JobCase, decision: PolicyDecision): JobCase {
   const target = decision.pitch === "C2C" ? EmploymentType.C2C : decision.pitch === "W2" ? EmploymentType.W2 : null;

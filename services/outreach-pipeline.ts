@@ -1,5 +1,5 @@
 import type { Prisma } from "@/app/generated/prisma/client";
-import { ActivityType, ApplicationStage, OutlookDraftState, OutreachDraftStatus, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
+import { ActivityType, ApplicationStage, AutoSendState, OutlookDraftState, OutreachDraftStatus, TaskKind, TaskStatus } from "@/app/generated/prisma/enums";
 import { getPrisma } from "@/lib/prisma";
 import { inspectOutlookSentMessage, replyModes } from "@/services/outlook-graph";
 
@@ -17,6 +17,7 @@ const draftSelection = {
   subject: true,
   toAddress: true,
   outlookMessageId: true,
+  autoSendState: true,
   outlookWebLink: true,
   outlookDraftCreatedAt: true,
   attachmentResume: { select: { filePath: true, roleFamily: true } },
@@ -69,6 +70,9 @@ export async function archiveIfSent(draft: UnsentDraft, accessToken: string, dat
         sentSubject: result.subject,
         sentBody: result.body,
         sentToAddress: result.toAddress,
+        ...(draft.autoSendState === AutoSendState.SCHEDULED
+          ? { autoSendState: AutoSendState.CANCELLED, autoSendError: "You sent it from Outlook before the autopilot did." }
+          : {}),
       },
     });
     const stageChanged = draft.opportunity.applicationTrack?.currentStage === ApplicationStage.DISCOVERED;

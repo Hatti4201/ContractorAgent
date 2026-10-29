@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createRoleFamily, deleteResume, registerResume, setResumeActive, setRoleFamilyActive, updateRoleFamilyDescription } from "@/app/(protected)/resumes/actions";
+import { createRoleFamily, deleteResume, registerResume, renameResume, setResumeActive, setRoleFamilyActive, updateRoleFamilyDescription } from "@/app/(protected)/resumes/actions";
 import { DeleteResumeForm } from "@/components/delete-job-form";
 import { InlineDescription } from "@/components/inline-description";
 import { ResumeUpload } from "@/components/resume-upload";
@@ -57,21 +57,29 @@ function FamilyCard({ family, resumes, fileChecks, draftUses, back }: {
             const file = fileChecks.get(resume.id);
             const uses = draftUses.get(resume.id) ?? 0;
             return (
-              <li className={`rounded-lg border px-3 py-2 text-sm ${resume.active ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`} key={resume.id}>
+              <li className={`rounded-lg border px-3 py-2 text-sm transition-[background-color,border-color,box-shadow] duration-300 ease-out motion-reduce:transition-none ${resume.active ? "border-emerald-300 bg-emerald-50 shadow-sm" : "border-slate-200 bg-white"}`} key={resume.id}>
                 <div className="flex items-center gap-3">
                   <span className="min-w-0 flex-1 truncate font-medium text-slate-900" title={`${resume.name} · ${resume.version}`}>{resume.name} · {resume.version}</span>
                   {/* One switch shows the state and changes it; turning one on turns the family's other one off. */}
                   <form action={setResumeActive.bind(null, resume.id, !resume.active)}>
                     <button aria-checked={resume.active} aria-label={`Use ${resume.name} ${resume.version} for ${family.label}`} className="flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2" role="switch" type="submit">
-                      <span className={`relative block h-5 w-9 shrink-0 rounded-full transition-colors ${resume.active ? "bg-emerald-600" : "bg-slate-300"}`}>
-                        <span className={`absolute left-0.5 top-0.5 block h-4 w-4 rounded-full bg-white shadow transition-transform ${resume.active ? "translate-x-4" : "translate-x-0"}`} />
+                      <span className={`relative block h-5 w-9 shrink-0 rounded-full transition-colors duration-300 ease-out motion-reduce:transition-none ${resume.active ? "bg-emerald-600" : "bg-slate-300"}`}>
+                        <span className={`absolute left-0.5 top-0.5 block h-4 w-4 rounded-full bg-white shadow transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${resume.active ? "translate-x-4" : "translate-x-0"}`} />
                       </span>
-                      <span className={`w-12 whitespace-nowrap text-left text-xs font-semibold ${resume.active ? "text-emerald-800" : "text-slate-500"}`}>{resume.active ? "In use" : "Off"}</span>
+                      <span className={`w-12 whitespace-nowrap text-left text-xs font-semibold transition-colors duration-300 ease-out motion-reduce:transition-none ${resume.active ? "text-emerald-800" : "text-slate-500"}`}>{resume.active ? "In use" : "Off"}</span>
                     </button>
                   </form>
                   <details className="relative">
                     <summary aria-label={`More actions for ${resume.name} ${resume.version}`} className="cursor-pointer list-none rounded px-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900">⋯</summary>
                     <div className="absolute right-0 z-10 mt-1 w-48 rounded-lg border border-slate-200 bg-white p-1 text-sm shadow-lg">
+                      <details>
+                        <summary className="cursor-pointer list-none rounded px-3 py-2 text-slate-700 hover:bg-slate-50">Rename</summary>
+                        <form action={renameResume.bind(null, resume.id)} className="border-t border-slate-100 p-2">
+                          <label className="sr-only" htmlFor={`rename-${resume.id}`}>New resume name</label>
+                          <input className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100" defaultValue={resume.name} id={`rename-${resume.id}`} maxLength={200} name="name" required />
+                          <button className="mt-2 w-full rounded bg-slate-950 px-2 py-1.5 text-xs font-medium text-white hover:bg-slate-800" type="submit">Save name</button>
+                        </form>
+                      </details>
                       {uses ? (
                         <p className="px-3 py-2 text-xs text-slate-500">Used by {uses} draft{uses === 1 ? "" : "s"}, so it can&apos;t be deleted. Switch it off instead.</p>
                       ) : (

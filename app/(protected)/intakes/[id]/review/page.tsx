@@ -6,7 +6,6 @@ import { EmploymentType, IntakeStatus, type OutreachMode } from "@/app/generated
 import { JobCaseReviewForm } from "@/components/job-case-review-form";
 import { HoverLabel, labelScope } from "@/components/hover-label";
 import { MatchReportSection } from "@/components/match-report";
-import { SweepRefresher } from "@/components/sweep-paste";
 import { currentMatchThreshold } from "@/services/auto-send";
 import { formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
@@ -34,7 +33,6 @@ export default async function IntakeReviewPage({ params }: { params: Promise<{ i
     return (
       <div className="mx-auto flex max-w-3xl items-center justify-center gap-3 px-6 py-16 text-slate-500">
         {/* The analysis lands on its own; look again every few seconds rather than asking for a reload. */}
-        <SweepRefresher active />
         <Link aria-label="Back to jobs" className={`relative ${labelScope.bar} rounded-lg p-1.5 hover:bg-slate-100 hover:text-slate-900`} href="/jobs" title="Back to jobs"><ArrowLeft aria-hidden="true" size={18} /><HoverLabel scope="bar" text="返回岗位" /></Link>
         <Loader aria-hidden="true" className="animate-spin" size={20} />
         <span className="text-sm" role="status">Preparing</span>

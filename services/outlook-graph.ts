@@ -190,6 +190,16 @@ export async function sendOutlookDraft(messageIdValue: string, options: FetchOpt
   await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/send`, { method: "POST" }, options, [202]);
 }
 
+/** Sends the confirmed AI reply in the original Outlook conversation. Needs Mail.Send. */
+export async function sendOutlookReply(messageIdValue: string, comment: string, options: FetchOptions) {
+  const body = comment.trim();
+  if (!body || body.length > 2_000) throw new Error("The reply draft is empty or too long.");
+  await graphRequest(`/me/messages/${encodeURIComponent(messageIdValue)}/reply`, {
+    method: "POST",
+    body: JSON.stringify({ comment: body }),
+  }, options, [202]);
+}
+
 export async function removeOutlookDraftMessage(messageIdValue: string, options: FetchOptions) {
   await deleteMessage(messageIdValue, options);
 }

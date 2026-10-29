@@ -3,24 +3,23 @@ import { analyzeInboxMessage, discardIntake } from "@/app/(protected)/intake/act
 import { DiscardIntakeForm } from "@/components/delete-job-form";
 import { BookmarkletInstall } from "@/components/bookmarklet-install";
 import { IntakeForm } from "@/components/intake-form";
+import { IntakeInboxSync } from "@/components/intake-inbox-sync";
 import { bookmarkletKey, requireAuth } from "@/lib/auth";
 import { formatDateTime, formatEnum, intakeStates } from "@/lib/job-values";
+import { cachedInbox } from "@/services/intake-inbox";
 import { queuedIntakes } from "@/services/intake-queue";
 import { getPrisma } from "@/lib/prisma";
-import { outlookAccessToken, outlookConnected } from "@/services/outlook-auth";
-import { listOutlookInboxMessages } from "@/services/outlook-graph";
+import { outlookConnected } from "@/services/outlook-auth";
 import { intakeScanMode } from "@/services/intake-scan";
 
 export default async function IntakePage({ searchParams }: { searchParams: Promise<{ discarded?: string; error?: string }> }) {
   await requireAuth();
   const [{ discarded, error }, queue] = await Promise.all([searchParams, queuedIntakes()]);
 
-  // FR-01's fourth source: the mailbox is only ever listed here, and only the user starts an import.
-  let inbox: Awaited<ReturnType<typeof listOutlookInboxMessages>> = [];
-  let inboxFailed = false;
-  if (await outlookConnected()) {
-    try { inbox = (await listOutlookInboxMessages({ accessToken: await outlookAccessToken() })).slice().reverse(); } catch { inboxFailed = true; }
-  }
+  // FR-01's fourth source: the mailbox is listed in the background; the page never waits for Graph.
+  const inboxSnapshot = cachedInbox();
+  const inbox = inboxSnapshot?.messages ?? [];
+  const connected = await outlookConnected();
   const scanMode = intakeScanMode();
   const decisions = scanMode === "off" ? [] : await getPrisma().intakeScanDecision.findMany({
     orderBy: { createdAt: "desc" },
@@ -86,8 +85,10 @@ export default async function IntakePage({ searchParams }: { searchParams: Promi
 
       <section className="mt-8 scroll-mt-6" id="inbox">
         <h2 className="text-xl font-semibold text-slate-950">Take one straight from your inbox</h2>
-        {inboxFailed && <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Outlook could not be read just now. Reconnect and reload.</p>}
-        {!inboxFailed && inbox.length === 0 && <p className="mt-4 text-sm text-slate-600"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> to list recent mail here.</p>}
+        <IntakeInboxSync connected={connected} />
+        {!connected && <p className="mt-4 text-sm text-slate-600"><Link className="font-medium text-emerald-700 underline" href="/outlook">Connect Outlook</Link> to list recent mail here.</p>}
+        {connected && !inboxSnapshot && <p className="mt-4 text-sm text-slate-600">Loading recent mail…</p>}
+        {connected && inboxSnapshot && inbox.length === 0 && <p className="mt-4 text-sm text-slate-600">No recent inbox mail.</p>}
         {inbox.length > 0 && (
           <ul className="mt-4 max-h-96 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 pr-3">
             {inbox.map((message) => (

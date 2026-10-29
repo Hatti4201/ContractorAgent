@@ -57,7 +57,7 @@ export const jobCaseKeys = [
  * Built per call rather than once: the families are rows the user maintains, and strict mode is what
  * keeps the model from inventing one that does not exist.
  */
-export const jobCaseJsonSchema = (roleFamilies: readonly string[]) => ({
+export const jobCaseJsonSchema = (roleFamilies: readonly string[] = []) => ({
   type: "object",
   additionalProperties: false,
   properties: {
@@ -77,7 +77,7 @@ export const jobCaseJsonSchema = (roleFamilies: readonly string[]) => ({
     localRequirement: nullableString(),
     relocationRequirement: nullableString(),
     clearanceRequirement: nullableString(),
-    roleFamily: nullableEnum(roleFamilies),
+    roleFamily: roleFamilies.length ? nullableEnum(roleFamilies) : nullableString(),
     confidence: { type: "number" },
     warnings: {
       type: "array",

@@ -6,7 +6,7 @@ import test from "node:test";
 import { OutreachMode } from "../app/generated/prisma/enums";
 import nextConfig from "../next.config";
 import { decryptOutlookTokenCache, encryptOutlookTokenCache } from "../services/outlook-crypto";
-import { createOutlookMessageDraft, inboxIntakeText, inspectOutlookSentMessage, listOutlookInboxMessages } from "../services/outlook-graph";
+import { createOutlookMessageDraft, inboxIntakeText, inspectOutlookSentMessage, listOutlookInboxMessages, sendOutlookReply } from "../services/outlook-graph";
 
 test("OAuth callback query parameters are omitted from development logs", () => {
   const logging = nextConfig.logging;
@@ -33,6 +33,10 @@ test("Outlook Inbox parsing keeps only bounded validated message metadata", asyn
     preview: "Fictional preview.",
     fromAddress: "recruiter@example.invalid",
     receivedAt: new Date("2026-08-22T12:00:00.000Z"),
+    conversationId: "message-1",
+    toAddresses: [],
+    sentAt: null,
+    webLink: null,
   }]);
 });
 
@@ -48,14 +52,15 @@ test("an incremental scan asks for mail from the watermark on, oldest first", as
 
   const since = new Date("2026-08-22T08:00:00.000Z");
   const incremental = await listOutlookInboxMessages({ accessToken: "fictional-access-token", fetcher }, since);
-  assert.ok(urls[0]?.includes(encodeURIComponent("receivedDateTime ge 2026-08-22T08:00:00.000Z")),
+  assert.equal(new URL(`https://graph.microsoft.com${urls[0]}`).searchParams.get("$filter"), "receivedDateTime ge 2026-08-22T08:00:00.000Z",
     "The watermark is pushed into the query, and inclusively: Graph times are whole seconds, so a message sharing the last decided one's second must still come back.");
-  assert.ok(urls[0]?.includes("receivedDateTime%20asc"));
+  assert.equal(new URL(`https://graph.microsoft.com${urls[0]}`).searchParams.get("$orderby"), "receivedDateTime asc");
   assert.deepEqual(incremental.map((message) => message.id), ["older", "newer"], "Walking forward requires oldest first.");
 
   const firstEver = await listOutlookInboxMessages({ accessToken: "fictional-access-token", fetcher });
-  assert.ok(!urls[1]?.includes("$filter"), "A first scan has no watermark to filter on.");
-  assert.ok(urls[1]?.includes("receivedDateTime%20desc"), "A first scan takes the newest page.");
+  const firstUrl = new URL(`https://graph.microsoft.com${urls[1]}`);
+  assert.equal(firstUrl.searchParams.get("$filter"), null, "A first scan has no watermark to filter on.");
+  assert.equal(firstUrl.searchParams.get("$orderby"), "receivedDateTime desc", "A first scan takes the newest page.");
   assert.deepEqual(firstEver.map((message) => message.id), ["newer", "older"], "That page is still returned oldest first.");
 });
 
@@ -258,4 +263,26 @@ test("a mail taken from the inbox carries the headers a paste would have lost", 
   assert.match(text, /^Subject: Fictional Java role$/m);
   assert.match(text, /^Sent: 2026-09-01T17:30:00\.000Z$/m);
   assert.ok(text.endsWith("Are you available for a 6 month contract?"));
+});
+
+test("a confirmed Outlook reply uses the original message and never sends an empty body", async () => {
+  let request: { url: string; method: string; body: unknown; authorization: string | null } | null = null;
+  const fetcher = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    request = {
+      url: String(input),
+      method: init.method ?? "GET",
+      body: typeof init.body === "string" ? JSON.parse(init.body) : null,
+      authorization: new Headers(init.headers).get("authorization"),
+    };
+    return new Response(null, { status: 202 });
+  }) as typeof fetch;
+
+  await sendOutlookReply("message-1", "  Thanks — I confirm my interest.  ", { accessToken: "fictional-access-token", fetcher });
+  assert.deepEqual(request, {
+    url: "https://graph.microsoft.com/v1.0/me/messages/message-1/reply",
+    method: "POST",
+    body: { comment: "Thanks — I confirm my interest." },
+    authorization: "Bearer fictional-access-token",
+  });
+  await assert.rejects(() => sendOutlookReply("message-1", "   ", { accessToken: "fictional-access-token", fetcher }));
 });

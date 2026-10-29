@@ -2,7 +2,7 @@
 
 import { CircleAlert, CircleX, FileText, Loader, ScanSearch, UserRoundX } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
+import { useMemo, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
 import { HoverLabel, labelScope } from "@/components/hover-label";
 import { clipboardHtmlToText, MAX_SWEEP_LENGTH, splitFeed } from "@/lib/linkedin-feed";
 
@@ -108,15 +108,4 @@ export function SweepPaste() {
       </div>
     </form>
   );
-}
-
-/** Keeps the page current while a sweep or its jobs are still running. */
-export function SweepRefresher({ active }: { active: boolean }) {
-  const router = useRouter();
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => router.refresh(), 5000);
-    return () => clearInterval(timer);
-  }, [active, router]);
-  return null;
 }

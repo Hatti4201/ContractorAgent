@@ -6,6 +6,7 @@ import { OutlookDraftState, OutreachMode, TaskKind, TaskStatus } from "@/app/gen
 import { deleteJob } from "@/app/(protected)/jobs/actions";
 import { DeleteJobIcon } from "@/components/delete-job-form";
 import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
+import { LinkedinOutreachDraft } from "@/components/linkedin-outreach-draft";
 import { Toast } from "@/components/toast";
 import { formatDateTime, formatEnum } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
@@ -126,6 +127,10 @@ export default async function OutreachDraftPage({ params, searchParams }: { para
         )}
         {locked && <p className="mt-2 text-xs text-slate-600">Locked</p>}
       </section>
+
+      <div className="mt-6">
+        <LinkedinOutreachDraft body={draft.linkedinBody ?? draft.body} fallback={!draft.linkedinBody} />
+      </div>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-800">Outlook preview</h2>

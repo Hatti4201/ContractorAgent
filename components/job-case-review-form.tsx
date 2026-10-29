@@ -1,5 +1,6 @@
 import { Check, Clock, Copy, ExternalLink, FileText, Mail, OctagonX, PenLine, Reply, ShieldAlert, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
 import { OpenInOutlookButton } from "@/components/open-in-outlook-button";
+import { LinkedinOutreachDraft } from "@/components/linkedin-outreach-draft";
 import type { JobSourceType } from "@/app/generated/prisma/enums";
 import type { IntakePreview } from "@/services/intake-pipeline";
 import {
@@ -109,6 +110,7 @@ export function JobCaseReviewForm({
             Body
             <textarea className={`${inputClass} font-mono text-sm leading-6`} defaultValue={preview.body} maxLength={10_000} name="draftBody" rows={10} />
           </label>
+          <LinkedinOutreachDraft body={preview.linkedinBody ?? preview.body} fallback={!preview.linkedinBody} />
         </fieldset>
       )}
 

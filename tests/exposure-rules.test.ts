@@ -8,12 +8,16 @@ import {
   decideCard,
   defaultSettings,
   exposureConfig,
+  isExpectedExposureStop,
+  isExposureDailyLimitReason,
+  isExposureBlockerReason,
   parseSettings,
   isSubmitLabel,
   looksLikeIdentityQuestion,
   pagesToVisit,
   parsePageCount,
   quoteSupported,
+  randomExposureDelayMs,
   searchUrl,
   settledByHistory,
 } from "@/services/exposure-rules";
@@ -23,6 +27,7 @@ test("the channel is off unless the user turns it on, with rules/exposure.md 1.1
   assert.equal(config.mode, "off");
   assert.equal(config.window.enabled, false);
   assert.deepEqual(config.keywords, ["java"]);
+  assert.deepEqual(config.profileBatches, [{ roleFamily: "JAVA_BACKEND", keywords: ["java"] }]);
   assert.equal(config.postedDate, "ONE");
   assert.deepEqual(config.employmentTypes, ["CONTRACTS", "THIRD_PARTY"]);
   assert.equal(config.maxPages, 7);
@@ -43,13 +48,22 @@ test("the Dice daily limit resets at 5:00 AM in the configured timezone", () => 
   assert.equal(afterReset.toISOString(), "2026-10-02T12:00:00.000Z");
 });
 
+test("Dice application delays are randomized from 30 to 120 seconds", () => {
+  assert.equal(randomExposureDelayMs(30, 0), 30_000);
+  assert.equal(randomExposureDelayMs(30, 1), 120_000);
+  assert.equal(randomExposureDelayMs(60, 0), 60_000);
+  assert.equal(randomExposureDelayMs(0, 0), 30_000);
+});
+
 test("settings saved on the page win over .env, and bad values fall back instead of breaking a run", () => {
   const env = { EXPOSURE_MODE: "dryrun", EXPOSURE_DAILY_LIMIT: "80" };
   const config = exposureConfig({ mode: "on", keywords: ["java", "spring boot"], dailyLimit: 40, startHour: 9, endHour: 17, days: [1, 3] }, env);
   assert.equal(config.mode, "on");
-  assert.deepEqual(config.keywords, ["java", "spring boot"]);
+  assert.deepEqual(config.keywords, ["java"]);
+  assert.deepEqual(config.profileBatches, [{ roleFamily: "JAVA_BACKEND", keywords: ["java"] }]);
   assert.equal(config.dailyLimit, 40);
   assert.deepEqual([config.window.startHour, config.window.endHour, config.window.days], [9, 17, [1, 3]]);
+  assert.deepEqual(exposureConfig({ profileBatches: [{ roleFamily: "REACT", keywords: ["react"] }, { roleFamily: "PYTHON_AI", keywords: ["python"] }] }, env).profileBatches, [{ roleFamily: "JAVA_BACKEND", keywords: ["java"] }]);
   const defaults = defaultSettings(env);
   const parsed = parseSettings({ mode: "sometimes", dailyLimit: -5, postedDate: "YESTERDAY", employmentTypes: [], keywords: " , ", titleBlacklist: "" }, defaults);
   assert.equal(parsed.mode, "dryrun");
@@ -115,6 +129,21 @@ test("a login page or a human check stops the run", () => {
   assert.match(blockerOn(page("https://www.dice.com/jobs", "Please verify you are human")) ?? "", /human check/);
   assert.match(blockerOn(page("https://www.dice.com/jobs", "", ["https://www.google.com/recaptcha/api2/anchor"])) ?? "", /human check/);
   assert.equal(blockerOn(page("https://www.dice.com/job-applications/abc/wizard", "Resume & Cover Letter")), null);
+});
+
+test("login and human-check messages are resumable pauses", () => {
+  assert.equal(isExposureBlockerReason("Dice asked for a login. Sign in again in the exposure Chrome window."), true);
+  assert.equal(isExposureBlockerReason("Dice showed a human check. Solve it in the exposure Chrome window, then run again."), true);
+  assert.equal(isExposureBlockerReason("Chrome did not answer Page.navigate in time after 3 attempts."), true);
+  assert.equal(isExposureBlockerReason("Supervisor stopped the run: Chrome failed to respond to navigation, indicating a browser-wide issue."), true);
+  assert.equal(isExposureBlockerReason("The apply button had not loaded; retried next run."), false);
+});
+
+test("expected Dice pauses are round endings, while browser failures stay failures", () => {
+  assert.equal(isExpectedExposureStop("Per-run limit reached (30). The next run will continue."), true);
+  assert.equal(isExpectedExposureStop("Dice's daily application limit was reached."), true);
+  assert.equal(isExposureDailyLimitReason("Application cannot be submitted because Dice's daily application limit has been reached."), true);
+  assert.equal(isExpectedExposureStop("Chrome did not answer Page.navigate in time after 3 attempts."), false);
 });
 
 test("success is Dice's own confirmation, and submit is recognised whatever the model calls it", () => {

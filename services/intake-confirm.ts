@@ -148,6 +148,7 @@ export async function autoConfirmIntake(intakeId: string, analysis: JobCase, pre
         // Outlook checks again at draft time that this message really came from the recipient.
         replySourceMessageId,
         ...email,
+        linkedinBody: preview.linkedinBody ?? preview.body,
         // Same default the review screen starts from: C2C copies the employer, from local config only.
         ccAddress: analysis.employmentType === EmploymentType.C2C ? (await currentEmployerCcSetting()).address : null,
         attachmentResumeId: resumeId,

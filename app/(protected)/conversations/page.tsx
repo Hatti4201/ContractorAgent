@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { getPrisma } from "@/lib/prisma";
 import { formatDateTime } from "@/lib/job-values";
 import { setConversationScanEnabled, syncConversationsAction } from "./actions";
+import { readMailScanState } from "@/services/follow-up-scan";
 
 function displayJobTitle(titles: string[], subject: string) {
   const unique = [...new Set(titles.map((title) => title.trim()).filter(Boolean))];
@@ -17,7 +18,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
   const showAll = (await searchParams).all === "1";
   const database = getPrisma();
   const [state, rows, runningTask] = await Promise.all([
-    database.mailScanState.upsert({ where: { id: "primary" }, create: { id: "primary" }, update: {} }),
+    readMailScanState(),
     database.conversationThread.findMany({ where: showAll ? {} : { isRelevant: true, isHidden: false, messages: { some: { isHidden: false } } }, include: { messages: { where: { isHidden: false }, orderBy: { receivedAt: "asc" } }, jobs: { orderBy: { createdAt: "desc" }, take: 1, include: { opportunity: { select: { id: true, title: true } } } } }, orderBy: { lastMessageAt: "desc" }, take: 50 }),
     database.task.findFirst({ where: { kind: TaskKind.FOLLOW_UP_SCAN, subjectId: { in: ["conversation-sync", "follow-up-scan"] }, status: TaskStatus.RUNNING }, select: { id: true, progress: true } }),
   ]);
@@ -34,7 +35,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
     jobs: row.jobs.map((job) => ({ id: job.opportunity.id, title: job.opportunity.title })),
     pipelineMessageId: row.messages.findLast((message) => message.direction === "incoming")?.id ?? null,
     pipeline: row.messages.map((message) => intakeByMessage.get(message.outlookMessageId)).find(Boolean) ? (() => { const intake = row.messages.map((message) => intakeByMessage.get(message.outlookMessageId)).find(Boolean)!; const preview = intake.preview && typeof intake.preview === "object" && !Array.isArray(intake.preview) ? intake.preview as { hold?: unknown } : null; return { id: intake.id, status: intake.status, title: intake.opportunity?.title ?? null, stage: intake.opportunity?.applicationTrack?.currentStage ?? null, hold: typeof preview?.hold === "string" ? preview.hold : null }; })() : null,
-    messages: row.messages.map((message) => ({ id: message.id, label: message.direction === "incoming" ? row.recruiterName ?? "Recruiter" : "Hatti Ma", body: message.body, summary: message.summary ?? message.bodyPreview, tone: message.direction === "incoming" ? "incoming" as const : "outgoing" as const, at: formatDateTime(message.receivedAt), replyDraft: message.replyDraft })),
+    messages: row.messages.map((message) => ({ id: message.id, label: message.direction === "incoming" ? row.recruiterName ?? "Recruiter" : "Hatti Ma", body: message.body, summary: message.summary ?? message.bodyPreview, tone: message.direction === "incoming" ? "incoming" as const : "outgoing" as const, at: formatDateTime(message.receivedAt), replyDraft: message.replyDraft, replySentAt: message.replySentAt?.toISOString() ?? null, replySendingAt: message.replySendingAt?.toISOString() ?? null, replySendError: message.replySendError, inPipeline: Boolean(intakeByMessage.get(message.outlookMessageId)) })),
   }));
   return <div className="mx-auto max-w-7xl px-6 py-10">
     <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Recruiter inbox</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Conversations</h1><p className="mt-2 max-w-2xl text-slate-600">Outlook 负责收发；这里显示 recruiter/job 对话和 Agent 摘要。</p></div>

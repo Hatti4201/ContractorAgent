@@ -119,6 +119,22 @@ export async function setResumeActive(id: string, active: boolean) {
   redirect("/resumes?saved=1");
 }
 
+export async function renameResume(id: string, formData: FormData) {
+  await requireAuth();
+  const name = text(formData, "name", 200);
+  if (!name) redirect("/resumes?error=fields");
+  const database = getPrisma();
+  const resume = await database.resume.findUnique({ where: { id }, select: { id: true, version: true } });
+  if (!resume) redirect("/resumes?error=missing");
+  if (await database.resume.findUnique({ where: { name_version: { name, version: resume.version } }, select: { id: true } })) {
+    redirect("/resumes?error=duplicate");
+  }
+  await database.resume.update({ where: { id }, data: { name } });
+  revalidatePath("/resumes");
+  revalidatePath("/jobs");
+  redirect("/resumes?saved=1");
+}
+
 export async function deleteResume(id: string) {
   await requireAuth();
   const database = getPrisma();

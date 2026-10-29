@@ -191,7 +191,7 @@ test("the daily limit falls back to a safe default on anything unreadable", () =
 test("the page's saved numbers win, one by one, over the environment", () => {
   const env = { MATCH_THRESHOLD: "60", AUTO_SEND_DAILY_LIMIT: "40", AUTO_SEND_START_TIME: "07:30", AUTO_SEND_END_TIME: "18:00" };
   assert.deepEqual(resolveAutopilotSettings(null, env), { threshold: 0.6, dailyLimit: 40, startTime: "07:30", endTime: "18:00" });
-  assert.deepEqual(resolveAutopilotSettings(null, {}), { threshold: 0.5, dailyLimit: 50, startTime: "06:00", endTime: "15:00" });
+  assert.deepEqual(resolveAutopilotSettings(null, {}), { threshold: 0.5, dailyLimit: 50, startTime: "06:00", endTime: "18:00" });
   assert.deepEqual(
     resolveAutopilotSettings({ matchThreshold: 0.3, dailySendLimit: null, sendStartTime: null, sendEndTime: null }, env),
     { threshold: 0.3, dailyLimit: 40, startTime: "07:30", endTime: "18:00" },
@@ -201,8 +201,8 @@ test("the page's saved numbers win, one by one, over the environment", () => {
 });
 
 test("the settings form takes whole numbers in range and names the first one that is not", () => {
-  const valid = { threshold: "30", dailyLimit: "50", sendStartTime: "06:00", sendEndTime: "15:00" };
-  assert.deepEqual(parseAutopilotSettings(valid), { threshold: 0.3, dailyLimit: 50, startTime: "06:00", endTime: "15:00" });
+  const valid = { threshold: "30", dailyLimit: "50", sendStartTime: "06:00", sendEndTime: "18:00" };
+  assert.deepEqual(parseAutopilotSettings(valid), { threshold: 0.3, dailyLimit: 50, startTime: "06:00", endTime: "18:00" });
   assert.deepEqual(parseAutopilotSettings({ ...valid, threshold: "101" }), { error: "threshold" });
   assert.deepEqual(parseAutopilotSettings({ ...valid, dailyLimit: "2.5" }), { error: "limit" });
   assert.deepEqual(parseAutopilotSettings({ ...valid, threshold: "" }), { error: "threshold" });

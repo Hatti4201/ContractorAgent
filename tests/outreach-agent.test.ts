@@ -13,6 +13,7 @@ import {
 import type { JobCase } from "../services/job-case";
 import {
   determineOutreachMode,
+  generateLinkedinOutreachContent,
   generateOutreachContent,
   validateOutreachContent,
   type OutreachInput,
@@ -185,6 +186,36 @@ test("every role family generates strict non-stored previews and validator block
     blocked.source.rawText = "Contact recruiter@example.invalid.evil instead.";
     const falsePositive = await validateOutreachContent(blocked, { subject: "Fictional", body: "Fictional body" }, { fetcher: async () => { throw new Error("AI must not run when recipient matching is unsafe."); } });
     assert.ok(falsePositive.issues.some((issue) => issue.field === "toAddress"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("LinkedIn outreach is plain text with square-bracket fields", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "contractor-agent-linkedin-"));
+  try {
+    const path = join(directory, "resume.pdf");
+    await writeFile(path, "%PDF-1.7\nlinkedin fixture");
+    const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { text?: { format?: { name?: string } } };
+      assert.equal(request.text?.format?.name, "linkedin_outreach_draft");
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ body: "Hi Example Recruiter,\n\n[Role] Fictional Java Engineer\n[Skills] Java, Spring Boot\n\nBest,\nExample Candidate" }) }), { status: 200 });
+    }) as typeof fetch;
+    const input: OutreachInput = {
+      mode: OutreachMode.FIRST_OUTREACH,
+      toAddress: "recruiter@example.invalid",
+      recruiterName: "Example Recruiter",
+      jobCase: jobCase("JAVA_BACKEND"),
+      resume: { id: "linkedin", name: "Fictional Java Resume", version: "v1", roleFamily: "JAVA_BACKEND", filePath: path, active: true },
+      source: { sourceType: JobSourceType.PLAIN_TEXT, originalSender: null, rawText: "Fictional role text." },
+      activityTypes: [],
+      activitySummary: [],
+      approvedContext: "Fictional candidate.",
+    };
+    const result = await generateLinkedinOutreachContent(input, { apiKey: "test-key", model: "test-model", fetcher });
+    assert.match(result.body, /^Hi Example Recruiter,/);
+    assert.match(result.body, /\[Role\]/);
+    assert.doesNotMatch(result.body, /\*\*/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

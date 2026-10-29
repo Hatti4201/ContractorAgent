@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Outlook Send Status Demo</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #f8fafc; color: #0f172a; }
+    main { width: min(720px, calc(100% - 32px)); margin: 48px auto; }
+    .card { overflow: hidden; border: 1px solid #bae6fd; border-radius: 24px; background: white; box-shadow: 0 16px 40px rgba(15, 23, 42, .08); }
+    .top { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; background: #f0f9ff; border-bottom: 1px solid #e0f2fe; }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 850; }
+    .mail-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: #dbeafe; color: #0369a1; font-size: 18px; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 12px; font-weight: 850; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 0 4px #a7f3d0; }
+    .body { padding: 24px 20px 18px; }
+    .hero { display: grid; grid-template-columns: 72px 1fr auto; align-items: center; gap: 15px; }
+    .plane-wrap { position: relative; display: grid; place-items: center; width: 72px; height: 72px; }
+    .plane-wrap::before, .plane-wrap::after { content: ""; position: absolute; border: 2px solid #38bdf8; border-radius: 50%; opacity: 0; animation: radar 2.1s ease-out infinite; }
+    .plane-wrap::before { inset: 5px; }
+    .plane-wrap::after { inset: -5px; animation-delay: 1s; }
+    .plane { position: relative; z-index: 1; display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; background: #e0f2fe; color: #0369a1; font-size: 29px; box-shadow: 0 0 0 7px #f0f9ff; animation: float 1.8s ease-in-out infinite; }
+    .hero h1 { margin: 0; font-size: 27px; letter-spacing: -.045em; }
+    .sub { display: flex; align-items: center; gap: 7px; margin-top: 5px; color: #64748b; font-size: 13px; }
+    .chip { padding: 3px 7px; border-radius: 999px; background: #e0f2fe; color: #075985; font-size: 10px; font-weight: 850; }
+    .timer { color: #0369a1; font-variant-numeric: tabular-nums; font-size: clamp(30px, 7vw, 46px); font-weight: 900; letter-spacing: .04em; }
+    .queue { margin-top: 25px; padding: 16px; border-radius: 17px; background: #f8fdff; }
+    .queue-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .queue-count { display: flex; align-items: baseline; gap: 6px; color: #0369a1; }
+    .queue-count strong { font-size: 27px; }
+    .queue-count span, .next-time { color: #64748b; font-size: 12px; font-weight: 750; }
+    .track { display: grid; grid-template-columns: repeat(14, 1fr); gap: 6px; margin-top: 15px; }
+    .track i { display: block; height: 8px; border-radius: 999px; background: #dbeafe; }
+    .track i.done { background: #34d399; }
+    .track i.active { background: #0ea5e9; box-shadow: 0 0 0 4px #bae6fd; animation: blink 1.4s ease-in-out infinite; }
+    .track i.hold { background: #fbbf24; }
+    .mail-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #e0f2fe; }
+    .row-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: #e0f2fe; color: #0369a1; font-size: 16px; }
+    .mail-row strong { display: block; font-size: 14px; }
+    .mail-row small { display: block; margin-top: 3px; color: #64748b; font-size: 11px; }
+    .send-arrow { color: #0ea5e9; font-size: 21px; animation: fly 1.5s ease-in-out infinite; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+    .stat { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 11px 8px; border-radius: 13px; background: #f8fafc; }
+    .stat b { font-size: 20px; }
+    .stat span { color: #64748b; font-size: 12px; }
+    .footer { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; padding-top: 15px; border-top: 1px solid #f1f5f9; }
+    .auto { display: inline-flex; align-items: center; gap: 7px; color: #047857; font-size: 12px; font-weight: 850; }
+    .footer-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #cbd5e1; border-radius: 9px; color: #334155; }
+    .demo-controls { display: flex; justify-content: center; gap: 8px; margin-top: 18px; }
+    button { border: 1px solid #cbd5e1; border-radius: 10px; padding: 8px 11px; background: white; color: #475569; font-size: 12px; font-weight: 800; cursor: pointer; }
+    button.active { border-color: #0284c7; background: #e0f2fe; color: #075985; }
+    .caption { margin: 12px 0 0; color: #94a3b8; font-size: 11px; text-align: center; }
+    .card[data-state="done"] { border-color: #bbf7d0; }
+    .card[data-state="done"] .top { background: #f0fdf4; border-color: #dcfce7; }
+    .card[data-state="done"] .plane { background: #dcfce7; color: #047857; }
+    .card[data-state="done"] .pill { background: #dcfce7; color: #047857; }
+    .card[data-state="attention"] { border-color: #fecaca; }
+    .card[data-state="attention"] .top { background: #fff7f7; border-color: #fee2e2; }
+    .card[data-state="attention"] .plane { background: #fee2e2; color: #b91c1c; }
+    .card[data-state="attention"] .pill { background: #fee2e2; color: #b91c1c; }
+    @keyframes radar { 0% { transform: scale(.65); opacity: .6; } 100% { transform: scale(1.2); opacity: 0; } }
+    @keyframes float { 0%, 100% { transform: translateY(1px) rotate(-4deg); } 50% { transform: translateY(-4px) rotate(4deg); } }
+    @keyframes fly { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(5px); } }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+    @media (max-width: 560px) { main { margin: 24px auto; } .body { padding: 20px 16px 16px; } .hero { grid-template-columns: 58px 1fr; } .plane-wrap { width: 58px; height: 58px; } .plane { width: 50px; height: 50px; font-size: 24px; } .timer { grid-column: 2; font-size: 32px; } .mail-row { grid-template-columns: 32px 1fr auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card" data-state="sending" aria-label="Outlook 自动发送状态">
+      <header class="top"><div class="brand"><span class="mail-icon" aria-hidden="true">✉</span><span>Outlook</span></div><span class="pill"><span class="dot"></span><span id="mode">发送中</span></span></header>
+      <div class="body">
+        <div class="hero"><div class="plane-wrap"><div class="plane" id="plane" aria-hidden="true">➤</div></div><div><h1 id="headline">正在发送</h1><div class="sub"><span id="subline">第 8 / 14 封</span><span class="chip">自动</span></div></div><div class="timer" id="timer" aria-live="polite">00:42</div></div>
+        <div class="queue"><div class="queue-head"><div class="queue-count"><strong id="queueCount">8</strong><span>/ 14</span></div><span class="next-time" id="nextTime">下一封 3:51 PM</span></div><div class="track" id="track" aria-label="发送队列"></div><div class="mail-row"><div class="row-icon">✉</div><div><strong id="recipient">Java Developer</strong><small id="recipientMeta">recruiter@company.com · 简历已附</small></div><span class="send-arrow" id="rowIcon">➤</span></div></div>
+        <div class="stats"><div class="stat"><b id="sentCount">7</b><span>已发</span></div><div class="stat"><b id="waitingCount">6</b><span>待发</span></div><div class="stat"><b id="holdCount">1</b><span>待处理</span></div></div>
+        <div class="footer"><span class="auto"><span class="dot"></span><span id="footerText">自动继续</span></span><span class="footer-icon" title="查看详情">↗</span></div>
+      </div>
+    </section>
+    <div class="demo-controls" aria-label="切换演示状态"><button class="active" data-state="sending" type="button">➤ 发送中</button><button data-state="waiting" type="button">◷ 下一封</button><button data-state="done" type="button">✓ 已完成</button><button data-state="attention" type="button">! 待处理</button></div>
+    <p class="caption">图形优先：纸飞机 = 当前发送 · 蓝色倒计时 = 下一封 · 圆点 = 队列</p>
+  </main>
+  <script>
+    const card = document.querySelector('.card');
+    const track = document.getElementById('track');
+    const timer = document.getElementById('timer');
+    const states = {
+      sending: { mode: '发送中', headline: '正在发送', subline: '第 8 / 14 封', time: '00:42', next: '下一封 3:51 PM', icon: '➤', footer: '自动继续', state: 'sending', count: '8', sent: '7', waiting: '6', hold: '1', title: 'Java Developer', meta: 'recruiter@company.com · 简历已附' },
+      waiting: { mode: '排队中', headline: '下一封', subline: '第 9 / 14 封', time: '01:18', next: '发送后自动继续', icon: '◷', footer: '自动继续', state: 'waiting', count: '9', sent: '8', waiting: '5', hold: '1', title: 'Senior Java Engineer', meta: 'recruiter@company.com · 简历已附' },
+      done: { mode: '已完成', headline: '发送完成', subline: '14 / 14 封', time: '✓', next: '队列清空', icon: '✓', footer: '本轮完成', state: 'done', count: '14', sent: '14', waiting: '0', hold: '0', title: '今日队列', meta: '全部已处理' },
+      attention: { mode: '待处理', headline: '需要你', subline: '1 封邮件', time: '!', next: '等待确认', icon: '!', footer: '处理后继续', state: 'attention', count: '8', sent: '7', waiting: '6', hold: '1', title: 'Email validation', meta: '需要检查正文' }
+    };
+    function renderTrack(active) {
+      track.replaceChildren(...Array.from({ length: 14 }, (_, index) => { const dot = document.createElement('i'); dot.className = index < Number(active) - 1 ? 'done' : index === Number(active) - 1 ? 'active' : index === 13 && active !== '14' ? 'hold' : ''; return dot; }));
+    }
+    function render(stateName) {
+      const state = states[stateName];
+      card.dataset.state = state.state;
+      for (const id of ['mode', 'headline', 'subline', 'timer', 'nextTime', 'footerText', 'queueCount', 'sentCount', 'waitingCount', 'holdCount', 'recipient', 'recipientMeta']) document.getElementById(id).textContent = ({ mode: state.mode, headline: state.headline, subline: state.subline, timer: state.time, nextTime: state.next, footerText: state.footer, queueCount: state.count, sentCount: state.sent, waitingCount: state.waiting, holdCount: state.hold, recipient: state.title, recipientMeta: state.meta })[id];
+      document.getElementById('plane').textContent = state.icon;
+      document.getElementById('rowIcon').textContent = state.icon;
+      renderTrack(state.count);
+    }
+    renderTrack('8');
+    document.querySelectorAll('[data-state]').forEach((button) => button.addEventListener('click', () => { document.querySelectorAll('[data-state]').forEach((item) => item.classList.toggle('active', item === button)); render(button.dataset.state); }));
+  </script>
+</body>
+</html>

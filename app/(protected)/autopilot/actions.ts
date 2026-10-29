@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { AutopilotSetting, AutoSendState, OutlookDraftState, TaskKind } from "@/app/generated/prisma/enums";
+import { AutopilotSetting, AutoSendState, TaskKind } from "@/app/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth";
 import { parseAutopilotSettings } from "@/services/autopilot";
-import { cancelAutoSend, currentAutopilotMode, saveAutopilotSettings, sendDueDrafts, setAutopilotSetting } from "@/services/auto-send";
+import { cancelAutoSend, currentAutopilotMode, saveAutopilotSettings, scheduleReviewedDrafts, sendDueDrafts, setAutopilotSetting } from "@/services/auto-send";
 import { rerunWaiting, startAutopilotOnWaiting } from "@/services/autopilot-batch";
 import { sendDigest } from "@/services/digest-send";
 import { outlookSendToken } from "@/services/outlook-auth";
@@ -27,7 +27,7 @@ const settings = new Set<string>(Object.values(AutopilotSetting));
  * Outlook to grant it, and the callback turns sending on when it comes back granted. Turning it on also
  * takes the jobs already waiting through it, so nothing needs a second click.
  */
-export async function chooseAutopilot(setting: string) {
+export async function chooseAutopilot(setting: string, returnTo = "/autopilot") {
   await requireAuth();
   if (!settings.has(setting)) throw new Error("Choose Off, Drafts or Send.");
   if (setting === AutopilotSetting.SEND) {
@@ -38,7 +38,11 @@ export async function chooseAutopilot(setting: string) {
   const cancelled = await setAutopilotSetting(setting as AutopilotSetting);
   const run = setting === AutopilotSetting.OFF ? null : await rerunWaiting(after);
   refresh();
-  redirect(`/autopilot?autopilot=${setting.toLowerCase()}${cancelled ? `&cancelled=${cancelled}` : ""}${run ? `&autopilotRun=${run}` : ""}`);
+  redirect(`${returnTo}?autopilot=${setting.toLowerCase()}${cancelled ? `&cancelled=${cancelled}` : ""}${run ? `&autopilotRun=${run}` : ""}`);
+}
+
+export async function chooseAutopilotFromDashboard(setting: string) {
+  await chooseAutopilot(setting, "/dashboard");
 }
 
 /**
@@ -77,23 +81,9 @@ export async function runAutopilotOnWaiting(returnTo: string) {
 export async function sendReviewedDraftsNow() {
   await requireAuth();
   if (await currentAutopilotMode() !== "shadow") redirect("/autopilot?draftSend=wrong-mode");
-  const database = getPrisma();
-  const { count } = await database.outreachDraft.updateMany({
-    where: { outlookState: OutlookDraftState.CREATED, outlookMessageId: { not: null }, sentConfirmedAt: null, OR: [{ autoSendState: null }, { autoSendState: AutoSendState.SHADOW }] },
-    data: { autoSendState: AutoSendState.SCHEDULED, autoSendAt: new Date(), autoSendError: null },
-  });
-  let started = 0;
-  if (count) {
-    try {
-      await runTaskNow({ kind: TaskKind.AUTO_SEND, label: "Sending reviewed Outlook drafts", subjectId: "draft-send", href: "/autopilot" }, (task) => sendDueDrafts(task).then(() => undefined));
-      started = count;
-    } catch (error) {
-      if (!(error instanceof TaskBusyError)) throw error;
-      started = -1;
-    }
-  }
+  const scheduled = await scheduleReviewedDrafts();
   refresh();
-  redirect(`/autopilot?draftSend=${started}`);
+  redirect(`/autopilot?draftSend=${scheduled}`);
 }
 
 /** Keeps one scheduled email as an Outlook draft for the user to send, or not. */

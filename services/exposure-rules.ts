@@ -12,6 +12,7 @@ export type PostedDate = (typeof postedDates)[number];
 // Dice's own URL values, read from its filter panel.
 export const employmentTypes = ["CONTRACTS", "THIRD_PARTY", "FULLTIME", "PARTTIME"] as const;
 export type EmploymentFilter = (typeof employmentTypes)[number];
+export type ExposureProfileBatch = { roleFamily: string; keywords: string[] };
 
 /** Everything the user may change from the /exposure page (rules/exposure.md 1.1 §8). */
 export type ExposureSettings = {
@@ -19,6 +20,7 @@ export type ExposureSettings = {
   // Off pauses only the hourly runs; the page's play button still starts one by hand.
   scheduleEnabled: boolean;
   keywords: string[];
+  profileBatches: ExposureProfileBatch[];
   postedDate: PostedDate;
   employmentTypes: EmploymentFilter[];
   pageRatio: number;
@@ -40,6 +42,9 @@ export type ExposureSettings = {
 
 export type ExposureConfig = ExposureSettings & { cdpUrl: string; jobDelayMs: number; window: ScanWindow };
 
+export const EXPOSURE_MIN_DELAY_SECONDS = 30;
+export const EXPOSURE_MAX_DELAY_SECONDS = 120;
+
 type Env = Partial<Record<string, string>>;
 
 function list(value: unknown) {
@@ -59,19 +64,32 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return allowed.find((option) => option.toLowerCase() === text.toLowerCase()) ?? fallback;
 }
 
+function profileBatches(value: unknown, fallback: ExposureProfileBatch[]) {
+  if (!Array.isArray(value)) return fallback;
+  const batches = value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as { roleFamily?: unknown; keywords?: unknown };
+    const roleFamily = typeof row.roleFamily === "string" ? row.roleFamily.trim().slice(0, 40) : "";
+    const keywords = list(row.keywords);
+    return roleFamily === "JAVA_BACKEND" && keywords.length ? [{ roleFamily, keywords }] : [];
+  });
+  return batches.length ? [batches[0]!] : fallback;
+}
+
 /**
  * Validates settings from any source (the stored row, the page form, .env) against the defaults.
  * An invalid field falls back to its default rather than failing the whole run.
  */
 export function parseSettings(value: Record<string, unknown>, defaults: ExposureSettings): ExposureSettings {
-  const keywords = list(value.keywords);
   const employment = list(value.employmentTypes).map((type) => oneOf(type, employmentTypes, "CONTRACTS"));
   const days = list(value.days).map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
   const text = (field: unknown, fallback: string) => (typeof field === "string" && field.trim() ? field.trim().slice(0, 80) : fallback);
   return {
     mode: oneOf(value.mode, exposureModes, defaults.mode),
     scheduleEnabled: typeof value.scheduleEnabled === "boolean" ? value.scheduleEnabled : defaults.scheduleEnabled,
-    keywords: keywords.length ? keywords : defaults.keywords,
+    // Dice exposure is intentionally Java-only; other profile batches can no longer be selected.
+    keywords: ["java"],
+    profileBatches: profileBatches(value.profileBatches, defaults.profileBatches),
     postedDate: oneOf(value.postedDate, postedDates, defaults.postedDate),
     employmentTypes: employment.length ? [...new Set(employment)] : defaults.employmentTypes,
     pageRatio: bounded(value.pageRatio, defaults.pageRatio, 0.05, 1, false),
@@ -80,7 +98,7 @@ export function parseSettings(value: Record<string, unknown>, defaults: Exposure
     companyBlacklist: value.companyBlacklist === undefined ? defaults.companyBlacklist : list(value.companyBlacklist),
     dailyLimit: bounded(value.dailyLimit, defaults.dailyLimit, 1, 1000),
     perRunLimit: bounded(value.perRunLimit, defaults.perRunLimit, 1, 1000),
-    jobDelaySeconds: bounded(value.jobDelaySeconds, defaults.jobDelaySeconds, 0, 600),
+    jobDelaySeconds: bounded(value.jobDelaySeconds, defaults.jobDelaySeconds, EXPOSURE_MIN_DELAY_SECONDS, EXPOSURE_MAX_DELAY_SECONDS),
     days: days.length ? [...new Set(days)].sort() : defaults.days,
     startHour: bounded(value.startHour, defaults.startHour, 0, 23),
     endHour: bounded(value.endHour, defaults.endHour, 1, 24),
@@ -98,6 +116,7 @@ export function defaultSettings(env: Env = process.env): ExposureSettings {
     mode: "off",
     scheduleEnabled: true,
     keywords: ["java"],
+    profileBatches: [{ roleFamily: "JAVA_BACKEND", keywords: ["java"] }],
     postedDate: "ONE",
     employmentTypes: ["CONTRACTS", "THIRD_PARTY"],
     pageRatio: 2 / 3,
@@ -106,10 +125,10 @@ export function defaultSettings(env: Env = process.env): ExposureSettings {
     companyBlacklist: [],
     dailyLimit: 150,
     perRunLimit: 30,
-    jobDelaySeconds: 30,
+    jobDelaySeconds: EXPOSURE_MIN_DELAY_SECONDS,
     days: [1, 2, 3, 4, 5],
     startHour: 6,
-    endHour: 15,
+    endHour: 18,
     intervalMinutes: 60,
     maxConsecutiveFailures: 5,
     maxStepsPerJob: 15,
@@ -156,6 +175,14 @@ export function exposureConfig(stored: unknown, env: Env = process.env): Exposur
       timeZone: configuredTimeZone(env.APP_TIME_ZONE),
     },
   };
+}
+
+export function randomExposureDelayMs(minimumSeconds = EXPOSURE_MIN_DELAY_SECONDS, random = Math.random()) {
+  const minimum = Number.isFinite(minimumSeconds)
+    ? Math.max(EXPOSURE_MIN_DELAY_SECONDS, Math.min(EXPOSURE_MAX_DELAY_SECONDS, Math.floor(minimumSeconds)))
+    : EXPOSURE_MIN_DELAY_SECONDS;
+  const factor = Math.max(0, Math.min(1, random));
+  return (minimum + Math.floor(factor * (EXPOSURE_MAX_DELAY_SECONDS - minimum))) * 1000;
 }
 
 /** The search itself is a URL, so no filter control ever has to be clicked. */
@@ -221,10 +248,14 @@ export const MAX_ATTEMPTS_PER_JOB = 2;
  * Whether earlier records already settle this job. A dry run does not settle a real run: once the
  * user switches to "on", every rehearsed job is applied for real.
  */
-export function settledByHistory(results: readonly ExposureResult[], mode: ExposureMode) {
+export function settledByHistory(results: readonly ExposureResult[], mode: ExposureMode, reasons: readonly (string | null | undefined)[] = []) {
   if (results.includes(ExposureResult.APPLIED) || results.includes(ExposureResult.SKIPPED)) return true;
   if (mode === "dryrun" && results.includes(ExposureResult.DRY_RUN_READY)) return true;
-  return results.filter((result) => result === ExposureResult.FAILED).length >= MAX_ATTEMPTS_PER_JOB;
+  const failed = results
+    .map((result, index) => ({ result, reason: reasons[index] ?? "" }))
+    .filter(({ result }) => result === ExposureResult.FAILED)
+    .filter(({ reason }) => !/\[OPENAI_API_(?:QUOTA_EXHAUSTED|RATE_LIMITED|429)\]|\bHTTP\s*429\b|\bquota\b|\brate limit\b/i.test(reason));
+  return failed.length >= MAX_ATTEMPTS_PER_JOB;
 }
 
 /** A login page or a human check ends the whole run: rules/exposure.md §5, RESTRICTIONS §3. */
@@ -235,6 +266,24 @@ export function blockerOn(page: { url: string; text: string; frameSources: reado
     return "Dice showed a human check. Solve it in the exposure Chrome window, then run again.";
   }
   return null;
+}
+
+/** A blocker is a pause that the scheduler may retry after the user fixes the dedicated Chrome window. */
+export function isExposureBlockerReason(reason: string | null | undefined) {
+  return typeof reason === "string" && (
+    /Dice (?:asked for a login|showed a human check|is signed out)/i.test(reason)
+    || /Chrome (?:did not answer Page\.navigate in time|failed to respond to navigation)/i.test(reason)
+  );
+}
+
+/** Expected pauses end a round; they are not failures that should wear the red Stopped label. */
+export function isExpectedExposureStop(reason: string | null | undefined) {
+  return typeof reason === "string" && /(?:per-run limit reached|daily (?:application )?limit|run completed|paused from the exposure page)/i.test(reason);
+}
+
+/** Dice sometimes reports its account-wide cap from inside the wizard instead of the local counter. */
+export function isExposureDailyLimitReason(reason: string | null | undefined) {
+  return typeof reason === "string" && /daily (?:application )?limit/i.test(reason);
 }
 
 export function applicationSucceeded(page: { url: string; text: string }) {

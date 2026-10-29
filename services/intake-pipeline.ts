@@ -1,4 +1,4 @@
-import { IntakeStatus, OutreachDraftStatus, OutreachMode, SweepOutcome } from "@/app/generated/prisma/enums";
+import { IntakeStatus, JobSourceType, OutreachDraftStatus, OutreachMode, SweepOutcome } from "@/app/generated/prisma/enums";
 import type { Prisma } from "@/app/generated/prisma/client";
 import { getPrisma } from "@/lib/prisma";
 import { applicationDecision, pitchedCase, readStoredPolicy, type StoredPolicy } from "@/services/application-policy";
@@ -24,6 +24,7 @@ import { outlookAccessToken } from "@/services/outlook-auth";
 import { buildOutlookDraftForJob } from "@/services/outlook-draft";
 import { listOutlookSourceMessages } from "@/services/outlook-graph";
 import { buildResumeRoute, RESUME_CONFIDENCE_THRESHOLD } from "@/services/resume-router";
+import { isAiCapacityError } from "@/services/ai-capacity";
 import type { TaskHandle } from "@/services/tasks";
 
 export type IntakePreview = {
@@ -32,6 +33,7 @@ export type IntakePreview = {
   toAddress: string | null;
   subject: string | null;
   body: string | null;
+  linkedinBody: string | null;
   validation: OutreachValidation | null;
   status: OutreachDraftStatus;
   brake: string | null;
@@ -49,6 +51,7 @@ const stopped = (brake: string, resumeId: string | null, match: MatchReport | nu
   toAddress: null,
   subject: null,
   body: null,
+  linkedinBody: null,
   validation: null,
   status: OutreachDraftStatus.NEEDS_REVIEW,
   brake,
@@ -78,9 +81,9 @@ function intakeDiscarded(error: unknown) {
  * The result is a preview the user confirms, unless the autopilot applies to this intake: then an
  * acceptable email is confirmed and built into an Outlook draft here, and anything else waits.
  */
-export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
+export async function runIntakePipeline(intakeId: string, task?: TaskHandle, modeOverride?: AutopilotMode) {
   try {
-    await prepareIntake(intakeId, task);
+    await prepareIntake(intakeId, task, modeOverride);
   } catch (error) {
     // Discarding a source deletes its row. A run already under way then has nothing left to write,
     // which is the user finishing with it, not a failure worth a red notice and a Prisma stack.
@@ -88,13 +91,14 @@ export async function runIntakePipeline(intakeId: string, task?: TaskHandle) {
   }
 }
 
-async function prepareIntake(intakeId: string, task?: TaskHandle) {
+async function prepareIntake(intakeId: string, task?: TaskHandle, modeOverride?: AutopilotMode) {
   const intake = await getPrisma().jobIntake.findUniqueOrThrow({ where: { id: intakeId } });
-  const autopilot = autopilotApplies(await currentAutopilotMode());
+  const mode = modeOverride ?? await currentAutopilotMode();
+  const autopilot = autopilotApplies(mode);
 
   await task?.progress("Analyzing the job description");
   const storedAnalysis = intake.analysis ? parseJobCase(intake.analysis) : null;
-  const analysis: JobCase = storedAnalysis && !needsRoleFocusedReanalysis(intake.rawText, storedAnalysis)
+  const analysis: JobCase = storedAnalysis && (intake.sourceType === JobSourceType.LINKEDIN_POST || !needsRoleFocusedReanalysis(intake.rawText, storedAnalysis))
     ? storedAnalysis
     : addRequiredReviewWarnings(await analyzeJobText({
         sourceType: intake.sourceType,
@@ -130,7 +134,7 @@ async function prepareIntake(intakeId: string, task?: TaskHandle) {
   if (policy.decision.verdict === "SKIP") return skipIntake(intakeId, policy.decision.reason, autopilot);
   const pitched = pitchedCase(analysis, policy.decision);
   if (pitched !== analysis) await getPrisma().jobIntake.update({ where: { id: intakeId }, data: { analysis: pitched as unknown as Prisma.InputJsonValue } });
-  return continueIntake(intakeId, intake, pitched, autopilot, task);
+  return continueIntake(intakeId, intake, pitched, autopilot, task, mode);
 }
 
 /** With the autopilot on, a job the rules pass on leaves the queue; with it off, it waits with the reason. */
@@ -177,11 +181,13 @@ export async function resumeAutopilot(intakeId: string, task?: TaskHandle) {
  * the same screen. Null when they cannot be read, and the job then waits rather than risk a rule.
  */
 async function intakePolicy(intakeId: string, rawText: string, stored: unknown): Promise<StoredPolicy | null> {
-  const known = readStoredPolicy(stored);
+  const source = await getPrisma().jobIntake.findUnique({ where: { id: intakeId }, select: { sourceType: true } });
+  const mode = source?.sourceType === JobSourceType.LINKEDIN_POST ? "sweep" as const : "default" as const;
+  const known = readStoredPolicy(stored, mode);
   if (known) return known;
   try {
     const [screened] = await triagePosts([rawText], await activeRoleFamilies());
-    const policy = { facts: screened!.facts, decision: applicationDecision(screened!.facts) };
+    const policy = { mode, facts: screened!.facts, decision: applicationDecision(screened!.facts, mode) };
     await getPrisma().jobIntake.update({ where: { id: intakeId }, data: { policy: policy as unknown as Prisma.InputJsonValue } });
     return policy;
   } catch {
@@ -195,11 +201,17 @@ async function continueIntake(
   analysis: JobCase,
   autopilot: boolean,
   task?: TaskHandle,
+  mode?: AutopilotMode,
 ) {
   // Scored for every intake, so the review screen shows the fit too; a failure only costs the autopilot.
   await task?.progress("Scoring the match against your profile");
   let match: MatchReport | null = null;
-  try { match = await assessMatch(analysis, await loadOutreachContext()); } catch { match = null; }
+  try {
+    match = await assessMatch(analysis, await loadOutreachContext());
+  } catch (error) {
+    if (isAiCapacityError(error)) throw error;
+    match = null;
+  }
 
   const eligibilityConflict = eligibilityConflictReason(match);
   if (eligibilityConflict) {
@@ -254,7 +266,9 @@ async function continueIntake(
   const blockers = await outreachBlockingIssues(input);
   if (blockers.length) return stop(blockers[0]!.message);
 
+  await task?.progress("Writing the outreach drafts");
   let content = await generateOutreachContent(input);
+  const linkedinBody = null;
   await task?.progress("Validating the draft");
   let validation = await validateOutreachContent(input, content);
   // Nobody is waiting to fix a rejected email, so the autopilot hands the auditor's reasons back to
@@ -272,6 +286,7 @@ async function continueIntake(
     toAddress: input.toAddress,
     subject: content.subject,
     body: content.body,
+    linkedinBody,
     validation,
     status: validation.status === "PASS" ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW,
     brake: null,
@@ -280,7 +295,7 @@ async function continueIntake(
     replySourceMessageId: outreach.replySourceMessageId,
   };
   await savePreview(intakeId, preview);
-  if (autopilot) await runAutopilot(intakeId, analysis, preview, task);
+  if (autopilot) await runAutopilot(intakeId, analysis, preview, task, mode);
 }
 
 type IntakeSourceFacts = Parameters<typeof autopilotRoute>[0];
@@ -330,6 +345,7 @@ export function parseIntakePreview(value: unknown): IntakePreview | null {
     toAddress: text("toAddress"),
     subject: text("subject"),
     body: text("body"),
+    linkedinBody: text("linkedinBody"),
     validation: preview.validation as OutreachValidation | null ?? null,
     status: preview.status === OutreachDraftStatus.DRAFT ? OutreachDraftStatus.DRAFT : OutreachDraftStatus.NEEDS_REVIEW,
     brake: text("brake"),

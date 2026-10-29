@@ -112,7 +112,7 @@ export async function classifyInboxMessage(message: { fromAddress: string; subje
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(openAiError("scan decision", response.status));
+  if (!response.ok) throw new Error(openAiError("scan decision", response.status, await response.text().catch(() => "")));
   const output = responseText(await response.json() as unknown);
   if (!output) throw new Error("OpenAI returned no structured scan decision.");
   try { return parseScanDecision(JSON.parse(output)); } catch { throw new Error("OpenAI returned an invalid structured scan decision."); }

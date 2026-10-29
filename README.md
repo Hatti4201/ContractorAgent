@@ -31,7 +31,7 @@ still marked running after fifteen minutes is reported as interrupted and can be
 ## Scheduled mail scan
 
 While the server runs, the Outlook scan repeats on a schedule set by `MAIL_SCAN_*` in the environment:
-by default Monday to Friday, 06:00 to 15:00 in `APP_TIME_ZONE`, once an hour. `APP_TIME_ZONE` must be a
+by default Monday to Friday, 06:00 to 18:00 in `APP_TIME_ZONE`, every five minutes. `APP_TIME_ZONE` must be a
 real IANA name such as `America/Los_Angeles`; an unrecognised value silently falls back to UTC and
 takes follow-up due dates with it. Set `MAIL_SCAN_ENABLED=false` to turn only the Outlook scan off; the
 manual button on Needs attention runs the same code either way, and automatic sending remains active.
@@ -60,7 +60,7 @@ once:
 | Setting | Default | What it does |
 |---|---|---|
 | **Match ≥** | 50% | The lowest match score the autopilot takes on; below it the job waits for you |
-| **Send window** | 06:00–15:00 | Local-time window in which automatic sends are allowed |
+| **Send window** | 06:00–18:00 | Local-time window in which automatic sends are allowed |
 | **Daily limit** | 50 | Emails sent automatically in any rolling 24 hours |
 
 Until you first use the switch, `AUTOPILOT` in the environment decides (`draft` and `shadow` both mean

@@ -21,24 +21,51 @@ test("a screened post goes on only as a relevant job within the rules, with an e
   assert.equal(sweepVerdict({ ...job, recruiterEmail: null }).outcome, "NO_EMAIL");
   assert.equal(sweepVerdict({ ...job, relevant: false }).outcome, "NOT_RELEVANT");
   assert.equal(sweepVerdict({ ...job, kind: "CANDIDATE_OFFER" }).outcome, "NOISE");
-  assert.equal(sweepVerdict({ ...job, facts: { ...facts, engagements: ["W2"] } }).outcome, "SKIPPED");
+  const w2 = sweepVerdict({ ...job, facts: { ...facts, engagements: ["W2"] } });
+  assert.equal(w2.outcome, "QUEUED");
+  assert.equal(w2.decision?.pitch, "W2");
 });
 
 test("the screen's email is kept only when the post really contains it", () => {
   const entry = { kind: "JOB", relevant: true, reason: null, title: "Java", engagements: [], locations: [], remote: true, localOnly: false, relocationAccepted: false, inPersonInterview: false };
-  const texts = ["Send to 𝗮𝗹𝗲𝘅@𝘃𝗲𝗻𝗱𝗼𝗿.𝘁𝗲𝘀𝘁 or hr@vendor.test", "No address here"];
+  const texts = ["Send to 𝗮𝗹𝗲𝘅@𝘃𝗲𝗻𝗱𝗼𝗿.𝘁𝗲𝘀𝘁 or hr@vendor.test", "Send to hr@vendor.test; share me @adam@fusiongs.com"];
   const [first, second] = parseTriage({ posts: [
-    { ...entry, index: 1, recruiterEmail: "invented@vendor.test" },
+    { ...entry, index: 1, recruiterEmail: "@adam@fusiongs.com" },
     { ...entry, index: 0, recruiterEmail: "HR@vendor.test" },
   ] }, texts);
   assert.equal(first!.recruiterEmail, "hr@vendor.test");
-  assert.equal(second!.recruiterEmail, null, "An address the model made up is dropped.");
+  assert.equal(second!.recruiterEmail, "adam@fusiongs.com", "A leading social @ is not part of the email.");
   assert.throws(() => parseTriage({ posts: [{ ...entry, index: 0, recruiterEmail: null }] }, texts), /skipped a post/);
+});
+
+test("a screened JobCase is validated and ready for intake reuse", () => {
+  const entry = {
+    kind: "JOB", relevant: true, reason: null, title: "Java Engineer", recruiterEmail: "one@vendor.test",
+    engagements: ["C2C"], locations: [], remote: true, localOnly: false, relocationAccepted: false, inPersonInterview: false,
+    jobCase: {
+      title: "Java Engineer", client: null, vendor: null, recruiterName: "Recruiter", recruiterEmail: "one@vendor.test", recruiterPhone: null,
+      location: "Remote", workArrangement: "REMOTE", employmentType: "C2C", rate: null, yearsRequired: "5+ years", requiredSkills: ["Java"],
+      visaRequirement: null, localRequirement: null, relocationRequirement: null, clearanceRequirement: null, roleFamily: "JAVA_BACKEND",
+      confidence: 0.9, warnings: [], evidence: [],
+    },
+  };
+  const [triaged] = parseTriage({ posts: [{ ...entry, index: 0 }] }, ["Java Engineer, remote, C2C. Send to one@vendor.test"]);
+  assert.equal(triaged!.jobCase?.recruiterEmail, "one@vendor.test");
+  assert.equal(triaged!.jobCase?.roleFamily, "JAVA_BACKEND");
+  assert.ok(triaged!.jobCase?.warnings.some((warning) => warning.field === "rate"));
+});
+
+test("an explicit Local Only marker is enforced even when the model misses it", () => {
+  const entry = { kind: "JOB", relevant: true, reason: null, title: "Java Developer", recruiterEmail: "hr@vendor.test", engagements: [], locations: [{ city: "Chicago", state: "IL" }], remote: false, localOnly: false, relocationAccepted: false, inPersonInterview: false };
+  const [triaged] = parseTriage({ posts: [{ ...entry, index: 0 }] }, ["Title: Java Developer\nLocation: Chicago, IL – Local Only"]);
+  assert.equal(triaged!.facts.localOnly, true);
+  assert.equal(sweepVerdict(triaged!).outcome, "SKIPPED");
 });
 
 test("a queued post's state follows its intake, job and draft", () => {
   const draft = { autoSendState: null, autoSentAt: null, outlookState: "CREATED", autoSendError: null, outlookError: null };
   const intake = { status: "CONFIRMED" as const, hasPreview: true, stopReason: null, draft };
+  assert.deepEqual(sweepItemState(null, false), { state: "WORKING", detail: null }, "A new Sweep is still creating its Intake, not discarded.");
   assert.equal(sweepItemState({ ...intake, status: "PENDING", hasPreview: false, draft: null }, false).state, "WORKING");
   assert.equal(sweepItemState({ ...intake, status: "PENDING", hasPreview: false, draft: null }, true).state, "NEEDS_YOU");
   assert.equal(sweepItemState({ ...intake, status: "PENDING", draft: null }, false).state, "READY", "A written email waiting for review is not a problem.");
@@ -63,6 +90,8 @@ test("reasons shrink to a tag a glance can read", async () => {
   assert.equal(shortReason("Eligibility conflict: Work authorization: USC/GC only.")?.label, "Only USC/GC");
   assert.equal(shortReason("Eligibility conflict: Work authorization: H1B (your context: STEM OPT).")?.label, "Only H1B");
   assert.equal(shortReason("Eligibility conflict: Work authorization: All visas except H1B & OPT.")?.label, "No H1B/OPT");
+  assert.equal(shortReason("The email asks the recruiter about C2C, but the source says C2H and #W2Jobs; the employment/payment arrangement is conflicting.")?.label, "C2H/C2C需确认");
+  assert.equal(shortReason("The email states the resume version; say only that the resume is attached.")?.label, "简历版本需删除");
   assert.equal(shortReason('The same JD is already tracked as "Java Lead".')?.label, "Duplicate");
   assert.equal(shortReason(null), null);
 });

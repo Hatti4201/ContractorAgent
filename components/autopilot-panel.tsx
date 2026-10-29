@@ -4,6 +4,7 @@ import { cancelScheduledSend, chooseAutopilot, runAutopilotOnWaiting, sendDigest
 import { AutopilotSwitch } from "@/components/autopilot-switch";
 import { HoverLabel, labelScope } from "@/components/hover-label";
 import { Toast } from "@/components/toast";
+import { OutlookSendQueue } from "@/components/outlook-send-queue";
 import { formatDateTime } from "@/lib/job-values";
 import { settingOfMode } from "@/services/autopilot";
 import { autopilotOverview, reviewedDraftCount } from "@/services/auto-send";
@@ -36,8 +37,8 @@ function noticeText(notice: AutopilotNotice): { text: string; tone: "ok" | "warn
   if (notice.autopilot === "off") return { tone: "ok", text: `Autopilot off${kept}` };
   if (notice.draftSend === "wrong-mode") return { tone: "warn", text: "Switch to Draft mode to use this button" };
   if (notice.draftSend !== undefined) {
-    const sent = Number(notice.draftSend);
-    return { tone: sent > 0 ? "ok" : "warn", text: sent > 0 ? `Sending ${sent} reviewed drafts` : "No reviewed drafts to send" };
+    const scheduled = Number(notice.draftSend);
+    return { tone: scheduled > 0 ? "ok" : "warn", text: scheduled > 0 ? `Scheduled ${scheduled} reviewed drafts` : "No reviewed drafts to send" };
   }
   if (notice.saved) return { tone: "ok", text: `Saved${ran}` };
   if (run === -1) return { tone: "warn", text: "Already running" };
@@ -197,6 +198,7 @@ export async function AutopilotPanel({ notice = {} }: { notice?: AutopilotNotice
           )}
         </div>
       </div>
+      <OutlookSendQueue overview={overview} />
     </section>
   );
 }

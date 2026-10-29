@@ -37,6 +37,32 @@ services:
 
     restart: unless-stopped
 
+  # Video2Text stays isolated from the Node app, but shares this Compose lifecycle.
+  # Its env file contains the ASR/TOS credentials; do not copy those into the contractor app env.
+  video2text-asr:
+    build:
+      context: ../video-note-agent
+      dockerfile: Dockerfile
+
+    container_name: video2text-asr
+
+    ports:
+      - "127.0.0.1:8757:8757"
+
+    env_file:
+      - path: ../video-note-agent/.env
+        required: true
+
+    environment:
+      VIDEO2TEXT_ASR_HOST: 0.0.0.0
+      VIDEO2TEXT_ASR_PORT: 8757
+      # The shared .env may contain an old container-only cookie path. This
+      # service does not mount that file, so leave cookies optional here.
+      YOUTUBE_COOKIES_FILE: ""
+
+    entrypoint: ["python", "-m", "app.server"]
+    restart: unless-stopped
+
   # The one database container. It holds contractor_agent (production) and contractor_agent_dev (one
   # schema per coding-agent worktree, CLAUDE.md §17). Published on the Mac's loopback so scripts reach it.
   db:

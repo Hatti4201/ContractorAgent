@@ -2,14 +2,13 @@ import Link from "next/link";
 import { dismissExposureError, saveExposureSettings, setExposureMode, setExposureSchedule } from "@/app/(protected)/exposure/actions";
 import { ExposurePlayButton } from "@/components/exposure-play-button";
 import { ExposureResult } from "@/app/generated/prisma/enums";
-import { AutoRefresh } from "@/components/auto-refresh";
 import { ExposureChart } from "@/components/exposure-chart";
 import { requireAuth } from "@/lib/auth";
 import { formatDateTime } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { chromeReachable } from "@/services/cdp";
-import { employmentTypes, pagesToVisit, type ExposureMode } from "@/services/exposure-rules";
-import { exposureRunning, exposureState, loadExposureConfig, recentCounts, weekOfResults } from "@/services/exposure-run";
+import { employmentTypes, isExpectedExposureStop, isExposureBlockerReason, pagesToVisit, type ExposureMode } from "@/services/exposure-rules";
+import { exposureRunning, loadExposureConfig, readExposureState, recentCounts, weekOfResults } from "@/services/exposure-run";
 
 type Answer = { question: string; kind: string; answer: string; factQuote: string | null };
 
@@ -28,7 +27,6 @@ const employmentLabel: Record<string, string> = { CONTRACTS: "Contract", THIRD_P
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const field = "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
-
 function NumberField({ label, name, value, min, max, hint }: { label: string; name: string; value: number; min: number; max: number; hint?: string }) {
   return (
     <label className="text-sm text-slate-700">
@@ -46,7 +44,7 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
   const config = await loadExposureConfig(database);
   const filter = resultOrder.find((value) => value === result);
   const [state, count, records, week, chrome] = await Promise.all([
-    exposureState(database),
+    readExposureState(database),
     recentCounts(database),
     database.exposureApplication.findMany({ where: filter ? { result: filter } : {}, orderBy: { createdAt: "desc" }, take: 80 }),
     weekOfResults(database),
@@ -54,7 +52,9 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
   ]);
   const running = exposureRunning(state);
   const errorAt = state.lastErrorAt ?? state.updatedAt;
-  const errorVisible = state.consecutiveFailures > 0 && Boolean(state.lastError) && (!state.errorClearedAt || errorAt > state.errorClearedAt);
+  const expectedStop = isExpectedExposureStop(state.lastStopReason) || isExpectedExposureStop(state.lastError);
+  const errorVisible = !expectedStop && state.consecutiveFailures > 0 && Boolean(state.lastError) && (!state.errorClearedAt || errorAt > state.errorClearedAt);
+  const verificationPaused = isExposureBlockerReason(state.lastError);
   const counted = count(ExposureResult.APPLIED) + count(ExposureResult.DRY_RUN_READY);
   const stopReason = state.lastStopReason ?? (counted >= config.dailyLimit
     ? `Daily limit reached (${counted}/${config.dailyLimit}). The limit resets daily at 5:00 AM local time; the next run will continue after the reset.`
@@ -64,7 +64,6 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
-      <AutoRefresh active={running} />
       <p className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">Exposure</p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Dice exposure</h1>
       <p className="mt-2 text-slate-600">Applies to Dice Easy Apply jobs so recruiters see the profile. Rules: rules/exposure.md.</p>
@@ -74,8 +73,9 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
       {errorVisible && (
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900" role="alert">
           <div className="min-w-0 flex-1">
-            <p className="font-semibold">The last {state.consecutiveFailures === 1 ? "run" : `${state.consecutiveFailures} runs`} stopped</p>
+            <p className="font-semibold">{verificationPaused ? "Dice 已暂停，等待登录或人机验证" : `The last ${state.consecutiveFailures === 1 ? "run" : `${state.consecutiveFailures} runs`} stopped`}</p>
             <p className="mt-1">{state.lastError}</p>
+            {verificationPaused && <p className="mt-2 text-xs text-red-800">处理完成后，系统会在当前 6:00–18:00 窗口内每 5 分钟自动重试。</p>}
             <p className="mt-2 text-xs text-red-800">发生时间：{formatDateTime(errorAt)}</p>
           </div>
           <form action={dismissExposureError}>
@@ -85,7 +85,7 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
       )}
       {!running && stopReason && (
         <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status">
-          <p className="font-semibold">上次暂停原因</p>
+          <p className="font-semibold">{expectedStop ? "本轮已结束" : "上次停止原因"}</p>
           <p className="mt-1">{stopReason}</p>
           {state.lastStopAt && <p className="mt-2 text-xs text-sky-800">发生时间：{formatDateTime(state.lastStopAt)}</p>}
         </div>
@@ -94,7 +94,7 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
       {/* Status and controls */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <ExposurePlayButton blockedReason={blockedReason} running={running} stopping={state.stopRequested} />
+          <ExposurePlayButton blockedReason={blockedReason} running={running} starting={state.progress === "Starting"} stopping={state.stopRequested} />
 
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
@@ -159,11 +159,10 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
 
         <h3 className="mt-6 font-semibold text-slate-950">What to search</h3>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <label className="text-sm text-slate-700">
-            <span className="font-medium">Keywords</span>
-            <input className={field} defaultValue={config.keywords.join(", ")} name="keywords" />
-            <span className="mt-1 block text-xs text-slate-500">Comma-separated; each keyword is its own search.</span>
-          </label>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <span className="font-medium text-slate-950">Search scope</span>
+            <span className="mt-1 block text-xs text-slate-500">Java only. The Dice profile resume is never replaced automatically.</span>
+          </div>
           <label className="text-sm text-slate-700">
             <span className="font-medium">Posted</span>
             <select className={field} defaultValue={config.postedDate} name="postedDate">
@@ -189,6 +188,9 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
           </div>
         </div>
 
+        <h3 className="mt-6 font-semibold text-slate-950">Dice profile</h3>
+        <p className="mt-1 text-xs text-slate-500">The current Java resume stays attached to Dice. This agent does not open the profile page or use Replace.</p>
+
         <h3 className="mt-6 font-semibold text-slate-950">What to skip</h3>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <label className="text-sm text-slate-700">
@@ -206,7 +208,7 @@ export default async function ExposurePage({ searchParams }: { searchParams: Pro
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
           <NumberField hint="Resets daily at 5:00 AM local time" label="Daily limit" max={1000} min={1} name="dailyLimit" value={config.dailyLimit} />
           <NumberField hint="Spreads the day across runs" label="Per-run limit" max={1000} min={1} name="perRunLimit" value={config.perRunLimit} />
-          <NumberField label="Seconds between applications" max={600} min={0} name="jobDelaySeconds" value={config.jobDelaySeconds} />
+          <NumberField hint="Randomizes from this minimum up to 120 seconds" label="Minimum seconds between applications" max={120} min={30} name="jobDelaySeconds" value={config.jobDelaySeconds} />
         </div>
 
         <h3 className="mt-6 font-semibold text-slate-950">When to run ({config.window.timeZone})</h3>

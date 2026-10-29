@@ -7,6 +7,7 @@ import { parseIntakePreview, runIntakePipeline } from "@/services/intake-pipelin
 import { jobFingerprint } from "@/services/job-case";
 import { TRIAGE_BATCH_SIZE, triagePosts, type TriagedPost } from "@/services/post-triage";
 import { activeRoleFamilies } from "@/services/role-family";
+import { safeOutlookLink } from "@/services/outlook-graph";
 import { noiseVerdict, postFingerprint, sweepItemState, sweepVerdict, type SweepVerdict } from "@/services/sweep-plan";
 import { runTaskNow } from "@/services/tasks";
 
@@ -125,7 +126,8 @@ async function runSweep(sweepId: string, pasted: FeedPost[]) {
         originalSender: null,
         receivedAt: new Date(),
         fingerprint: jobFingerprint(rawText),
-        policy: { facts: item.triaged.facts, decision: item.verdict.decision } as unknown as Prisma.InputJsonValue,
+        ...(item.triaged.jobCase ? { analysis: item.triaged.jobCase as unknown as Prisma.InputJsonValue } : {}),
+        policy: { mode: "sweep", facts: item.triaged.facts, decision: item.verdict.decision } as unknown as Prisma.InputJsonValue,
       },
       select: { id: true },
     });
@@ -150,7 +152,7 @@ async function runSweep(sweepId: string, pasted: FeedPost[]) {
 async function failStaleSweeps(now = new Date()) {
   await getPrisma().sweep.updateMany({
     where: { status: SweepStatus.RUNNING, updatedAt: { lt: new Date(now.getTime() - STALE_SWEEP_MS) } },
-    data: { status: SweepStatus.FAILED, progress: null, error: "The server stopped before this sweep finished. Paste the page again; posts already handled are skipped." },
+    data: { status: SweepStatus.FAILED, progress: null, error: "The server stopped before this sweep finished. Use All resweep to resume saved posts; paste the page again only for posts that were never recorded." },
   });
 }
 
@@ -162,7 +164,7 @@ const postSelection = {
       opportunity: {
         select: {
           matchScore: true,
-          outreachDraft: { select: { autoSendState: true, autoSentAt: true, outlookState: true, autoSendError: true, outlookError: true } },
+          outreachDraft: { select: { body: true, linkedinBody: true, autoSendState: true, autoSentAt: true, outlookState: true, outlookWebLink: true, autoSendError: true, outlookError: true } },
         },
       },
     },
@@ -201,7 +203,7 @@ export async function recentSweeps(limit = 7) {
         ? sweepItemState(post.intake ? {
             status: post.intake.status,
             hasPreview: Boolean(preview),
-            stopReason: preview?.brake ?? preview?.hold ?? null,
+            stopReason: preview?.validation?.issues[0]?.message ?? preview?.brake ?? preview?.hold ?? null,
             draft: post.intake.opportunity?.outreachDraft ?? null,
         } : null, Boolean(post.intakeId && latestTasks.get(post.intakeId)?.status === TaskStatus.FAILED), post.intakeId ? latestTasks.get(post.intakeId)?.error ?? null : null)
         : null;
@@ -215,6 +217,7 @@ export async function recentSweeps(limit = 7) {
         excerpt: post.text.slice(0, 600),
         title: post.title,
         email: post.email,
+        reachOut: post.intake?.opportunity?.outreachDraft?.linkedinBody ?? post.intake?.opportunity?.outreachDraft?.body ?? null,
         outcome: post.outcome,
         reason: post.reason,
         intakeId: post.intakeId,
@@ -222,20 +225,52 @@ export async function recentSweeps(limit = 7) {
         matchScore: post.intake?.opportunity?.matchScore ?? preview?.match?.score ?? null,
         state: live?.state ?? null,
         detail: live?.detail ?? null,
+        outlookLink: safeOutlookLink(post.intake?.opportunity?.outreachDraft?.outlookWebLink ?? null),
+        resweepable: post.outcome === SweepOutcome.QUEUED && !["SENT", "IN_OUTLOOK", "SCHEDULED"].includes(live?.state ?? ""),
       };
     }),
   }));
 }
 
 /** Retries the unfinished intake work already stored for a sweep; no LinkedIn paste is needed. */
-export async function resweepSweep(sweepId: string, defer: (run: () => Promise<void>) => void, scope: "all" | "needs" = "all") {
+export async function resweepSweep(sweepId: string, defer: (run: () => Promise<void>) => void, scope: "all" | "needs" = "all", postId?: string) {
   const database = getPrisma();
   const sweep = await database.sweep.findUnique({
     where: { id: sweepId },
-    select: { id: true, posts: { where: { outcome: SweepOutcome.QUEUED, intakeId: { not: null } }, select: { intakeId: true } } },
+    select: {
+      id: true,
+      posts: {
+        where: { outcome: SweepOutcome.QUEUED, ...(postId ? { id: postId } : {}) },
+        select: { id: true, intakeId: true, author: true, profileUrl: true, postUrl: true, headline: true, text: true },
+      },
+    },
   });
   if (!sweep) throw new SweepInputError("Sweep not found.");
-  const intakeIds = sweep.posts.flatMap((post) => post.intakeId ? [post.intakeId] : []);
+  const intakeIds: string[] = [];
+  for (const post of sweep.posts) {
+    if (post.intakeId) {
+      intakeIds.push(post.intakeId);
+      continue;
+    }
+    // A server restart can happen after the queued SweepPost is saved but before its Intake is linked.
+    if (scope !== "all") continue;
+    const rawText = postIntakeText({ author: post.author, profileUrl: post.profileUrl, postUrl: post.postUrl, headline: post.headline, age: null, body: post.text });
+    const intake = await database.jobIntake.create({
+      data: {
+        sourceType: JobSourceType.LINKEDIN_POST,
+        rawText,
+        originalSender: null,
+        receivedAt: new Date(),
+        fingerprint: jobFingerprint(rawText),
+      },
+      select: { id: true },
+    });
+    const linked = await database.sweepPost.updateMany({
+      where: { id: post.id, outcome: SweepOutcome.QUEUED, intakeId: null },
+      data: { intakeId: intake.id },
+    });
+    if (linked.count === 1) intakeIds.push(intake.id);
+  }
   if (!intakeIds.length) return 0;
   const [intakes, tasks] = await Promise.all([
     database.jobIntake.findMany({ where: { id: { in: intakeIds }, status: IntakeStatus.PENDING }, select: { id: true, preview: true } }),

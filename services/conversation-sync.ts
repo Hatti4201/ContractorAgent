@@ -1,11 +1,12 @@
 import { getPrisma } from "@/lib/prisma";
-import { ActivityType, ApplicationStage, AutoSendState } from "@/app/generated/prisma/enums";
 import { outlookAccessToken } from "@/services/outlook-auth";
 import { listOutlookFolderMessages, readOutlookInboxMessage, type OutlookInboxMessage, type OutlookMailFolder } from "@/services/outlook-graph";
+import { stopAutomaticSendAfterManualReply } from "@/services/manual-reply";
 import { summarizeConversation } from "@/services/conversation-summary";
 import type { TaskHandle } from "@/services/tasks";
 import { automatedSender, createIntakeFromMessage, worthClassifying } from "@/services/intake-scan";
 import { runIntakePipeline } from "@/services/intake-pipeline";
+import { isAiCapacityError } from "@/services/ai-capacity";
 
 const FOLDERS: OutlookMailFolder[] = ["focused", "other", "sentitems", "junkemail"];
 const JOB_WORDS = /recruit|resume|cv|position|role|contract|c2c|w2|interview|submission|rate|hiring|job|onsite|remote|candidate/i;
@@ -55,13 +56,61 @@ function iso(value: unknown) {
   return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
 }
 
-export async function syncOutlookConversations(task?: TaskHandle, forceRecent = false) {
+function normalizedSubject(value: string) {
+  return value.toLowerCase().replace(/^(?:re|fw|fwd)\s*:\s*/gi, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Merges split Outlook threads from one recruiter/job without trusting conversationId alone. */
+export async function mergeConversationThreads(database: ReturnType<typeof getPrisma>, since: Date) {
+  const threads = await database.conversationThread.findMany({
+    where: { isRelevant: true, lastMessageAt: { gte: since } },
+    include: {
+      messages: { select: { fromAddress: true, toAddresses: true, subject: true, receivedAt: true }, orderBy: { receivedAt: "asc" } },
+      jobs: { include: { opportunity: { select: { id: true, recruiter: { select: { email: true } } } } } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  const groups = new Map<string, typeof threads>();
+  for (const thread of threads) {
+    const recruiterEmails = new Set(thread.jobs.flatMap((job) => job.opportunity.recruiter?.email ? [job.opportunity.recruiter.email.toLowerCase()] : []));
+    for (const message of thread.messages) {
+      if (message.fromAddress) recruiterEmails.add(message.fromAddress.toLowerCase());
+      for (const address of message.toAddresses.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean)) recruiterEmails.add(address);
+    }
+    const jobKeys = thread.jobs.map((job) => job.opportunity.recruiter?.email ? `${job.opportunity.id}:${job.opportunity.recruiter.email.toLowerCase()}` : null).filter(Boolean);
+    const key = `${jobKeys.sort().join("|") || [...recruiterEmails].sort().join("|")}::${normalizedSubject(thread.subject)}`;
+    if (!key.startsWith("::") && !key.endsWith("::")) groups.set(key, [...(groups.get(key) ?? []), thread]);
+  }
+  const merged = new Set<string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) { merged.add(group[0]!.id); continue; }
+    const canonical = group[0]!;
+    for (const duplicate of group.slice(1)) {
+      await database.$transaction(async (transaction) => {
+        for (const job of duplicate.jobs) {
+          await transaction.conversationJob.upsert({
+            where: { conversationId_opportunityId: { conversationId: canonical.id, opportunityId: job.opportunity.id } },
+            create: { conversationId: canonical.id, opportunityId: job.opportunity.id },
+            update: {},
+          });
+        }
+        await transaction.conversationMessage.updateMany({ where: { conversationId: duplicate.id }, data: { conversationId: canonical.id } });
+        await transaction.conversationThread.update({ where: { id: canonical.id }, data: { lastMessageAt: duplicate.lastMessageAt > canonical.lastMessageAt ? duplicate.lastMessageAt : canonical.lastMessageAt, isRelevant: true, isHidden: false } });
+        await transaction.conversationThread.delete({ where: { id: duplicate.id } });
+      });
+    }
+    merged.add(canonical.id);
+  }
+  return merged;
+}
+
+export async function syncOutlookConversations(task?: TaskHandle, forceRecent = false, sinceOverride?: Date) {
   const database = getPrisma();
   const state = await database.mailScanState.upsert({ where: { id: "primary" }, create: { id: "primary" }, update: {} });
   const firstScan = forceRecent || !state.initialScanCompleteAt;
   const oldWatermarks = state.folderWatermarks && typeof state.folderWatermarks === "object" && !Array.isArray(state.folderWatermarks)
     ? state.folderWatermarks as Record<string, unknown> : {};
-  const sinceDefault = new Date(Date.now() - 90 * 24 * 60 * 60_000);
+  const sinceDefault = sinceOverride ?? new Date(Date.now() - 90 * 24 * 60 * 60_000);
   const accessToken = await outlookAccessToken();
   const opportunities = await database.opportunity.findMany({
     select: { id: true, title: true, client: true, recruiter: { select: { email: true } } },
@@ -78,6 +127,7 @@ export async function syncOutlookConversations(task?: TaskHandle, forceRecent = 
       const conversationKey = listed.conversationId ?? listed.id;
       const full = listed.body ? listed : await readOutlookInboxMessage(listed.id, { accessToken });
       const body = full.body?.trim() || listed.preview.trim() || "(邮件正文未同步)";
+      const recruiterAddress = folder === "sentitems" ? (listed.toAddresses?.[0] ?? listed.fromAddress) : listed.fromAddress;
       const interactive = isInteractiveOutlookMessage({ fromAddress: listed.fromAddress, subject: listed.subject, preview: `${listed.preview} ${body}` }, folder);
       const isRelevant = interactive && relevant(listed, opportunities);
       const thread = await database.conversationThread.upsert({
@@ -85,16 +135,15 @@ export async function syncOutlookConversations(task?: TaskHandle, forceRecent = 
         create: {
           outlookConversationId: conversationKey,
           subject: listed.subject,
-          recruiterName: listed.fromAddress,
-          recruiterEmail: listed.fromAddress,
+          recruiterName: recruiterAddress,
+          recruiterEmail: recruiterAddress,
           isRelevant,
           isHidden: !isRelevant,
           lastMessageAt: listed.receivedAt,
         },
         update: {
           subject: listed.subject,
-          recruiterName: listed.fromAddress,
-          recruiterEmail: listed.fromAddress,
+          ...(folder === "sentitems" ? {} : { recruiterName: listed.fromAddress, recruiterEmail: listed.fromAddress }),
           ...(interactive ? { isRelevant: { set: isRelevant }, isHidden: { set: !isRelevant }, lastMessageAt: { set: listed.receivedAt > new Date(0) ? listed.receivedAt : new Date() } } : {}),
         },
       });
@@ -136,7 +185,10 @@ export async function syncOutlookConversations(task?: TaskHandle, forceRecent = 
         });
       }
       if (isRelevant && !message.summary) {
-        const summary = await summarizeConversation({ subject: listed.subject, recruiterMessage: direction(folder) === "incoming" ? body : "", sentMessage: direction(folder) === "outgoing" ? body : null }).catch(() => null);
+        const summary = await summarizeConversation({ subject: listed.subject, recruiterMessage: direction(folder) === "incoming" ? body : "", sentMessage: direction(folder) === "outgoing" ? body : null }).catch((error) => {
+          if (isAiCapacityError(error)) throw error;
+          return null;
+        });
         if (summary) await database.conversationMessage.update({ where: { id: message.id }, data: { summary: direction(folder) === "incoming" ? summary.recruiterSummary : summary.sentSummary, replyDraft: direction(folder) === "incoming" ? summary.replyDraft : null, analyzedAt: new Date() } });
       }
       synced += 1;
@@ -144,6 +196,8 @@ export async function syncOutlookConversations(task?: TaskHandle, forceRecent = 
       if (!maxWatermarks[folder] || timestamp > maxWatermarks[folder]!) maxWatermarks[folder] = timestamp;
     }
   }
+  const mergedThreads = await mergeConversationThreads(database, new Date(Date.now() - 7 * 24 * 60 * 60_000));
+  for (const id of mergedThreads) touchedThreads.add(id);
   await queueUnlinkedJobs(database, touchedThreads, task);
   await applyManualReplies(database, touchedThreads);
   await database.mailScanState.update({ where: { id: "primary" }, data: { folderWatermarks: maxWatermarks, initialScanCompleteAt: state.initialScanCompleteAt ?? new Date(), lastSuccessAt: new Date(), lastError: null, errorClearedAt: null } });
@@ -175,7 +229,7 @@ async function applyManualReplies(database: ReturnType<typeof getPrisma>, thread
     where: { id: { in: [...threadIds] } },
     include: {
       messages: { select: { outlookMessageId: true, direction: true }, orderBy: { receivedAt: "asc" } },
-      jobs: { include: { opportunity: { select: { id: true, applicationTrack: { select: { currentStage: true } } } } } },
+      jobs: { include: { opportunity: { select: { id: true } } } },
     },
   });
   const messageIds = threads.flatMap((thread) => thread.messages.map((message) => message.outlookMessageId));
@@ -183,13 +237,7 @@ async function applyManualReplies(database: ReturnType<typeof getPrisma>, thread
   for (const thread of threads) {
     if (!isManualOutlookReply(thread.messages, agentMessageIds)) continue;
     for (const { opportunity } of thread.jobs) {
-      const current = opportunity.applicationTrack?.currentStage;
-      if (current !== ApplicationStage.DISCOVERED && current !== ApplicationStage.OUTREACH_SENT) continue;
-      await database.$transaction([
-        database.applicationTrack.update({ where: { opportunityId: opportunity.id }, data: { currentStage: ApplicationStage.RECRUITER_ENGAGED, waitingOn: "Recruiter", nextAction: "Continue from your manual Outlook reply" } }),
-        database.outreachDraft.updateMany({ where: { opportunityId: opportunity.id, autoSendState: AutoSendState.SCHEDULED }, data: { autoSendState: AutoSendState.CANCELLED, autoSendError: "Automatic follow-up stopped because you replied manually in Outlook." } }),
-        database.activity.create({ data: { opportunityId: opportunity.id, type: ActivityType.RECRUITER_REPLY, description: "Manual Outlook reply detected; job marked Contacted and autopilot stopped." } }),
-      ]);
+      await stopAutomaticSendAfterManualReply(opportunity.id, database);
     }
   }
 }

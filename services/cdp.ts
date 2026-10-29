@@ -8,6 +8,12 @@ type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => vo
 type Listener = (params: Record<string, unknown>) => void;
 
 const COMMAND_TIMEOUT_MS = 30_000;
+const NAVIGATION_RETRIES = 2;
+const NAVIGATION_RETRY_DELAY_MS = 2_000;
+
+export function isNavigationTimeout(error: unknown) {
+  return error instanceof Error && /Chrome did not answer Page\.navigate in time/i.test(error.message);
+}
 
 // Runs before any page script: drops "beforeunload" listeners on the window and ignores onbeforeunload.
 const NO_LEAVE_PROMPT = `(() => {
@@ -118,9 +124,21 @@ export class CdpTab {
   }
 
   async navigate(url: string) {
-    const loaded = this.once("Page.loadEventFired", 30_000);
-    await this.send("Page.navigate", { url });
-    await loaded;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.send("Page.navigate", { url });
+        await this.once("Page.loadEventFired", 30_000);
+        return;
+      } catch (error) {
+        if (!isNavigationTimeout(error) || attempt >= NAVIGATION_RETRIES) {
+          if (isNavigationTimeout(error)) {
+            throw new Error(`${error instanceof Error ? error.message : String(error)} after ${attempt + 1} attempts.`);
+          }
+          throw error;
+        }
+        await pause(NAVIGATION_RETRY_DELAY_MS * (attempt + 1));
+      }
+    }
   }
 
   /** Runs an expression in the page and returns its JSON value. */

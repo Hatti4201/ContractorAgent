@@ -14,7 +14,7 @@ test("the digest stays off unless asked for, and reads its hour and recipient sa
   assert.equal(digestSettings({}).enabled, false);
   assert.equal(digestSettings({ DAILY_DIGEST: "true" }).enabled, false, "Only on means on.");
   assert.equal(digestSettings({ MAIL_SCAN_END_HOUR: "17" }).hour, 17, "It defaults to when the scan window closes.");
-  assert.equal(digestSettings({ DIGEST_HOUR: "25" }).hour, 15);
+  assert.equal(digestSettings({ DIGEST_HOUR: "25" }).hour, 18);
   assert.equal(digestSettings({ DIGEST_TO: "me@example.invalid" }).to, "me@example.invalid");
   assert.equal(digestSettings({ DIGEST_TO: "not an address" }).to, null);
 });

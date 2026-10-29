@@ -142,7 +142,7 @@ export function resolveAutopilotSettings(stored: StoredSettings | null, env: Rec
     threshold: stored?.matchThreshold ?? matchThreshold(env.MATCH_THRESHOLD),
     dailyLimit: stored?.dailySendLimit ?? autoSendDailyLimit(env.AUTO_SEND_DAILY_LIMIT),
     startTime: stored?.sendStartTime ?? defaultSendTime(env, "AUTO_SEND_START_TIME", "MAIL_SCAN_START_HOUR", "06:00"),
-    endTime: stored?.sendEndTime ?? defaultSendTime(env, "AUTO_SEND_END_TIME", "MAIL_SCAN_END_HOUR", "15:00"),
+    endTime: stored?.sendEndTime ?? defaultSendTime(env, "AUTO_SEND_END_TIME", "MAIL_SCAN_END_HOUR", "18:00"),
   };
 }
 
@@ -176,10 +176,10 @@ export function autoSendPlan(mode: AutopilotMode, now: Date) {
   };
 }
 
-export const AUTO_SEND_MIN_DELAY_MS = 5_000;
-export const AUTO_SEND_MAX_DELAY_MS = 120_000;
+export const AUTO_SEND_MIN_DELAY_MS = 60_000;
+export const AUTO_SEND_MAX_DELAY_MS = 5 * 60_000;
 
-/** Adds a random human-sized gap after the last automatic send already in the queue. */
+/** Adds a random 60-second-to-5-minute gap after the last automatic send already in the queue. */
 export function staggeredAutoSendAt(now: Date, lastScheduledAt: Date | null, random = Math.random()) {
   const base = Math.max(now.getTime(), lastScheduledAt?.getTime() ?? 0);
   const delay = AUTO_SEND_MIN_DELAY_MS + Math.floor(Math.max(0, Math.min(1, random)) * (AUTO_SEND_MAX_DELAY_MS - AUTO_SEND_MIN_DELAY_MS));

@@ -49,7 +49,7 @@ export function NavigationLinks({ counts }: { counts: NavigationCounts }) {
         return (
           <span className="flex shrink-0 items-center" key={item.href}>
             {item.divider && <span aria-hidden="true" className="mx-1.5 h-4 w-px bg-slate-200" />}
-            <Link
+            <a
               aria-current={current ? "page" : undefined}
               aria-label={count ? `${item.label}: ${count}` : item.label}
               className={`relative flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-2 transition-colors ${
@@ -67,7 +67,7 @@ export function NavigationLinks({ counts }: { counts: NavigationCounts }) {
               {count > 0 && (
                 <span className={`rounded-full px-1.5 text-xs font-semibold leading-5 ${item.badge === "attention" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{count}</span>
               )}
-            </Link>
+            </a>
           </span>
         );
       })}

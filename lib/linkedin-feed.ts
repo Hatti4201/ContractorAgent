@@ -102,9 +102,38 @@ function postFrom(lines: string[]): FeedPost | null {
   };
 }
 
+/** Handles a single LinkedIn post copied from its detail page, which has no feed profile marker. */
+function copiedPostFrom(lines: string[]): FeedPost | null {
+  const profile = lines.map((line) => /^\s*\[([^\]]+)\]\((https?:\/\/[^)]+\/in\/[^)]+)\)/i.exec(line)).find(Boolean);
+  const authorLine = lines.find((line) => /^\s*.+\s+•\s+(?:1st|2nd|3rd\+?|Following)\s*$/i.test(line));
+  const author = profile?.[1]?.trim() || authorLine?.replace(/\s+•\s+(?:1st|2nd|3rd\+?|Following)\s*$/i, "").trim();
+  if (!author) return null;
+  const visibleAt = lines.findIndex((line) => /^\s*\d+\s*[smhdwy]\b/i.test(line));
+  if (visibleAt < 0) return null;
+  const content = lines.slice(visibleAt + 1).filter((line) => !/^\s*(?:Follow|Join|Connect)\s*$/i.test(line));
+  const body = content.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_POST_LENGTH);
+  if (!body) return null;
+  const headline = authorLine ? null : lines.slice(0, visibleAt).map((line) => line.trim()).find((line) => line && !/^\s*\[/.test(line)) ?? null;
+  return {
+    author: author.slice(0, 200),
+    profileUrl: profileUrl(profile?.[2]),
+    postUrl: postUrl(lines.slice(0, visibleAt).join("\n")),
+    headline: headline ? readableLine(headline).slice(0, 300) : null,
+    age: /^\s*(\d+\s*[smhdwy])\b/i.exec(lines[visibleAt]!)?.[1]?.replace(/\s+/g, "") ?? null,
+    body,
+  };
+}
+
 export function splitFeed(text: string): FeedPost[] {
   const lines = normalizeFeedText(text).split("\n");
   const starts = lines.flatMap((line, index) => (profileMarker.test(line) ? [index] : []));
+  if (!starts.length) {
+    // Discover/search pages often copy only "Feed post" and "Name • 2nd", without profile markers.
+    return normalizeFeedText(text).split(/\n(?=(?:##\s*)?Feed post\b)/i).flatMap((block) => {
+      const post = copiedPostFrom(normalizeFeedText(block).split("\n"));
+      return post ? [post] : [];
+    });
+  }
   return starts.flatMap((start, position) => {
     const post = postFrom(lines.slice(start, starts[position + 1] ?? lines.length));
     return post ? [post] : [];
@@ -119,9 +148,10 @@ export function postIntakeText(post: FeedPost) {
 
 const emailPattern = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 
-/** Every address the post spells out, lower-cased, in order of appearance. */
+/** Every address the post spells out, lower-cased, in order of appearance. A leading @ is a social marker. */
 export function postEmails(text: string) {
-  return [...new Set((normalizeFeedText(text).match(emailPattern) ?? []).map((address) => address.replace(/\.+$/, "").toLowerCase()))];
+  const normalized = normalizeFeedText(text).replace(/(^|[\s([{])@(?=[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b)/gi, "$1");
+  return [...new Set((normalized.match(emailPattern) ?? []).map((address) => address.replace(/\.+$/, "").toLowerCase()))];
 }
 
 export type NoiseReason = "HOTLIST" | "NOT_HIRING";

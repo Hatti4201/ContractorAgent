@@ -1,4 +1,4 @@
-import { responseText } from "@/services/job-analyzer";
+import { openAiError, responseText } from "@/services/job-analyzer";
 import type { PageSnapshot } from "@/services/exposure-page";
 
 // The two models of the exposure channel (RESTRICTIONS §2 exception, rules/exposure.md §4).
@@ -83,7 +83,10 @@ async function callModel<T>(model: string, instructions: string, input: string, 
     }),
     signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`The ${name} model call failed with status ${response.status}.`);
+  if (!response.ok) {
+    const responseBody = await response.text().catch(() => "");
+    throw new Error(openAiError(name, response.status, responseBody));
+  }
   const output = responseText(await response.json());
   if (!output) throw new Error(`The ${name} model returned nothing.`);
   return JSON.parse(output) as T;

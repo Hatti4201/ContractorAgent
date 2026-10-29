@@ -3,7 +3,7 @@ import { Ban, FilePen, Mail, Pause, Play, RotateCcw, Send, type LucideIcon } fro
 import { runAutopilotOnWaiting } from "@/app/(protected)/autopilot/actions";
 import { reviewSkippedIntake } from "@/app/(protected)/sweep/actions";
 import { HoverLabel, labelScope } from "@/components/hover-label";
-import { SweepPaste, SweepRefresher } from "@/components/sweep-paste";
+import { SweepPaste } from "@/components/sweep-paste";
 import { SweepCard, type SweepCardView, type SweepGroup } from "@/components/sweep-report";
 import { Toast } from "@/components/toast";
 import { requireAuth } from "@/lib/auth";
@@ -60,12 +60,15 @@ function cardView(sweep: SweepView): SweepCardView {
         postUrl: post.postUrl,
         explicitC2C: post.explicitC2C,
         email: post.email,
+        reachOut: post.reachOut,
         match: post.matchScore,
         group: groupOf(post),
         reason,
         tag: shortReason(reason),
         excerpt: post.excerpt,
         restore: groupOf(post) === "skipped",
+        outlookLink: post.outlookLink,
+        resweepable: post.resweepable,
       };
     }),
   };
@@ -80,13 +83,11 @@ function runNotice(run: number) {
 export default async function SweepPage({ searchParams }: { searchParams: Promise<{ error?: string; autopilotRun?: string }> }) {
   await requireAuth();
   const [{ error, autopilotRun }, sweeps, skipped, mode, waiting] = await Promise.all([searchParams, recentSweeps(), skippedByRules(), currentAutopilotMode(), waitingForAutopilot()]);
-  const active = sweeps.some((sweep) => sweep.status === "RUNNING" || sweep.posts.some((post) => post.state === "WORKING" || post.state === "SCHEDULED"));
   const notice = autopilotRun === undefined ? null : runNotice(Number(autopilotRun));
   const { icon: ModeIcon, label, tone } = modes[mode];
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
-      <SweepRefresher active={active} />
       {notice && <Toast clear={["autopilotRun"]} text={notice.text} tone={notice.tone} />}
       {error && <Toast clear={["error"]} text="No longer skipped" tone="warn" />}
 

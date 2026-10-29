@@ -25,11 +25,11 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Off unless asked for. It goes out once a scan day, at DIGEST_HOUR, by default when the scan window closes. */
 export function digestSettings(env: Partial<Record<string, string>> = process.env): DigestSettings {
-  const hour = Number(env.DIGEST_HOUR ?? env.MAIL_SCAN_END_HOUR ?? "15");
+  const hour = Number(env.DIGEST_HOUR ?? env.MAIL_SCAN_END_HOUR ?? "18");
   const to = env.DIGEST_TO?.trim() ?? "";
   return {
     enabled: env.DAILY_DIGEST?.trim().toLowerCase() === "on",
-    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 15,
+    hour: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 18,
     to: emailPattern.test(to) && to.length <= 320 ? to : null,
   };
 }

@@ -26,6 +26,7 @@ import { runIntakePipeline } from "@/services/intake-pipeline";
 import { sweepSentDrafts } from "@/services/outreach-pipeline";
 import { applyAutomatically, followUpAutoEnabled, followUpAutoStageEnabled } from "@/services/follow-up-auto";
 import type { TaskHandle } from "@/services/tasks";
+import { isAiCapacityError } from "@/services/ai-capacity";
 
 // ponytail: ten analyses per scan bounds one run; anything skipped has no row yet, so the next scan retries it.
 const MAX_ANALYSES_PER_SCAN = 10;
@@ -85,6 +86,12 @@ export function suggestionData(message: OutlookInboxMessage, opportunity: Follow
 
 const SCAN_STATE_ID = "primary";
 
+const emptyMailScanState = { id: SCAN_STATE_ID, watermark: null, lastRunAt: null, lastSuccessAt: null, consecutiveFailures: 0, lastError: null, lastErrorAt: null, errorClearedAt: null, lastStopReason: null, lastStopAt: null, autoScanEnabled: true, initialScanCompleteAt: null, folderWatermarks: null, updatedAt: new Date(0) };
+
+export async function readMailScanState() {
+  return await getPrisma().mailScanState.findUnique({ where: { id: SCAN_STATE_ID } }) ?? emptyMailScanState;
+}
+
 export async function mailScanState() {
   return getPrisma().mailScanState.upsert({
     where: { id: SCAN_STATE_ID },
@@ -123,8 +130,9 @@ async function considerAsNewIntake(message: OutlookInboxMessage, mode: ScanMode,
       const intake = await createIntakeFromMessage(message.id, await outlookAccessToken());
       await runIntakePipeline(intake.id);
       imported = true;
-    } catch {
+    } catch (error) {
       // The mail stays untouched and the decision still records what was intended.
+      if (isAiCapacityError(error)) throw error;
       imported = false;
     }
   }
@@ -160,8 +168,8 @@ export async function scanFollowUps(task?: TaskHandle) {
     const candidates = await activeCandidates();
     const seen = new Set((await database.followUpSuggestion.findMany({
       where: { outlookMessageId: { in: messages.map((message) => message.id) } },
-      select: { outlookMessageId: true },
-    })).map((row) => row.outlookMessageId));
+      select: { outlookMessageId: true, status: true, error: true },
+    })).filter((row) => row.status !== FollowUpStatus.FAILED || !isAiCapacityError(row.error)).map((row) => row.outlookMessageId));
 
     const scanMode = intakeScanMode();
     const switches = { fields: followUpAutoEnabled(), stage: followUpAutoStageEnabled() };
@@ -194,21 +202,27 @@ export async function scanFollowUps(task?: TaskHandle) {
       await task?.progress(`Analyzing message ${analyzed} of at most ${MAX_ANALYSES_PER_SCAN}`);
       try {
         const analysis = await analyzeFollowUpEmail(analysisInput(message, opportunity));
-        const created = await database.followUpSuggestion.create({ data: suggestionData(message, opportunity, analysis) });
+        const existing = await database.followUpSuggestion.findUnique({ where: { outlookMessageId: message.id }, select: { id: true, status: true } });
+        const created = existing?.status === FollowUpStatus.FAILED
+          ? await database.followUpSuggestion.update({ where: { id: existing.id }, data: { ...suggestionData(message, opportunity, analysis), status: FollowUpStatus.PENDING, error: null, retryCount: { increment: 1 } } })
+          : await database.followUpSuggestion.create({ data: suggestionData(message, opportunity, analysis) });
         // RESTRICTIONS 1.7: on a confident, unambiguous match the follow-up fields and a forward Stage
         // may move; a terminal Stage, or anything less certain, stays pending for the user.
         const outcome = await database.$transaction((transaction) => applyAutomatically(transaction, created, switches));
         if (outcome.fields || outcome.stage) applied += 1;
-      } catch {
-        await database.followUpSuggestion.create({ data: {
+      } catch (error) {
+        const existing = await database.followUpSuggestion.findUnique({ where: { outlookMessageId: message.id }, select: { id: true } });
+        if (existing) await database.followUpSuggestion.update({ where: { id: existing.id }, data: { status: FollowUpStatus.FAILED, error: (error instanceof Error ? error.message : "Email analysis failed. Retry after checking the Outlook and AI connections.").slice(0, 500), retryCount: { increment: 1 } } });
+        else await database.followUpSuggestion.create({ data: {
           outlookMessageId: message.id,
           opportunityId: opportunity?.id ?? null,
           fromAddress: message.fromAddress,
           subject: message.subject,
           receivedAt: message.receivedAt,
           status: FollowUpStatus.FAILED,
-          error: "Email analysis failed. Retry after checking the Outlook and AI connections.",
+          error: (error instanceof Error ? error.message : "Email analysis failed. Retry after checking the Outlook and AI connections.").slice(0, 500),
         } });
+        if (isAiCapacityError(error)) throw error;
       }
     }
 

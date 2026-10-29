@@ -32,7 +32,7 @@ export function sweepVerdict(triaged: TriagedPost): SweepVerdict {
   if (triaged.kind === "CANDIDATE_OFFER") return { outcome: "NOISE", reason: triaged.reason ?? "Consultants on offer, not a job.", decision: null };
   if (triaged.kind === "OTHER") return { outcome: "NOISE", reason: triaged.reason ?? "Not a job post.", decision: null };
   if (!triaged.relevant) return { outcome: "NOT_RELEVANT", reason: triaged.reason ?? "Outside your role families.", decision: null };
-  const decision = applicationDecision(triaged.facts);
+  const decision = applicationDecision(triaged.facts, "sweep");
   if (decision.verdict === "SKIP") return { outcome: "SKIPPED", reason: decision.reason, decision };
   if (!triaged.recruiterEmail) return { outcome: "NO_EMAIL", reason: "No email in the post: message the author on LinkedIn if it is worth it.", decision };
   return { outcome: "QUEUED", reason: decision.reason, decision };
@@ -50,7 +50,8 @@ export function sweepItemState(intake: {
   stopReason: string | null;
   draft: { autoSendState: string | null; autoSentAt: Date | null; outlookState: string; autoSendError: string | null; outlookError: string | null } | null;
 } | null, taskFailed: boolean, taskError: string | null = null): { state: SweepItemState; detail: string | null } {
-  if (!intake) return { state: "NEEDS_YOU", detail: "The job was discarded." };
+  // A fresh Sweep links its Intake after screening; absence here means it is still being prepared.
+  if (!intake) return { state: "WORKING", detail: null };
   if (intake.status === "SKIPPED") return { state: "SKIPPED", detail: intake.stopReason };
   if (intake.status === "PENDING") {
     if (intake.stopReason) return { state: "NEEDS_YOU", detail: intake.stopReason };
@@ -108,10 +109,13 @@ export function shortReason(text: string | null | undefined): { kind: ReasonKind
   if (/\bYOE\b|years? of experience|experience requirement|years required/i.test(text)) return { kind: "experience", label: "YOE" };
   if (/quota|rate limit|(?:HTTP|status)\s*429/i.test(text)) return { kind: "failed", label: "AI 额度/限流" };
   if (/Eligibility conflict/i.test(text)) return { kind: "eligibility", label: shortEligibility(text) };
+  if (/resume version/i.test(text)) return { kind: "email-check", label: "简历版本需删除" };
   if (/resume|role family/i.test(text)) return { kind: "resume", label: "Resume" };
   if (/already tracked|already has a similar job/i.test(text)) return { kind: "duplicate", label: "Duplicate" };
   if (/You deleted this job/i.test(text)) return { kind: "duplicate", label: "Deleted" };
-  if (/validation/i.test(text)) return { kind: "email-check", label: "Email check" };
+  if (/(?:asks the recruiter about|employment\/?payment arrangement|C2C).*?(?:C2H|W2)|(?:C2H|W2).*?(?:asks the recruiter about|employment\/?payment arrangement|C2C)/i.test(text)) return { kind: "email-check", label: "C2H/C2C需确认" };
+  if (/visa|work authorization|sponsor/i.test(text) && /email|asks|question/i.test(text)) return { kind: "email-check", label: "工作授权需修改" };
+  if (/validation/i.test(text)) return { kind: "email-check", label: "邮件需审核" };
   if (/failed|could not/i.test(text)) return { kind: "failed", label: "Failed" };
   if (/written and waits for your review/i.test(text)) return { kind: "review", label: "Review" };
   return { kind: "other", label: text.length > 24 ? `${text.slice(0, 22)}…` : text };

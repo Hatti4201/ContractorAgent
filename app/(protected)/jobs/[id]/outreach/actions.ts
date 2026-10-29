@@ -11,10 +11,12 @@ import { currentEmployerCcSetting } from "@/services/employer";
 import { parseJobCase } from "@/services/job-case";
 import { checkResumeFile } from "@/services/resume-router";
 import { loadOutreachContext, outreachContextFingerprint } from "@/services/outreach-context";
-import { startTask, TaskBusyError } from "@/services/tasks";
+import { startTask, TaskBusyError, type TaskHandle } from "@/services/tasks";
+import { isAiCapacityError } from "@/services/ai-capacity";
 import {
   determineOutreachMode,
   generateOutreachContent,
+  generateLinkedinOutreachContent,
   outreachBlockingIssues,
   parseOutreachValidation,
   validateOutreachContent,
@@ -108,7 +110,7 @@ async function defaultCcAddress(input: OutreachInput) {
   return input.jobCase.employmentType === EmploymentType.C2C ? (await currentEmployerCcSetting()).address : null;
 }
 
-async function saveGeneratedDraft(id: string, input: OutreachInput, content: OutreachContent) {
+async function saveGeneratedDraft(id: string, input: OutreachInput, content: OutreachContent, linkedinBody: string | null) {
   const validation = await validateOutreachContent(input, content);
   const ccAddress = await defaultCcAddress(input);
   await getPrisma().$transaction([
@@ -120,6 +122,7 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         toAddress: input.toAddress,
         subject: content.subject,
         body: content.body,
+        linkedinBody,
         attachmentResumeId: input.resume.id,
         contextFingerprint: outreachContextFingerprint(input.approvedContext),
         validation: validation as unknown as Prisma.InputJsonValue,
@@ -131,6 +134,7 @@ async function saveGeneratedDraft(id: string, input: OutreachInput, content: Out
         toAddress: input.toAddress,
         subject: content.subject,
         body: content.body,
+        linkedinBody,
         attachmentResumeId: input.resume.id,
         contextFingerprint: outreachContextFingerprint(input.approvedContext),
         validation: validation as unknown as Prisma.InputJsonValue,
@@ -191,21 +195,41 @@ async function adoptRoleFamilyFromResume(id: string) {
   ]);
 }
 
+export async function runOutreachDraftGeneration(id: string, task: TaskHandle) {
+  await adoptRoleFamilyFromResume(id);
+  const input = await outreachInput(id);
+  const blockers = await outreachBlockingIssues(input);
+  if (blockers.length) throw new Error(blockers[0]!.message);
+  await task.progress("Writing the email");
+  await task.progress("Writing the outreach drafts");
+  const [content, linkedinContent] = await Promise.all([
+    generateOutreachContent(input),
+    generateLinkedinOutreachContent(input).catch((error) => {
+      if (isAiCapacityError(error)) throw error;
+      return null;
+    }),
+  ]);
+  await task.progress("Validating the email draft");
+  await saveGeneratedDraft(id, input, content, linkedinContent?.body ?? null);
+}
+
+export async function runOutreachDraftValidation(id: string) {
+  const draft = await getPrisma().outreachDraft.findUnique({ where: { opportunityId: id }, select: { mode: true, subject: true, body: true, outlookState: true, outlookMessageId: true } });
+  if (!draft || draft.outlookMessageId || draft.outlookState !== OutlookDraftState.NOT_CREATED) return;
+  const input = await outreachInput(id, draft.mode);
+  const validation = await validateOutreachContent(input, { subject: draft.subject, body: draft.body });
+  await getPrisma().outreachDraft.update({
+    where: { opportunityId: id },
+    data: { validation: validation as unknown as Prisma.InputJsonValue, status: draftStatus(validation), contextFingerprint: outreachContextFingerprint(input.approvedContext) },
+  });
+}
+
 export async function startOutreachDraftGeneration(id: string) {
   try {
-    // Two OpenAI calls run here, so the page must not hold the user while they happen.
+    // The model calls run behind the page, so the user is not held while the drafts are written.
     await startTask(
       { kind: TaskKind.OUTREACH_REGENERATE, label: "Writing and validating the outreach email", subjectId: id, href: `/jobs/${id}/outreach` },
-      async (task) => {
-        await adoptRoleFamilyFromResume(id);
-        const input = await outreachInput(id);
-        const blockers = await outreachBlockingIssues(input);
-        if (blockers.length) throw new Error(blockers[0]!.message);
-        await task.progress("Writing the email");
-        const content = await generateOutreachContent(input);
-        await task.progress("Validating the draft");
-        await saveGeneratedDraft(id, input, content);
-      },
+      (task) => runOutreachDraftGeneration(id, task),
       after,
     );
   } catch (error) {

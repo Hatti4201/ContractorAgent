@@ -3,7 +3,7 @@ import { formatDateTime } from "@/lib/job-values";
 import { getPrisma } from "@/lib/prisma";
 import { calendarDate } from "@/services/attention";
 import { appUrl, buildDigest, digestDue, digestEmpty, digestSettings, type DigestData } from "@/services/digest";
-import { mailScanState } from "@/services/follow-up-scan";
+import { readMailScanState } from "@/services/follow-up-scan";
 import { queuedIntakes } from "@/services/intake-queue";
 import { scanWindowFromEnv } from "@/services/mail-schedule";
 import { outlookAccountAddress, outlookConnected, outlookSendToken } from "@/services/outlook-auth";
@@ -36,7 +36,7 @@ export async function gatherDigest(since: Date): Promise<DigestData> {
     }),
     queuedIntakes(database),
     database.followUpSuggestion.count({ where: { status: { in: [FollowUpStatus.PENDING, FollowUpStatus.FAILED] } } }),
-    mailScanState(),
+    readMailScanState(),
   ]);
   return {
     since,
